@@ -1,0 +1,230 @@
+#+TITLE: 🚀 GPTel Navigator — Modern Context Navigator
+#+AUTHOR: AI Assistant
+#+EMAIL: ai@example.com
+#+LANGUAGE: en
+#+OPTIONS: num:nil ^:nil toc:2
+
+#+begin_quote
+"The navigator that can be seen knows the true path."
+— Ancient AI Wisdom
+#+end_quote
+
+#+ATTR_ORG: :width 80%
+[[file:screenshot-gptel-navigator.png]]
+
+GPTel Navigator is a modern, Tree-widget-based context manager for GPTel interactions in Emacs 30+.
+It provides an elegant sidebar showing your current GPTel context with intuitive navigation and real-time updates.
+
+Built with modern Emacs patterns: pure functional core, effect isolation, and Transient menus.
+
+* Features — Navigation Excellence
+
+1. 🗂️ *Interactive Sidebar* — Tree-based context visualization
+2. 📄 *File & Buffer Tracking* — Comprehensive context awareness  
+3. ✂️ *Selection Support* — Works with text selections
+4. 🎯 *Quick Navigation* — Jump to any context item instantly
+5. 👁️ *Preview Mode* — Peek at context without leaving sidebar
+6. 🔄 *Auto-refresh* — Real-time context monitoring
+7. 🎨 *Modern Icons* — Visual clarity with emoji icons
+8. ⌨️ *Keyboard First* — Full keyboard navigation support
+9. 🏗️ *Emacs 30 Native* — Built for latest Emacs features
+10. 💾 *Project Context* — Auto-save/load per-project configurations
+11. 📦 *Minimal Dependencies* — Only requires gptel and transient
+
+* Installation
+
+** Prerequisites
+- Emacs 30.1+
+- gptel 0.8.0+  
+- transient 0.4.0+
+
+** Manual Installation
+#+begin_src bash
+cd ~/.emacs.d/
+git clone https://github.com/gptel-extensions/gptel-navigator
+#+end_src
+
+** Configuration
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/.emacs.d/gptel-navigator")
+(require 'gptel-navigator)
+(gptel-navigator-mode 1)
+#+end_src
+
+* Usage
+
+** Basic Operations
+| Key       | Action                    | Description                      |
+|-----------+---------------------------+----------------------------------|
+| C-c g s   | gptel-navigator-toggle        | Toggle sidebar visibility        |
+| C-c g p   | gptel-navigator-menu          | Open main Transient menu        |
+| C-c g r   | gptel-navigator-refresh       | Refresh context manually         |
+
+** Sidebar Navigation  
+| Key       | Action                    | Description                      |
+|-----------+---------------------------+----------------------------------|
+| RET       | gptel-navigator-goto-item     | Navigate to selected item        |
+| SPC       | gptel-navigator-preview-item  | Preview item without leaving     |
+| r         | gptel-navigator-refresh       | Refresh context                  |
+| q         | gptel-navigator-quit          | Hide sidebar                     |
+| ?         | gptel-navigator-help          | Show help                        |
+| TAB       | widget-forward            | Navigate to next item            |
+| S-TAB     | widget-backward           | Navigate to previous item        |
+
+** Context Types
+- 📄 *Files* — Complete files added to gptel context
+- 📋 *Buffers* — Non-file buffers in context  
+- ✂️ *Selections* — Text selections within files/buffers
+
+* Configuration
+
+All customization through the `gptel-navigator` group:
+
+#+begin_src emacs-lisp
+(setq gptel-navigator-sidebar-width 40)          ; Sidebar width
+(setq gptel-navigator-auto-refresh t)            ; Auto-refresh on changes
+(setq gptel-navigator-show-line-numbers t)       ; Line numbers for selections
+(setq gptel-navigator-max-filename-length 30)    ; Filename truncation
+(setq gptel-navigator-autosave t)                ; Auto-save project context
+(setq gptel-navigator-autoload t)                ; Auto-load project context
+#+end_src
+
+Interactive customization:
+#+begin_src emacs-lisp
+M-x customize-group RET gptel-navigator RET
+#+end_src
+
+* Architecture — Modern Emacs Design
+
+GPTel Navigator follows modern Emacs development patterns:
+
+** Pure Functional Core
+- Context analysis functions are pure (no side effects)
+- Immutable data structures for context items
+- Predictable, testable behavior
+
+** Effect Isolation  
+- All UI updates isolated to specific functions
+- Clear separation between logic and presentation
+- Easy to test and mock
+
+** Modern Widgets
+- Tree-widget system for hierarchical display
+- Native Emacs 30 capabilities
+- Responsive and accessible interface
+
+** Transient Integration
+- Modern menu system with Transient
+- Discoverable commands and shortcuts
+- Contextual action availability
+
+* Context Item Structure
+
+Each context item contains:
+
+#+begin_src emacs-lisp
+(make-gptel-navigator-item
+ :type 'file                    ; 'file, 'buffer, or 'selection
+ :name "example.el"             ; Display name
+ :path "/full/path/to/file"     ; Full path (files only)
+ :buffer #<buffer>              ; Buffer object
+ :start 100                     ; Start position (selections)
+ :end 200                       ; End position (selections)  
+ :size 1024                     ; Content size in characters
+ :icon "🟣"                     ; Display icon
+ :description "Line 10-15")     ; Additional context info
+#+end_src
+
+* Extending GPTel Navigator
+
+** Custom Context Sources
+Add your own context analysis:
+
+#+begin_src emacs-lisp
+(defun my-custom-context-analyzer (buffer)
+  "Analyze BUFFER for custom context."
+  (with-current-buffer buffer
+    ;; Your analysis logic here
+    (list (make-gptel-navigator-item 
+           :type 'custom
+           :name "My Context"
+           :buffer buffer
+           :icon "⭐"
+           :description "Custom context type"))))
+
+;; Hook into collection
+(add-hook 'gptel-navigator-context-collectors 
+          #'my-custom-context-analyzer)
+#+end_src
+
+** Custom Icons
+Override icon mapping:
+
+#+begin_src emacs-lisp
+(defun my-icon-provider (type &optional mode)
+  "Custom icon provider for TYPE and MODE."
+  (pcase type
+    ('my-type "🎯")
+    (_ (gptel-navigator--get-icon-for-type type mode))))
+
+(setq gptel-navigator-icon-function #'my-icon-provider)
+#+end_src
+
+* Troubleshooting
+
+| Issue                  | Solution                                                      |
+|------------------------+---------------------------------------------------------------|
+| Sidebar won't open     | Check gptel is loaded: (featurep 'gptel)                      |
+| No context shown       | Ensure files are open or text is selected                     |
+| Icons not showing      | Emacs may not support emoji display                           |
+| Performance issues     | Disable auto-refresh: (setq gptel-navigator-auto-refresh nil) |
+| Context not persisting | Enable autosave: (setq gptel-navigator-autosave t)            |
+| Project context issues | Check .gptel-navigator/context.el permissions                 |
+
+* Development — Contributing
+
+GPTel Navigator welcomes contributions! The codebase follows these principles:
+
+- **Pure functions** for all analysis logic
+- **Effect isolation** for UI operations  
+- **Modern Emacs** idiomatic code
+- **Minimal dependencies** 
+- **Comprehensive testing**
+
+** Architecture Layers
+1. *Core Analysis* — Pure functions for context detection
+2. *Widget System* — Tree-based UI rendering  
+3. *Effect Management* — Window and buffer operations
+4. *Persistence* — Project context serialization
+5. *Integration* — Hooks and auto-updates
+   
+** Testing
+#+begin_src bash
+cd gptel-navigator/
+emacs -batch -f package-initialize -l test/run-tests.el
+#+end_src
+
+* Project Context Management
+
+GPTel Navigator automatically manages context through:
+ Walk-through of features:
+* **Per-project configurations** - Creates =(project-root)/.gptel-navigator/context.el=
+* **Global context** - Stores in =~/.gptel-navigator/context.el=
+* **Auto-save/load** - Preserves context between sessions via 
+  =gptel-navigator-autosave= and =gptel-navigator-autoload=
+
+Manual control:
+#+begin_src emacs-lisp
+M-x gptel-navigator-context-save
+M-x gptel-navigator-context-load
+
+* Links
+
+- 📦 Source: https://github.com/gptel-extensions/gptel-navigator
+- 🐛 Issues: https://github.com/gptel-extensions/gptel-navigator/issues  
+- 📖 GPTel: https://github.com/karthink/gptel
+- 🔧 Transient: https://github.com/magit/transient
+
+---
+
+Navigate your GPTel context with confidence. 🚀

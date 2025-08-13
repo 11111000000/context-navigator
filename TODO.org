@@ -1,0 +1,244 @@
+:PROPERTIES:
+:GPTEL_MODEL: gpt-5
+:GPTEL_BACKEND: AI Tunnel
+:GPTEL_SYSTEM: You are an expert assistant specializing in helping users with Emacs for\ncreating and managing various types of content, including code, documents,\nand even fiction.\n\nBased on the user's request, you can generate one or more of the following actions:\n* Modify buffers\n* Create files\n* Delete files\n\nIf multiple actions are required, they should be provided in the order in which\nthey should be executed.\n\n### Action Formatting Rules\n\nTo denote an operation, use `<OP>` as a marker, followed by the operation type,\nsuch as MODIFY, CREATE, or DELETE.\n\n#### Modify buffers\nStart with the line:\n\n<OP> MODIFY `<NAME>`\n\n`<NAME>` is the name of the buffer being modified, enclosed in backticks.\n\nNext, leave one blank line, then specify the SEARCH/REPLACE pairs. Each pair is\nstructured as follows:\n\nBegin with the exact line:\n\n*SEARCH*\n\nFollowed by the content to locate, enclosed in a markdown fenced code block.\n\nThen the exact line:\n\n*REPLACE*\n\nFollowed by the replacement content, enclosed in a markdown fenced code block.\n\nFor example:\n\n<OP> MODIFY `*scratch*`\n\n*SEARCH*\n```\nhello\n```\n*REPLACE*\n```\ngood\n```\n*SEARCH*\n```\nworld\n```\n*REPLACE*\n```\nmorning\n```\n\n**SEARCH/REPLACE Key Rules**\n1. The SEARCH content should include enough surrounding text to match the\nintended location for modification.\n2. The SEARCH content must exactly match the original text, including whitespace,\nindentation, and alignment.\n3. Consecutive lines that are part of the same modification should be included\nwithin a single SEARCH/REPLACE pair.\n\n**MODIFY OP Format Guidelines**\n1. Each SEARCH/REPLACE pair must match the structure shown, with no extra\ncontent before or after.\n2. Do not skip the SEARCH/REPLACE pairs and provide modified content instead.\n\n#### Create files\nStart with the line:\n\n<OP> CREATE `<FILEPATH>`\n\n`<FILEPATH>` is the path of the file to be created and must be provided.\nAn absolute path is preferred. If a project root is defined, a path relative to\nit is also acceptable.\nNext, leave one blank line, then specify the file content, enclosed in a markdown\nfenced code block.\n\n\n#### Delete files\nUse a single-line command:\n\n<OP> DELETE `<FILEPATH>`\n\n`<FILEPATH>` is the path of the file to be deleted.\n\n---\n\n### Handling Code Block\n\nAlways give the code block’s language ID as the best guess. If unsure, it is\nusually the same as the original content.\n\nTypically, use triple backticks as the fence for a code block. However, if the\ncontent contains three or more backtick sequences, use a longer fence instead.\n\n### Additional Notes\n\nYou are free to add thoughts, reasoning, comments, or other relevant information\nbefore, between, or after the operations as needed, but never start a line of\nsuch content with `<OP>`, as it may be misinterpreted as an operation, or insert\ndescriptive material inside an operation, as it may disrupt the parsing.\n
+:GPTEL_BOUNDS: ((response (3374 7814) (7832 16371)))
+:END:
+
+* Исправь ошибки при gptel-navigator-project-context-autoload-mode
+progn: Lisp nesting exceeds ‘max-lisp-eval-depth’: 1601
+Mark set
+progn: Lisp nesting exceeds ‘max-lisp-eval-depth’: 1601 [2 times]
+walk-window-tree-1: Lisp nesting exceeds ‘max-lisp-eval-depth’
+
+
+
+
+#+begin_reasoning
+**Analyzing recursion in code*
+
+I'm considering the issue of recursion caused by saving context, which modifies files in the filesystem. There might be an auto-refresh feature involved, leading to repeated calls. The context advice setup runs during sidebar creation, while autoload mode triggers a maybe-load call without the sidebar. This is followed by several functions that could loop back, leading to deep nesting.
+
+To solve this, I could adjust the gptel-navigator-project-context-load function to accept an optional argument to avoid unnecessary refreshes or set a recursion guard variable to prevent re-entry issues.*Exploring load optimizations*
+
+In the load function, I can use a let-binding to guard against issues. Another option could be using run-with-idle-timer or post-command-hook to schedule the load instead of doing it immediately, which could help prevent unwanted window changes.
+
+The goal is to make project-context-load retain the gptel-context alist without automatically refreshing the sidebar or altering the display. Ideally, I should modify it so it doesn’t display or open new windows unless the sidebar already exists. This will help avoid recursive calls that could lead to complications.*Proposing refresh modifications*
+
+I’m considering changing the refresh function to update only if the sidebar buffer exists. If there’s no window or buffer, it shouldn’t create a new sidebar, just update the state instead. Functions like toggle/show currently call refresh and ensure, but the autoload should avoid creating windows and only update if the sidebar is present.
+
+I’ll modify gptel-navigator-refresh to only call ensure-sidebar when a buffer or window exists. I can propose adding an optional argument for display within the refresh function to support this change.*Refining function adjustments*
+
+I'm thinking about simplifying the function. For example, I could set up a structure like this: first, collect the context items, then retrieve the sidebar buffer. If the buffer is live, find the associated window; if it exists, render the sidebar.
+
+I need to be careful because printing a message each time can cause echo area updates, but that's manageable. The crucial part is to avoid calling ensure-sidebar during autoload, restricting it only to commands like show or toggle. Additionally, I should guard against reentrancy in maybe-load-project-context to prevent endless recursion caused by refresh cycles.*Addressing recursion and refresh issues*
+
+I’m delving into the interplay of the load function and gptel-navigator-refresh to ensure no side windows are created. If the sidebar buffer exists, I want the function to render accordingly. I’ve noticed that the error mentions walk-window-tree-1, suggesting recursion might stem from calling display-buffer-in-side-window.
+
+To resolve this, I plan to add a reentrancy guard variable for autoload operations, modify refresh to avoid opening windows, and review how hooks are triggered. By implementing these changes, I hope to eliminate unnecessary recursion while maintaining desired functionality.*Implementing safety changes*
+
+I'll start by modifying some definitions to ensure everything works safely. First, I'm adding a variable for inhibiting refresh: =gptel-navigator--inhibit-refresh=. I’ll adjust the =gptel-navigator--auto-refresh= function to check this variable before performing a refresh.
+
+Next, I want to implement similar guard variables for loading contexts. In the =gptel-navigator-project-context-load= function, I'll bind these guard variables and adjust the refresh conditions. After the loading operations, I’ll refresh the sidebar only if it exists and is visible. This way, I’m aiming to prevent unnecessary recursion and enhance performance overall.*Modifying context loading functions*
+
+I'll keep the return values of t/nil for better compatibility, so I'll define a local variable =result= to store the loading results and return it later. I'll then enhance the =gptel-navigator--maybe-load-project-context= function to add a guard clause that prevents it from running while loading or refreshing. 
+
+Additionally, I’ll modify the =gptel-navigator--advice-save-context= function to avoid unnecessary saving during the load process. Finally, I need to ensure that my new variable definitions are placed correctly at the top of the code and then run some general tests. There’s a lot to take in, but I’m making good progress!
+#+end_reasoning
+
+I see an infinite recursion being triggered when gptel-navigator-project-context-autoload-mode is enabled. The core issue is that project context autoload ends up creating/refreshing the sidebar window from inside buffer-list-update-hook, which causes more window changes, which re-triggers that hook, and so on, leading to “Lisp nesting exceeds ‘max-lisp-eval-depth’”.
+
+Fix strategy:
+- Prevent sidebar creation during automatic refreshes (don’t call display-buffer-in-side-window from refresh).
+- Add reentrancy/inhibition guards to avoid nested refreshes and autoload loops while loading/saving context.
+- Avoid saving context while we’re in the middle of loading it.
+
+Below are safe changes implementing this.
+
+<OP> MODIFY =gptel-navigator.el=
+
+/SEARCH/
+#+begin_src elisp
+(defun gptel-navigator-refresh ()
+  "Refresh the context sidebar."
+  (interactive)
+  (let* ((items (gptel-navigator--collect-context))
+         (buffer (gptel-navigator--ensure-sidebar)))
+
+    (gptel-navigator--state-put :context-items items)
+
+    (with-current-buffer buffer
+      (gptel-navigator--render-sidebar))
+
+    (message "🔄 GPTel context refreshed (%d items)" (length items))))
+#+end_src
+/REPLACE/
+#+begin_src elisp
+(defun gptel-navigator-refresh ()
+  "Refresh the context sidebar."
+  (interactive)
+  (let* ((items (gptel-navigator--collect-context))
+         (buffer (gptel-navigator--state-get :sidebar-buffer))
+         (window (or (gptel-navigator--state-get :sidebar-window)
+                     (and buffer (get-buffer-window buffer t)))))
+    (gptel-navigator--state-put :context-items items)
+    (when (and buffer (buffer-live-p buffer)
+               window (window-live-p window))
+      (with-current-buffer buffer
+        (gptel-navigator--render-sidebar)))
+    (message "🔄 GPTel context refreshed (%d items)" (length items))))
+#+end_src
+
+/SEARCH/
+#+begin_src elisp
+(defun gptel-navigator--auto-refresh ()
+  "Auto-refresh if enabled."
+  (when (and gptel-navigator-auto-refresh
+             (gptel-navigator--state-get :sidebar-buffer))
+    (gptel-navigator-refresh)))
+#+end_src
+/REPLACE/
+#+begin_src elisp
+(defun gptel-navigator--auto-refresh ()
+  "Auto-refresh if enabled."
+  (when (and gptel-navigator-auto-refresh
+             (not gptel-navigator--inhibit-refresh)
+             (gptel-navigator--state-get :sidebar-buffer))
+    (gptel-navigator-refresh)))
+#+end_src
+
+/SEARCH/
+#+begin_src elisp
+(defun gptel-navigator-project-context-load (&optional root)
+  "Загрузить проектный контекст для ROOT и отобразить в сайдбаре.
+Если ROOT не указан, определяется автоматически. Для буферов вне проекта
+загружается из `gptel-navigator-global-dir'."
+  (interactive)
+  (let* ((root (or root (gptel-navigator--detect-root)))
+         (file (gptel-navigator--context-file root)))
+    (if-let ((spec (gptel-navigator--read-file-sexp file)))
+        (progn
+          (gptel-context-remove-all)
+          (dolist (item spec)
+            (pcase item
+              (`(:file ,rel . ,rest)
+               (let* ((path (gptel-navigator--project-abspath rel root)))
+                 ;; gptel-context-add-file сам определит бинарность и MIME.
+                 (gptel-context-add-file path)))
+              (`(:buffer ,rel :regions ,regions . ,_rest)
+               (let* ((path (gptel-navigator--project-abspath rel root))
+                      (buf (find-file-noselect path)))
+                 (dolist (pair regions)
+                   (let ((beg (car pair)) (end (cdr pair)))
+                     (gptel-context--add-region buf beg end t)))))))
+          (setq gptel-navigator--last-project-root root)
+          (gptel-navigator-refresh)
+          (when (called-interactively-p 'interactive)
+            (message "Loaded gptel context from %s" file))
+          t)
+      ;; Файла нет или он пуст/нечитаем: очистить контекст и обновить сайдбар
+      (gptel-context-remove-all)
+      (setq gptel-navigator--last-project-root root)
+      (gptel-navigator-refresh)
+      (when (called-interactively-p 'interactive)
+        (message "No saved gptel context at %s — cleared current context" file))
+      nil)))
+#+end_src
+/REPLACE/
+#+begin_src elisp
+(defun gptel-navigator-project-context-load (&optional root)
+  "Загрузить проектный контекст для ROOT и отобразить в сайдбаре.
+Если ROOT не указан, определяется автоматически. Для буферов вне проекта
+загружается из `gptel-navigator-global-dir'."
+  (interactive)
+  (let* ((root (or root (gptel-navigator--detect-root)))
+         (file (gptel-navigator--context-file root))
+         result)
+    (let ((gptel-navigator--in-context-load t)
+          (gptel-navigator--inhibit-refresh t))
+      (if-let ((spec (gptel-navigator--read-file-sexp file)))
+          (progn
+            (gptel-context-remove-all)
+            (dolist (item spec)
+              (pcase item
+                (`(:file ,rel . ,rest)
+                 (let* ((path (gptel-navigator--project-abspath rel root)))
+                   ;; gptel-context-add-file сам определит бинарность и MIME.
+                   (gptel-context-add-file path)))
+                (`(:buffer ,rel :regions ,regions . ,_rest)
+                 (let* ((path (gptel-navigator--project-abspath rel root))
+                        (buf (find-file-noselect path)))
+                   (dolist (pair regions)
+                     (let ((beg (car pair)) (end (cdr pair)))
+                       (gptel-context--add-region buf beg end t)))))))
+            (setq gptel-navigator--last-project-root root)
+            (setq result t))
+        ;; Файла нет или он пуст/нечитаем: очистить контекст
+        (gptel-context-remove-all)
+        (setq gptel-navigator--last-project-root root)
+        (setq result nil)))
+    ;; Выполнить один явный refresh только если сайдбар уже существует и видим
+    (let ((buf (gptel-navigator--state-get :sidebar-buffer))
+          (win (gptel-navigator--state-get :sidebar-window)))
+      (when (and buf (buffer-live-p buf) win (window-live-p win))
+        (gptel-navigator-refresh)))
+    (when (called-interactively-p 'interactive)
+      (message (if result
+                   "Loaded gptel context from %s"
+                 "No saved gptel context at %s — cleared current context")
+               file))
+    result))
+#+end_src
+
+/SEARCH/
+#+begin_src elisp
+(defun gptel-navigator--maybe-load-project-context ()
+  "Автозагрузить контекст при смене активного проекта для текущего окна."
+  (let ((buf (window-buffer (selected-window))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (unless (string-prefix-p " " (buffer-name))
+          (let ((root (gptel-navigator--detect-root)))
+            (unless (equal root gptel-navigator--last-project-root)
+              (gptel-navigator-project-context-load root))))))))
+#+end_src
+/REPLACE/
+#+begin_src elisp
+(defun gptel-navigator--maybe-load-project-context ()
+  "Автозагрузить контекст при смене активного проекта для текущего окна."
+  (unless gptel-navigator--in-context-load
+    (let ((buf (window-buffer (selected-window))))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (unless (string-prefix-p " " (buffer-name))
+            (let ((root (gptel-navigator--detect-root)))
+              (unless (equal root gptel-navigator--last-project-root)
+                (gptel-navigator-project-context-load root)))))))))
+#+end_src
+
+/SEARCH/
+#+begin_src elisp
+(defun gptel-navigator--advice-save-context (&rest _)
+  "Автосохранение контекста проекта после его изменения."
+  (when (bound-and-true-p gptel-navigator-project-context-autoload-mode)
+    (ignore-errors
+      (gptel-navigator-project-context-save (gptel-navigator--detect-root)))))
+#+end_src
+/REPLACE/
+#+begin_src elisp
+(defun gptel-navigator--advice-save-context (&rest _)
+  "Автосохранение контекста проекта после его изменения."
+  (when (and (bound-and-true-p gptel-navigator-project-context-autoload-mode)
+             (not gptel-navigator--in-context-load))
+    (ignore-errors
+      (gptel-navigator-project-context-save (gptel-navigator--detect-root)))))
+#+end_src
+
+Notes:
+- gptel-navigator-refresh no longer creates the sidebar implicitly; it only renders if it already exists and is visible. Sidebar creation stays in toggle/show commands.
+- Reentrancy guards prevent nested refresh/load/save loops during project switches and context mutations.
+- Saving is skipped while a context load is in progress to avoid ping-pong.
+
+After applying, evaluate the buffer and re-enable gptel-navigator-project-context-autoload-mode. The recursion and “Lisp nesting exceeds ‘max-lisp-eval-depth’” errors should be gone.
+
+*** 
