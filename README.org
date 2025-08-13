@@ -208,9 +208,9 @@ emacs -batch -f package-initialize -l test/run-tests.el
 
 GPTel Navigator automatically manages context through:
  Walk-through of features:
-* **Per-project configurations** - Creates =(project-root)/.gptel-navigator/context.el=
-* **Global context** - Stores in =~/.gptel-navigator/context.el=
-* **Auto-save/load** - Preserves context between sessions via 
+ - **Per-project configurations** - Creates =(project-root)/.gptel-navigator/context.el=
+ - **Global context** - Stores in =~/.gptel-navigator/context.el=
+ - **Auto-save/load** - Preserves context between sessions via 
   =gptel-navigator-autosave= and =gptel-navigator-autoload=
 
 Manual control:
