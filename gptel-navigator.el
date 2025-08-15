@@ -115,6 +115,11 @@ Enabling this also ensures autosave advice is active regardless of
 ;; Autosave advice and basic context persistence (safe placeholders)
 ;; ----------------------------------------------------------------------------
 
+(defvar gptel-navigator--advices-installed nil
+  "Internal flag: whether autosave advices for gptel-context have been installed early.
+This exists to avoid calling gptel-navigator--state-get before it is defined
+during load/eval order. The full state plist is synchronized when available.")
+
 (defun gptel-navigator--maybe-autosave-context (&rest _)
   "Autosave project/global context when appropriate."
   (when (and gptel-navigator-autosave
@@ -124,31 +129,35 @@ Enabling this also ensures autosave advice is active regardless of
 
 (defun gptel-navigator--setup-project-context-save-advice ()
   "Install advice on gptel-context mutators to autosave context."
-  (unless (gptel-navigator--state-get :advices-installed)
+  (unless gptel-navigator--advices-installed
     (dolist (fn '(gptel-context-add
                   gptel-context-remove
                   gptel-context-clear
                   gptel-context--set
                   gptel-context-set
                   gptel-context-add-file
-                  gptel-context-remove-file))
+                  gptel-context-remove))
       (when (fboundp fn)
         (advice-add fn :after #'gptel-navigator--maybe-autosave-context)))
-    (gptel-navigator--state-put :advices-installed t)))
+    (setq gptel-navigator--advices-installed t)
+    (when (fboundp 'gptel-navigator--state-put)
+      (gptel-navigator--state-put :advices-installed t))))
 
 (defun gptel-navigator--teardown-project-context-save-advice ()
   "Remove autosave advice previously installed."
-  (when (gptel-navigator--state-get :advices-installed)
+  (when gptel-navigator--advices-installed
     (dolist (fn '(gptel-context-add
                   gptel-context-remove
                   gptel-context-clear
                   gptel-context--set
                   gptel-context-set
                   gptel-context-add-file
-                  gptel-context-remove-file))
+                  gptel-context-remove))
       (when (fboundp fn)
         (advice-remove fn #'gptel-navigator--maybe-autosave-context)))
-    (gptel-navigator--state-put :advices-installed nil)))
+    (setq gptel-navigator--advices-installed nil)
+    (when (fboundp 'gptel-navigator--state-put)
+      (gptel-navigator--state-put :advices-installed nil))))
 
 (defun gptel-navigator--context-file ()
   "Return the default file path for saving the context."
@@ -703,6 +712,7 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'gptel-navigator-goto-item)
     (define-key map (kbd "SPC") #'gptel-navigator-preview-item)
+    (define-key map (kbd "d")   #'gptel-navigator-remove-item-at-point)
     (define-key map (kbd "r")   #'gptel-navigator-refresh)
     (define-key map (kbd "q")   #'gptel-navigator-quit)
     (define-key map (kbd "?")   #'gptel-navigator-help)
@@ -763,6 +773,36 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
   (when-let ((item (widget-get widget :button-data)))
     (gptel-navigator--state-put :selected-item item)
     (gptel-navigator-goto-item-internal item)))
+
+;;;###autoload
+(defun gptel-navigator-remove-item-at-point ()
+  "Remove the context item at point from GPTel context, then refresh sidebar."
+  (interactive)
+  (let ((w (widget-at)))
+    (unless w (user-error "No item at point"))
+    (let ((item (widget-get w :button-data)))
+      (unless item (user-error "No context item at point"))
+      (pcase (gptel-navigator-item-type item)
+        ('file
+         (let ((path (gptel-navigator-item-path item)))
+           (when (and path (fboundp 'gptel-context-remove))
+             (gptel-context-remove path))))
+        ('buffer
+         (let ((buf (gptel-navigator-item-buffer item)))
+           (when (and buf (fboundp 'gptel-context-remove))
+             (gptel-context-remove buf))))
+        ('selection
+         (let ((buf (gptel-navigator-item-buffer item))
+               (start (gptel-navigator-item-start item))
+               (end (gptel-navigator-item-end item)))
+           ;; Try to remove the region overlay if supported, else entire buffer
+           (if (and buf start end (fboundp 'gptel-context-remove))
+               (gptel-context-remove buf start end)
+             (when (and buf (fboundp 'gptel-context-remove))
+               (gptel-context-remove buf)))))
+        (_ (user-error "Unknown item type")))
+      (gptel-navigator-refresh)
+      (message "Removed item from GPTel context."))))
 
 (defun gptel-navigator--item-children (tree)
   "Return children for TREE (file details)."

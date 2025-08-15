@@ -61,15 +61,16 @@ git clone https://github.com/gptel-extensions/gptel-navigator
 | C-c g r   | gptel-navigator-refresh       | Refresh context manually         |
 
 ** Sidebar Navigation  
-| Key       | Action                    | Description                      |
-|-----------+---------------------------+----------------------------------|
+| Key       | Action                        | Description                      |
+|-----------+-------------------------------+----------------------------------|
 | RET       | gptel-navigator-goto-item     | Navigate to selected item        |
 | SPC       | gptel-navigator-preview-item  | Preview item without leaving     |
+| d         | gptel-navigator-remove-item-at-point | Remove item from context        |
 | r         | gptel-navigator-refresh       | Refresh context                  |
 | q         | gptel-navigator-quit          | Hide sidebar                     |
 | ?         | gptel-navigator-help          | Show help                        |
-| TAB       | widget-forward            | Navigate to next item            |
-| S-TAB     | widget-backward           | Navigate to previous item        |
+| TAB       | widget-forward                | Navigate to next item            |
+| S-TAB     | widget-backward               | Navigate to previous item        |
 
 ** Context Types
 - 📄 *Files* — Complete files added to gptel context
