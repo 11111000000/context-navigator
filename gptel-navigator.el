@@ -845,7 +845,14 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
   "Render sidebar contents from current state."
   (let ((inhibit-read-only t)
         (inhibit-message t)
-        (items (gptel-navigator--state-get :context-items)))
+        (items (gptel-navigator--state-get :context-items))
+        ;; Preserve point and scroll to avoid jumping to the first item on refresh.
+        (win (get-buffer-window (current-buffer) t))
+        (pt-line (line-number-at-pos (point)))
+        (col (current-column))
+        (ws-line (let* ((w (get-buffer-window (current-buffer) t))
+                        (ws (and w (window-start w))))
+                   (and ws (line-number-at-pos ws)))))
     (erase-buffer)
     ;; Header
     (let* ((root (or (gptel-navigator--state-get :current-project-root)
@@ -865,8 +872,20 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
       (widget-insert "\n"))
     (widget-setup)
     (gptel-navigator--scrub-help-echo)
-    (goto-char (point-min))
-    (when items (widget-forward 1))))
+    ;; Restore scroll/point if possible; otherwise, default to first item only once.
+    (cond
+     ((and win ws-line pt-line)
+      (let ((inhibit-point-motion-hooks t))
+        (save-excursion
+          (goto-char (point-min))
+          (forward-line (max 0 (1- ws-line)))
+          (set-window-start win (point)))
+        (goto-char (point-min))
+        (forward-line (max 0 (1- pt-line)))
+        (move-to-column col)))
+     (items
+      (goto-char (point-min))
+      (widget-forward 1)))))
 
 (defun gptel-navigator--create-sidebar ()
   "Create sidebar buffer/window."
@@ -1357,20 +1376,21 @@ Non-file buffers are ignored in v1."
 ;; ----------------------------------------------------------------------------
 
 (defun gptel-navigator--maybe-load-project-context ()
-  "Auto-load context if active buffer's project root changed (throttled)."
+  "Auto-load context when the active buffer's project root changes (throttled).
+If there is no project for the active buffer, load the global context from
+`gptel-navigator-global-dir'; if it doesn't exist, clear the context."
   (unless gptel-navigator--in-context-load
     (when-let ((buf (gptel-navigator--pc-pick-active-buffer)))
       (with-current-buffer buf
-        (when (buffer-file-name)
-          (let* ((now (float-time))
-                 (last gptel-navigator--last-context-switch-time)
-                 (throttle-ok (>= (- now last) gptel-navigator-context-switch-interval))
-                 (root (gptel-navigator--detect-root)))
-            (when (and throttle-ok
-                       (not (equal root gptel-navigator--last-project-root)))
-              (setq gptel-navigator--last-context-switch-time now)
-              (gptel-navigator--state-put :current-project-root root)
-              (gptel-navigator-context-load root))))))))
+        (let* ((now (float-time))
+               (last gptel-navigator--last-context-switch-time)
+               (throttle-ok (>= (- now last) gptel-navigator-context-switch-interval))
+               (root (gptel-navigator--detect-root)))
+          (when (and throttle-ok
+                     (not (equal root gptel-navigator--last-project-root)))
+            (setq gptel-navigator--last-context-switch-time now)
+            (gptel-navigator--state-put :current-project-root root)
+            (gptel-navigator-context-load root)))))))
 
 (defun gptel-navigator--window-buffer-change-hook (&rest _)
   "Hook wrapper to maybe load project context and refresh sidebar highlight.
@@ -1412,6 +1432,12 @@ Reentrancy-guarded to avoid triggering itself via window/config changes."
   (add-hook 'window-configuration-change-hook #'gptel-navigator--maybe-load-project-context)
   (when (boundp 'window-buffer-change-functions)
     (add-hook 'window-buffer-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'window-selection-change-functions)
+    (add-hook 'window-selection-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'tab-bar-selection-change-functions)
+    (add-hook 'tab-bar-selection-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'tab-bar-switch-hook)
+    (add-hook 'tab-bar-switch-hook #'gptel-navigator--window-buffer-change-hook))
   ;; Initial load for current buffer
   (gptel-navigator--maybe-load-project-context))
 
@@ -1420,7 +1446,13 @@ Reentrancy-guarded to avoid triggering itself via window/config changes."
   (remove-hook 'buffer-list-update-hook #'gptel-navigator--maybe-load-project-context)
   (remove-hook 'window-configuration-change-hook #'gptel-navigator--maybe-load-project-context)
   (when (boundp 'window-buffer-change-functions)
-    (remove-hook 'window-buffer-change-functions #'gptel-navigator--window-buffer-change-hook)))
+    (remove-hook 'window-buffer-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'window-selection-change-functions)
+    (remove-hook 'window-selection-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'tab-bar-selection-change-functions)
+    (remove-hook 'tab-bar-selection-change-functions #'gptel-navigator--window-buffer-change-hook))
+  (when (boundp 'tab-bar-switch-hook)
+    (remove-hook 'tab-bar-switch-hook #'gptel-navigator--window-buffer-change-hook)))
 
 ;; Initialize autoload hooks if the option is enabled at load time.
 (when (bound-and-true-p gptel-navigator-autoload)
