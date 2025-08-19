@@ -713,6 +713,7 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
     (define-key map (kbd "RET") #'gptel-navigator-goto-item)
     (define-key map (kbd "SPC") #'gptel-navigator-preview-item)
     (define-key map (kbd "d")   #'gptel-navigator-remove-item-at-point)
+    (define-key map (kbd "C-d") #'gptel-navigator-remove-item-at-point)
     (define-key map (kbd "r")   #'gptel-navigator-refresh)
     (define-key map (kbd "q")   #'gptel-navigator-quit)
     (define-key map (kbd "?")   #'gptel-navigator-help)
@@ -774,35 +775,79 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
     (gptel-navigator--state-put :selected-item item)
     (gptel-navigator-goto-item-internal item)))
 
+(defun gptel-navigator--widget-item-at-point ()
+  "Return the gptel-navigator-item at point, traversing widget parents if needed."
+  (let* ((w (widget-at (point))))
+    (when w
+      (or (widget-get w :button-data)
+          (let* ((cur w)
+                 (limit 10)
+                 (item nil))
+            ;; Walk up until a widget carries :button-data
+            (while (and cur (> limit 0) (not item))
+              (setq item (widget-get cur :button-data))
+              (setq cur (widget-get cur :parent))
+              (setq limit (1- limit)))
+            (or item
+                ;; If we're on a tree-widget or its child, get node's button data
+                (let* ((tw (or (and (eq (widget-type w) 'tree-widget) w)
+                               (let ((p (widget-get w :parent)))
+                                 (and p (eq (widget-type p) 'tree-widget) p)))))
+                  (when (and tw (fboundp 'tree-widget-node))
+                    (let ((node (tree-widget-node tw)))
+                      (and node (widget-get node :button-data)))))))))))
+
+(defun gptel-navigator--find-gptel-buffer ()
+  "Try to find the active GPTel chat buffer."
+  (or (gptel-navigator--state-get :gptel-buffer)
+      ;; Prefer a visible window with a GPTel buffer
+      (catch 'buf
+        (dolist (w (window-list nil 'no-mini))
+          (with-current-buffer (window-buffer w)
+            (when (derived-mode-p 'gptel-mode)
+              (throw 'buf (current-buffer)))))
+        nil)
+      ;; Fallback: any GPTel buffer
+      (catch 'buf
+        (dolist (b (buffer-list))
+          (when (buffer-live-p b)
+            (with-current-buffer b
+              (when (derived-mode-p 'gptel-mode)
+                (throw 'buf b)))))
+        nil)))
+
 ;;;###autoload
 (defun gptel-navigator-remove-item-at-point ()
   "Remove the context item at point from GPTel context, then refresh sidebar."
   (interactive)
-  (let ((w (widget-at)))
-    (unless w (user-error "No item at point"))
-    (let ((item (widget-get w :button-data)))
-      (unless item (user-error "No context item at point"))
-      (pcase (gptel-navigator-item-type item)
-        ('file
-         (let ((path (gptel-navigator-item-path item)))
-           (when (and path (fboundp 'gptel-context-remove))
-             (gptel-context-remove path))))
-        ('buffer
-         (let ((buf (gptel-navigator-item-buffer item)))
-           (when (and buf (fboundp 'gptel-context-remove))
-             (gptel-context-remove buf))))
-        ('selection
-         (let ((buf (gptel-navigator-item-buffer item))
-               (start (gptel-navigator-item-start item))
-               (end (gptel-navigator-item-end item)))
-           ;; Try to remove the region overlay if supported, else entire buffer
-           (if (and buf start end (fboundp 'gptel-context-remove))
-               (gptel-context-remove buf start end)
-             (when (and buf (fboundp 'gptel-context-remove))
-               (gptel-context-remove buf)))))
-        (_ (user-error "Unknown item type")))
-      (gptel-navigator-refresh)
-      (message "Removed item from GPTel context."))))
+  (let ((item (gptel-navigator--widget-item-at-point)))
+    (unless item (user-error "No context item at point"))
+    (unless (fboundp 'gptel-context-remove)
+      (user-error "gptel-context-remove is not available"))
+    (let ((runner
+           (lambda ()
+             (pcase (gptel-navigator-item-type item)
+               ('file
+                (let ((path (gptel-navigator-item-path item)))
+                  (when path (gptel-context-remove path))))
+               ('buffer
+                (let ((buf (gptel-navigator-item-buffer item)))
+                  (when buf (gptel-context-remove buf))))
+               ('selection
+                (let ((buf (gptel-navigator-item-buffer item))
+                      (start (gptel-navigator-item-start item))
+                      (end (gptel-navigator-item-end item)))
+                  (if (and buf start end)
+                      (gptel-context-remove buf start end)
+                    (when buf (gptel-context-remove buf)))))
+               (_ (user-error "Unknown item type"))))))
+      ;; Если есть GPTel-буфер, выполним внутри него; иначе — глобально.
+      (if-let ((gtbuf (gptel-navigator--find-gptel-buffer)))
+          (with-current-buffer gtbuf
+            (funcall runner))
+        (funcall runner)))
+    (gptel-navigator-refresh)
+    (message "Removed item from GPTel context.")))
 
 (defun gptel-navigator--item-children (tree)
   "Return children for TREE (file details)."
