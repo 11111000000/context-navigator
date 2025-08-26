@@ -1422,20 +1422,25 @@ Non-file buffers are ignored in v1."
 
 (defun gptel-navigator--maybe-load-project-context ()
   "Auto-load context when the active buffer's project root changes (throttled).
+
+The context switch only occurs if the active buffer is a file-visiting buffer
+(i.e., has `buffer-file-name' non-nil).
+
 If there is no project for the active buffer, load the global context from
 `gptel-navigator-global-dir'; if it doesn't exist, clear the context."
   (unless gptel-navigator--in-context-load
     (when-let ((buf (gptel-navigator--pc-pick-active-buffer)))
       (with-current-buffer buf
-        (let* ((now (float-time))
-               (last gptel-navigator--last-context-switch-time)
-               (throttle-ok (>= (- now last) gptel-navigator-context-switch-interval))
-               (root (gptel-navigator--detect-root)))
-          (when (and throttle-ok
-                     (not (equal root gptel-navigator--last-project-root)))
-            (setq gptel-navigator--last-context-switch-time now)
-            (gptel-navigator--state-put :current-project-root root)
-            (gptel-navigator-context-load root)))))))
+        (when buffer-file-name ;; <--- Only act for file-visiting buffers now!
+          (let* ((now (float-time))
+                 (last gptel-navigator--last-context-switch-time)
+                 (throttle-ok (>= (- now last) gptel-navigator-context-switch-interval))
+                 (root (gptel-navigator--detect-root)))
+            (when (and throttle-ok
+                       (not (equal root gptel-navigator--last-project-root)))
+              (setq gptel-navigator--last-context-switch-time now)
+              (gptel-navigator--state-put :current-project-root root)
+              (gptel-navigator-context-load root))))))))
 
 (defun gptel-navigator--window-buffer-change-hook (&rest _)
   "Hook wrapper to maybe load project context and refresh sidebar highlight.
