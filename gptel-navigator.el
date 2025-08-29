@@ -275,6 +275,11 @@ Restores only file entries into the gptel context."
   :type 'number
   :group 'gptel-navigator)
 
+(defcustom gptel-navigator-context-load-batch-size 8
+  "How many context entries to load per timer tick during async loading."
+  :type 'integer
+  :group 'gptel-navigator)
+
 ;; ----------------------------------------------------------------------------
 ;; Data model and state
 ;; ----------------------------------------------------------------------------
@@ -298,7 +303,10 @@ Restores only file entries into the gptel context."
         :refresh-timer nil
         :advices-installed nil
         :current-project-root nil
-        :last-refresh-echo 0.0)
+        :last-refresh-echo 0.0
+        :context-loading-p nil
+        :context-load-timer nil
+        :context-load-queue nil)
   "Global state (plist) for gptel-navigator.")
 
 (defvar gptel-navigator--inhibit-refresh nil
@@ -332,6 +340,83 @@ Restores only file entries into the gptel context."
 (defun gptel-navigator--state-put (key value)
   "Set KEY in the global state to VALUE."
   (setq gptel-navigator--state (plist-put gptel-navigator--state key value)))
+
+(defun gptel-navigator--cancel-context-load ()
+  "Cancel any ongoing async context load timer and clear flags."
+  (when-let ((tm (gptel-navigator--state-get :context-load-timer)))
+    (when (timerp tm)
+      (cancel-timer tm)))
+  (gptel-navigator--state-put :context-load-timer nil)
+  (gptel-navigator--state-put :context-load-queue nil)
+  (gptel-navigator--state-put :context-loading-p nil))
+
+(defun gptel-navigator--process-context-load-queue ()
+  "Process a batch from the async context load queue."
+  (let* ((batch (max 1 gptel-navigator-context-load-batch-size))
+         (q (gptel-navigator--state-get :context-load-queue)))
+    (if (null q)
+        (progn
+          ;; Finish: clear flags, record root, refresh UI.
+          (gptel-navigator--cancel-context-load)
+          (setq gptel-navigator--last-project-root
+                (gptel-navigator--state-get :current-project-root))
+          (setq gptel-navigator--inhibit-refresh nil)
+          (gptel-navigator-refresh))
+      (let ((gptel-navigator--in-context-load t)
+            (gptel-navigator--inhibit-refresh t))
+        (dotimes (_ batch)
+          (when q
+            (let ((fn (car q)))
+              (setq q (cdr q))
+              (ignore-errors (funcall fn)))))
+        (gptel-navigator--state-put :context-load-queue q)
+        ;; If finished in this tick, finalize immediately.
+        (when (null q)
+          (gptel-navigator--cancel-context-load)
+          (setq gptel-navigator--last-project-root
+                (gptel-navigator--state-get :current-project-root))
+          (setq gptel-navigator--inhibit-refresh nil)
+          (gptel-navigator-refresh))))))
+
+(defun gptel-navigator--load-context-async (root)
+  "Start non-blocking load of context for ROOT, rendering \"Loading…\"."
+  (gptel-navigator--cancel-context-load)
+  (gptel-navigator--state-put :current-project-root root)
+  (gptel-navigator--state-put :context-loading-p t)
+  ;; Show loading immediately
+  (when-let ((buf (gptel-navigator--state-get :sidebar-buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (gptel-navigator--render-sidebar))))
+  ;; Build queue
+  (let* ((file (gptel-navigator--context-file root))
+         (spec (gptel-navigator--read-file-sexp file))
+         (queue nil))
+    ;; First step: clear current context
+    (push (lambda () (ignore-errors (gptel-context-remove-all))) queue)
+    (when spec
+      (dolist (it spec)
+        (pcase it
+          (`(:file ,rel . ,_rest)
+           (let ((abs (gptel-navigator--project-abspath rel root)))
+             (push (lambda () (ignore-errors (gptel-context-add-file abs))) queue)))
+          (`(:buffer ,rel :regions ,regions . ,_rest)
+           (let* ((abs (gptel-navigator--project-abspath rel root)))
+             (push
+              (lambda ()
+                (let ((buf (ignore-errors (find-file-noselect abs))))
+                  (when (buffer-live-p buf)
+                    (dolist (pair regions)
+                      (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
+                        (ignore-errors
+                          (gptel-context--add-region buf (car pair) (cdr pair) t)))))))
+              queue))))))
+    (setq queue (nreverse queue))
+    (gptel-navigator--state-put :context-load-queue queue)
+    ;; Schedule repeating timer to process queue
+    (gptel-navigator--state-put
+     :context-load-timer
+     (run-at-time 0.05 0.03 #'gptel-navigator--process-context-load-queue))))
 
 ;; ----------------------------------------------------------------------------
 ;; Utilities
@@ -908,13 +993,18 @@ list of `gptel-navigator-item' objects. Results are deduplicated.")
                     "~")))
       (gptel-navigator--insert-with-face (format "🚀 %s\n\n" title) 'header-line))
     ;; Body
-    (if (null items)
+    (let ((loading (gptel-navigator--state-get :context-loading-p)))
+      (cond
+       (loading
+        (gptel-navigator--insert-with-face "⏳ Loading context…\n\n" 'shadow))
+       ((null items)
         (gptel-navigator--insert-with-face
          "No context available\nOpen files or select text to add context.\n\n"
-         'italic)
-      (dolist (it items)
-        (widget-create (gptel-navigator--create-item-widget it)))
-      (widget-insert "\n"))
+         'italic))
+       (t
+        (dolist (it items)
+          (widget-create (gptel-navigator--create-item-widget it)))
+        (widget-insert "\n"))))
     (widget-setup)
     (gptel-navigator--scrub-help-echo)
     ;; Restore scroll/point if possible; otherwise, default to first item only once.
@@ -1499,8 +1589,7 @@ If there is no project for the active buffer, load the global context from
             (when (and throttle-ok
                        (not (equal root gptel-navigator--last-project-root)))
               (setq gptel-navigator--last-context-switch-time now)
-              (gptel-navigator--state-put :current-project-root root)
-              (gptel-navigator-context-load root))))))))
+              (gptel-navigator--load-context-async root))))))))
 
 (defun gptel-navigator--window-buffer-change-hook (&rest _)
   "Hook wrapper to maybe load project context and refresh sidebar highlight.
