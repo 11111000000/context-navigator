@@ -10,7 +10,7 @@
 #+end_quote
 
 #+ATTR_ORG: :width 80%
-[[file:screenshot-gptel-navigator.png]]
+[[file:screenshot-context-navigator.png]]
 
 GPTel Navigator is a modern, Tree-widget-based context manager for GPTel interactions in Emacs 30+.
 It provides an elegant sidebar showing your current GPTel context with intuitive navigation and real-time updates.
@@ -41,14 +41,14 @@ Built with modern Emacs patterns: pure functional core, effect isolation, and Tr
 ** Manual Installation
 #+begin_src bash
 cd ~/.emacs.d/
-git clone https://github.com/gptel-extensions/gptel-navigator
+git clone https://github.com/gptel-extensions/context-navigator
 #+end_src
 
 ** Configuration
 #+begin_src emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/gptel-navigator")
-(require 'gptel-navigator)
-(gptel-navigator-mode 1)
+(add-to-list 'load-path "~/.emacs.d/context-navigator")
+(require 'context-navigator)
+(context-navigator-mode 1)
 #+end_src
 
 * Usage
@@ -56,19 +56,19 @@ git clone https://github.com/gptel-extensions/gptel-navigator
 ** Basic Operations
 | Key       | Action                    | Description                      |
 |-----------+---------------------------+----------------------------------|
-| C-c g s   | gptel-navigator-toggle        | Toggle sidebar visibility        |
-| C-c g p   | gptel-navigator-menu          | Open main Transient menu        |
-| C-c g r   | gptel-navigator-refresh       | Refresh context manually         |
+| C-c g s   | context-navigator-toggle        | Toggle sidebar visibility        |
+| C-c g p   | context-navigator-menu          | Open main Transient menu        |
+| C-c g r   | context-navigator-refresh       | Refresh context manually         |
 
 ** Sidebar Navigation  
 | Key       | Action                        | Description                      |
 |-----------+-------------------------------+----------------------------------|
-| RET       | gptel-navigator-goto-item     | Navigate to selected item        |
-| SPC       | gptel-navigator-preview-item  | Preview item without leaving     |
-| d         | gptel-navigator-remove-item-at-point | Remove item from context        |
-| r         | gptel-navigator-refresh       | Refresh context                  |
-| q         | gptel-navigator-quit          | Hide sidebar                     |
-| ?         | gptel-navigator-help          | Show help                        |
+| RET       | context-navigator-goto-item     | Navigate to selected item        |
+| SPC       | context-navigator-preview-item  | Preview item without leaving     |
+| d         | context-navigator-remove-item-at-point | Remove item from context        |
+| r         | context-navigator-refresh       | Refresh context                  |
+| q         | context-navigator-quit          | Hide sidebar                     |
+| ?         | context-navigator-help          | Show help                        |
 | TAB       | widget-forward                | Navigate to next item            |
 | S-TAB     | widget-backward               | Navigate to previous item        |
 
@@ -79,20 +79,20 @@ git clone https://github.com/gptel-extensions/gptel-navigator
 
 * Configuration
 
-All customization through the `gptel-navigator` group:
+All customization through the `context-navigator` group:
 
 #+begin_src emacs-lisp
-(setq gptel-navigator-sidebar-width 40)          ; Sidebar width
-(setq gptel-navigator-auto-refresh t)            ; Auto-refresh on changes
-(setq gptel-navigator-show-line-numbers t)       ; Line numbers for selections
-(setq gptel-navigator-max-filename-length 30)    ; Filename truncation
-(setq gptel-navigator-autosave t)                ; Auto-save project context
-(setq gptel-navigator-autoload t)                ; Auto-load project context
+(setq context-navigator-sidebar-width 40)          ; Sidebar width
+(setq context-navigator-auto-refresh t)            ; Auto-refresh on changes
+(setq context-navigator-show-line-numbers t)       ; Line numbers for selections
+(setq context-navigator-max-filename-length 30)    ; Filename truncation
+(setq context-navigator-autosave t)                ; Auto-save project context
+(setq context-navigator-autoload t)                ; Auto-load project context
 #+end_src
 
 Interactive customization:
 #+begin_src emacs-lisp
-M-x customize-group RET gptel-navigator RET
+M-x customize-group RET context-navigator RET
 #+end_src
 
 * Architecture — Modern Emacs Design
@@ -124,7 +124,7 @@ GPTel Navigator follows modern Emacs development patterns:
 Each context item contains:
 
 #+begin_src emacs-lisp
-(make-gptel-navigator-item
+(make-context-navigator-item
  :type 'file                    ; 'file, 'buffer, or 'selection
  :name "example.el"             ; Display name
  :path "/full/path/to/file"     ; Full path (files only)
@@ -146,7 +146,7 @@ Add your own context analysis:
   "Analyze BUFFER for custom context."
   (with-current-buffer buffer
     ;; Your analysis logic here
-    (list (make-gptel-navigator-item 
+    (list (make-context-navigator-item 
            :type 'custom
            :name "My Context"
            :buffer buffer
@@ -154,7 +154,7 @@ Add your own context analysis:
            :description "Custom context type"))))
 
 ;; Hook into collection
-(add-hook 'gptel-navigator-context-collectors 
+(add-hook 'context-navigator-context-collectors 
           #'my-custom-context-analyzer)
 #+end_src
 
@@ -166,9 +166,9 @@ Override icon mapping:
   "Custom icon provider for TYPE and MODE."
   (pcase type
     ('my-type "🎯")
-    (_ (gptel-navigator--get-icon-for-type type mode))))
+    (_ (context-navigator--get-icon-for-type type mode))))
 
-(setq gptel-navigator-icon-function #'my-icon-provider)
+(setq context-navigator-icon-function #'my-icon-provider)
 #+end_src
 
 * Troubleshooting
@@ -178,9 +178,9 @@ Override icon mapping:
 | Sidebar won't open     | Check gptel is loaded: (featurep 'gptel)                      |
 | No context shown       | Ensure files are open or text is selected                     |
 | Icons not showing      | Emacs may not support emoji display                           |
-| Performance issues     | Disable auto-refresh: (setq gptel-navigator-auto-refresh nil) |
-| Context not persisting | Enable autosave: (setq gptel-navigator-autosave t)            |
-| Project context issues | Check .gptel-navigator/context.el permissions                 |
+| Performance issues     | Disable auto-refresh: (setq context-navigator-auto-refresh nil) |
+| Context not persisting | Enable autosave: (setq context-navigator-autosave t)            |
+| Project context issues | Check .context-navigator/context.el permissions                 |
 
 * Development — Contributing
 
@@ -201,7 +201,7 @@ GPTel Navigator welcomes contributions! The codebase follows these principles:
    
 ** Testing
 #+begin_src bash
-cd gptel-navigator/
+cd context-navigator/
 emacs -batch -f package-initialize -l test/run-tests.el
 #+end_src
 
@@ -209,20 +209,20 @@ emacs -batch -f package-initialize -l test/run-tests.el
 
 GPTel Navigator automatically manages context through:
  Walk-through of features:
- - **Per-project configurations** - Creates =(project-root)/.gptel-navigator/context.el=
- - **Global context** - Stores in =~/.gptel-navigator/context.el=
+ - **Per-project configurations** - Creates =(project-root)/.context-navigator/context.el=
+ - **Global context** - Stores in =~/.context-navigator/context.el=
  - **Auto-save/load** - Preserves context between sessions via 
-  =gptel-navigator-autosave= and =gptel-navigator-autoload=
+  =context-navigator-autosave= and =context-navigator-autoload=
 
 Manual control:
 #+begin_src emacs-lisp
-M-x gptel-navigator-context-save
-M-x gptel-navigator-context-load
+M-x context-navigator-context-save
+M-x context-navigator-context-load
 
 * Links
 
-- 📦 Source: https://github.com/gptel-extensions/gptel-navigator
-- 🐛 Issues: https://github.com/gptel-extensions/gptel-navigator/issues  
+- 📦 Source: https://github.com/gptel-extensions/context-navigator
+- 🐛 Issues: https://github.com/gptel-extensions/context-navigator/issues  
 - 📖 GPTel: https://github.com/karthink/gptel
 - 🔧 Transient: https://github.com/magit/transient
 
