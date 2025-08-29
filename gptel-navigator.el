@@ -1249,7 +1249,8 @@ When FRAME is nil, sync the selected frame."
   ["GPTel Navigator"
    ["View"
     ("n" "Toggle sidebar" gptel-navigator-toggle)
-    ("r" "Refresh context" gptel-navigator-refresh)]
+    ("r" "Refresh context" gptel-navigator-refresh)
+    ("u" "Unload project (global context)" gptel-navigator-unload)]
    ["Navigate"
     ("g" "Goto item" gptel-navigator-goto-item
      :if (lambda () (gptel-navigator--state-get :sidebar-window)))
@@ -1413,6 +1414,65 @@ Non-file buffers are ignored in v1."
       (message (if result
                    "Loaded gptel context from %s"
                  "No saved gptel context at %s — cleared current context")
+               file))
+    result))
+
+;;;###autoload
+(defun gptel-navigator-unload ()
+  "Close the current project: switch to the global GPTel context (or clear),
+and set GPTel chat buffer's directory to filesystem root (/).
+
+Forces GPTel Navigator to behave as if we're outside any project:
+- Sets internal state to a global sentinel
+- Loads the global context from `gptel-navigator-global-dir' if present
+- Otherwise clears the current GPTel context
+- Changes `default-directory' of the active GPTel buffer to \"/\"
+
+Autoload throttling is set so we don't immediately jump back to the project's
+context while staying in the same project buffer."
+  (interactive)
+  (let ((cur-root (gptel-navigator--detect-root)))
+    ;; Prevent immediate autoload switch back to CUR-ROOT
+    (setq gptel-navigator--last-project-root cur-root)
+    ;; Mark UI/state as global (non-string to avoid being treated as a dir)
+    (gptel-navigator--state-put :current-project-root :global))
+  (let* ((file (gptel-navigator--context-file nil))
+         (result nil))
+    (let ((gptel-navigator--in-context-load t)
+          (gptel-navigator--inhibit-refresh t))
+      (if-let ((spec (gptel-navigator--read-file-sexp file)))
+          (progn
+            ;; Replace current context with global spec
+            (gptel-context-remove-all)
+            (dolist (it spec)
+              (pcase it
+                (`(:file ,rel . ,_rest)
+                 (let ((abs (gptel-navigator--project-abspath rel nil)))
+                   (ignore-errors (gptel-context-add-file abs))))
+                (`(:buffer ,rel :regions ,regions . ,_rest)
+                 (let* ((abs (gptel-navigator--project-abspath rel nil))
+                        (buf (ignore-errors (find-file-noselect abs))))
+                   (when (buffer-live-p buf)
+                     (dolist (pair regions)
+                       (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
+                         (ignore-errors
+                           (gptel-context--add-region buf (car pair) (cdr pair) t)))))))))
+            (setq result t))
+        ;; No global spec available: clear context
+        (gptel-context-remove-all)
+        (setq result nil)))
+    ;; Also switch GPTel chat buffer `default-directory' to filesystem root
+    (when-let ((gtbuf (gptel-navigator--find-gptel-buffer)))
+      (with-current-buffer gtbuf
+        ;; Keep previous dir in state in case we want to restore later
+        (gptel-navigator--state-put :prev-gptel-default-directory default-directory)
+        (setq default-directory (expand-file-name "/"))))
+    (when (buffer-live-p (gptel-navigator--state-get :sidebar-buffer))
+      (gptel-navigator-refresh))
+    (when (called-interactively-p 'interactive)
+      (message (if result
+                   "Loaded global gptel context from %s"
+                 "No global gptel context at %s — cleared current context")
                file))
     result))
 
