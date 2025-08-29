@@ -986,11 +986,16 @@ list of `context-navigator-item' objects. Results are deduplicated.")
         (widgets-created nil))
     (erase-buffer)
     ;; Header
-    ;; Show project name instantly on buffer switch:
-    ;; prefer the active buffer's project root for the title unless
-    ;; a global sentinel is set.
+    ;; Show project name instantly on buffer switch, but ignore Dired buffers.
+    ;; Only react to file-visiting buffers and GPTel chat buffers.
     (let* ((state-root (context-navigator--state-get :current-project-root))
-           (buf-root (when-let ((b (context-navigator--pc-pick-active-buffer)))
+           (b (context-navigator--pc-pick-active-buffer))
+           (use-buf-root (and b
+                              (with-current-buffer b
+                                (and (not (derived-mode-p 'dired-mode))
+                                     (or buffer-file-name
+                                         (derived-mode-p 'gptel-mode))))))
+           (buf-root (when use-buf-root
                        (context-navigator--project-root-of-buffer b)))
            (root (cond
                   ((eq state-root :global) nil) ; stay global
@@ -1584,15 +1589,16 @@ context while staying in the same project buffer."
 (defun context-navigator--maybe-load-project-context ()
   "Auto-load context when the active buffer's project root changes (throttled).
 
-The context switch only occurs if the active buffer is a file-visiting buffer
-(i.e., has `buffer-file-name' non-nil).
+The context switch only occurs for file-visiting buffers and GPTel chat buffers,
+and is ignored for Dired buffers.
 
 If there is no project for the active buffer, load the global context from
 `context-navigator-global-dir'; if it doesn't exist, clear the context."
   (unless context-navigator--in-context-load
     (when-let ((buf (context-navigator--pc-pick-active-buffer)))
       (with-current-buffer buf
-        (when buffer-file-name ;; <--- Only act for file-visiting buffers now!
+        (when (and (not (derived-mode-p 'dired-mode))
+                   (or buffer-file-name (derived-mode-p 'gptel-mode)))
           (let* ((now (float-time))
                  (last context-navigator--last-context-switch-time)
                  (throttle-ok (>= (- now last) context-navigator-context-switch-interval))
