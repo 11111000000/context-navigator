@@ -839,13 +839,15 @@ list of `context-navigator-item' objects. Results are deduplicated.")
                                  (expand-file-name buffer-file-name)
                                  (and p (expand-file-name p))))))))
                  (t nil)))
-         ;; Сделать текущий буфер зелёным (success), без светлого фона
-         (button-face (if sel-p 'context-navigator-active-buffer 'default)))
+         ;; Build tag such that the icon keeps its own text-properties/faces,
+         ;; while the name can be given the active face only when selected.
+         (tag-str (if sel-p
+                      (concat icon " " (propertize name 'face 'context-navigator-active-buffer))
+                    (concat icon " " name))))
     `(tree-widget
       :node (push-button
-             :tag ,(format "%s %s" icon name)
+             :tag ,tag-str
              :format "%[%t%]\n"
-             :button-face ,button-face
              :help-echo nil
              :notify context-navigator--item-action
              :button-data ,item)
