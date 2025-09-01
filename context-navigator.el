@@ -68,6 +68,11 @@
   :type 'boolean
   :group 'context-navigator)
 
+(defcustom context-navigator-debug nil
+  "When non-nil, emit debug messages (timings, queue sizes) to *Messages*."
+  :type 'boolean
+  :group 'context-navigator)
+
 (defcustom context-navigator-show-line-numbers nil
   "Show line numbers for buffer selections in context."
   :type 'boolean
@@ -111,139 +116,7 @@ Enabling this also ensures autosave advice is active regardless of
                (context-navigator--teardown-project-context-save-advice))))))
 
 
-;; ----------------------------------------------------------------------------
-;; Autosave advice and basic context persistence (safe placeholders)
-;; ----------------------------------------------------------------------------
 
-(defvar context-navigator--advices-installed nil
-  "Internal flag: whether autosave advices for gptel-context have been installed early.
-This exists to avoid calling context-navigator--state-get before it is defined
-during load/eval order. The full state plist is synchronized when available.")
-
-(defun context-navigator--maybe-autosave-context (&rest _)
-  "Autosave project/global context when appropriate."
-  (when (and context-navigator-autosave
-             (not context-navigator--in-context-load))
-    (ignore-errors
-      (context-navigator-context-save))))
-
-(defun context-navigator--setup-project-context-save-advice ()
-  "Install advice on gptel-context mutators to autosave context."
-  (unless context-navigator--advices-installed
-    (dolist (fn '(gptel-context-add
-                  gptel-context-remove
-                  gptel-context-clear
-                  gptel-context--set
-                  gptel-context-set
-                  gptel-context-add-file
-                  gptel-context-remove))
-      (when (fboundp fn)
-        (advice-add fn :after #'context-navigator--maybe-autosave-context)))
-    (setq context-navigator--advices-installed t)
-    (when (fboundp 'context-navigator--state-put)
-      (context-navigator--state-put :advices-installed t))))
-
-(defun context-navigator--teardown-project-context-save-advice ()
-  "Remove autosave advice previously installed."
-  (when context-navigator--advices-installed
-    (dolist (fn '(gptel-context-add
-                  gptel-context-remove
-                  gptel-context-clear
-                  gptel-context--set
-                  gptel-context-set
-                  gptel-context-add-file
-                  gptel-context-remove))
-      (when (fboundp fn)
-        (advice-remove fn #'context-navigator--maybe-autosave-context)))
-    (setq context-navigator--advices-installed nil)
-    (when (fboundp 'context-navigator--state-put)
-      (context-navigator--state-put :advices-installed nil))))
-
-(defun context-navigator--context-file ()
-  "Return the default file path for saving the context."
-  (let* ((proj (when (fboundp 'project-current)
-                 (ignore-errors (project-current))))
-         (root (when (and proj (fboundp 'project-root))
-                 (ignore-errors (file-name-as-directory (project-root proj)))))
-         (dir (if root
-                  (expand-file-name context-navigator-dir-name root)
-                context-navigator-global-dir)))
-    (expand-file-name context-navigator-context-file-name dir)))
-
-(defun context-navigator--context-snapshot ()
-  "Return a serializable snapshot of the current gptel context.
-Only includes file-backed entries to keep it robust and readable."
-  (let ((alist (context-navigator--context-alist))
-        out)
-    (dolist (entry alist)
-      (pcase entry
-        ;; Buffer + overlays: reduce to file or file-backed selections (as files)
-        (`(,(and buf (pred bufferp)) . ,ovs)
-         (when (buffer-live-p buf)
-           (let ((path (buffer-local-value 'buffer-file-name buf)))
-             (dolist (ov ovs)
-               (when (and (overlayp ov) (overlay-start ov) (overlay-end ov))
-                 (let ((start (overlay-start ov))
-                       (end (overlay-end ov)))
-                   (when (and path
-                              (= start (with-current-buffer buf (point-min)))
-                              (= end (with-current-buffer buf (point-max))))
-                     (push `(:type file :path ,path) out))))))))
-        ;; (path . props) or bare path
-        (`(,(and path (pred stringp)) . ,_props)
-         (push `(:type file :path ,path) out))
-        ((and (pred stringp) path)
-         (push `(:type file :path ,path) out))))
-    (nreverse out)))
-
-(defun context-navigator-context-save (&optional file)
-  "Persist a lightweight gptel context snapshot to FILE.
-Returns the file path on success."
-  (interactive)
-  (let* ((file (or file (context-navigator--context-file)))
-         (dir (and file (file-name-directory file)))
-         (items (context-navigator--context-snapshot)))
-    (when (and file dir)
-      (ignore-errors (make-directory dir t))
-      (with-temp-file file
-        (let ((print-length nil)
-              (print-level nil))
-          (prin1
-           `(:saved-at ,(current-time-string)
-                       :emacs ,emacs-version
-                       :items ,items)
-           (current-buffer)))))
-    file))
-
-(defun context-navigator-context-load (&optional file)
-  "Load a lightweight gptel context snapshot from FILE.
-Restores only file entries into the gptel context."
-  (interactive)
-  (let ((file (or file (context-navigator--context-file))))
-    (when (and file (file-readable-p file))
-      (let* ((data (with-temp-buffer
-                     (insert-file-contents file)
-                     (goto-char (point-min))
-                     (read (current-buffer))))
-             (items (plist-get data :items))
-             (files (delq nil
-                          (mapcar (lambda (it)
-                                    (let ((type (plist-get it :type))
-                                          (path (plist-get it :path)))
-                                      (when (and (eq type 'file)
-                                                 (stringp path)
-                                                 (file-readable-p path))
-                                        path)))
-                                  items))))
-        (when files
-          (condition-case _err
-              (cond
-               ((fboundp 'gptel-context--set) (gptel-context--set files))
-               ((fboundp 'gptel-context-set) (gptel-context-set files))
-               ((boundp 'gptel-context--alist)
-                (setq gptel-context--alist files)))
-            (error nil))))
-      t)))
 
 (defcustom context-navigator-max-filename-length 25
   "Maximum length for displayed item names in sidebar."
@@ -252,6 +125,11 @@ Restores only file entries into the gptel context."
 
 (defcustom context-navigator-enable-icons t
   "When non-nil, show icons in the sidebar (pro-tabs / all-the-icons if available)."
+  :type 'boolean
+  :group 'context-navigator)
+
+(defcustom context-navigator-icons-disable-on-remote t
+  "When non-nil, do not use all-the-icons for remote (TRAMP) files/buffers."
   :type 'boolean
   :group 'context-navigator)
 
@@ -270,7 +148,7 @@ Restores only file entries into the gptel context."
   :type 'directory
   :group 'context-navigator)
 
-(defcustom context-navigator-context-switch-interval 1.5
+(defcustom context-navigator-context-switch-interval 0.7
   "Minimum interval (seconds) between automatic project context switches."
   :type 'number
   :group 'context-navigator)
@@ -308,6 +186,21 @@ Restores only file entries into the gptel context."
         :context-load-timer nil
         :context-load-queue nil)
   "Global state (plist) for context-navigator.")
+
+;; Simple icon caches to avoid heavy computation on every refresh
+(defvar context-navigator--mode-icon-cache (make-hash-table :test 'eq)
+  "Cache of all-the-icons icons keyed by major mode symbol.")
+(defvar context-navigator--ext-icon-cache (make-hash-table :test 'equal)
+  "Cache of all-the-icons file icons keyed by file extension (lowercased) or basename.")
+
+;;;###autoload
+(defun context-navigator-clear-icon-cache ()
+  "Clear cached icons. Useful after theme/icon pack changes."
+  (interactive)
+  (clrhash context-navigator--mode-icon-cache)
+  (clrhash context-navigator--ext-icon-cache)
+  (when (called-interactively-p 'interactive)
+    (message "context-navigator: icon caches cleared")))
 
 (defvar context-navigator--inhibit-refresh nil
   "Non-nil to temporarily inhibit auto refresh.")
@@ -361,6 +254,8 @@ Restores only file entries into the gptel context."
           (setq context-navigator--last-project-root
                 (context-navigator--state-get :current-project-root))
           (setq context-navigator--inhibit-refresh nil)
+          (when context-navigator-debug
+            (message "context-navigator: load complete"))
           (context-navigator-refresh))
       (let ((context-navigator--in-context-load t)
             (context-navigator--inhibit-refresh t))
@@ -370,12 +265,16 @@ Restores only file entries into the gptel context."
               (setq q (cdr q))
               (ignore-errors (funcall fn)))))
         (context-navigator--state-put :context-load-queue q)
+        (when context-navigator-debug
+          (message "context-navigator: load-queue left %d" (length q)))
         ;; If finished in this tick, finalize immediately.
         (when (null q)
           (context-navigator--cancel-context-load)
           (setq context-navigator--last-project-root
                 (context-navigator--state-get :current-project-root))
           (setq context-navigator--inhibit-refresh nil)
+          (when context-navigator-debug
+            (message "context-navigator: load complete"))
           (context-navigator-refresh))))))
 
 (defun context-navigator--load-context-async (root)
@@ -422,6 +321,24 @@ Restores only file entries into the gptel context."
 ;; Utilities
 ;; ----------------------------------------------------------------------------
 
+(defcustom context-navigator-file-stat-ttl 0.3
+  "TTL in seconds for cached file attributes to reduce I/O during collection."
+  :type 'number
+  :group 'context-navigator)
+
+(defvar context-navigator--stat-cache (make-hash-table :test 'equal)
+  "Cache mapping PATH -> (TIMESTAMP . ATTRS) for short-lived file stats.")
+
+(defun context-navigator--file-attrs (path)
+  "Return (possibly cached) file attributes for PATH honoring `context-navigator-file-stat-ttl'."
+  (let* ((now (float-time))
+         (cell (and path (gethash path context-navigator--stat-cache))))
+    (if (and cell (< (- now (car cell)) context-navigator-file-stat-ttl))
+        (cdr cell)
+      (let ((attrs (file-attributes path)))
+        (puthash path (cons now attrs) context-navigator--stat-cache)
+        attrs))))
+
 (defun context-navigator--truncate (s n)
   "Truncate string S to N chars with ellipsis."
   (if (and (stringp s) (> (length s) n))
@@ -444,37 +361,64 @@ Restores only file entries into the gptel context."
 
 Preference:
 1) pro-tabs icon for buffer (if available)
-2) all-the-icons by major mode
-3) all-the-icons by filename
+2) all-the-icons by major mode (cached)
+3) all-the-icons by filename/extension (cached)
 4) fallback emoji/symbol"
   (when context-navigator-enable-icons
     (let* ((backend (or backend 'tab-line))
-           (use-pro-tabs (fboundp 'pro-tabs--icon)))
-      (unless (featurep 'all-the-icons)
-        (ignore-errors (require 'all-the-icons nil t)))
+           (use-pro-tabs (fboundp 'pro-tabs--icon))
+           (remote-p (or (and (stringp path) (file-remote-p path))
+                         (and (buffer-live-p buffer)
+                              (with-current-buffer buffer
+                                (and (stringp default-directory)
+                                     (file-remote-p default-directory))))))
+           (allow-icons (and (not (and context-navigator-icons-disable-on-remote remote-p))
+                             (progn
+                               (unless (featurep 'all-the-icons)
+                                 (ignore-errors (require 'all-the-icons nil t)))
+                               (featurep 'all-the-icons)))))
       (pcase type
         ('file
          (or
+          ;; pro-tabs for buffers
           (when (and use-pro-tabs (buffer-live-p buffer))
             (ignore-errors (pro-tabs--icon buffer backend)))
-          (when (featurep 'all-the-icons)
+          ;; all-the-icons (if allowed)
+          (when allow-icons
             (let* ((mm (or mode
                            (and (buffer-live-p buffer) (buffer-local-value 'major-mode buffer))
-                           (context-navigator--guess-mode-for-file path))))
-              (or (ignore-errors (all-the-icons-icon-for-mode mm))
-                  (when (and path (stringp path))
-                    (ignore-errors
-                      (all-the-icons-icon-for-file (file-name-nondirectory path)))))))
+                           ;; Predict mode via auto-mode-alist (no visiting)
+                           (assoc-default (or path "") auto-mode-alist 'string-match)
+                           ;; Fallback: last resort heavy guess
+                           (and path (context-navigator--guess-mode-for-file path))))
+                   (ext (and (stringp path) (downcase (or (file-name-extension path) "")))))
+              (or
+               ;; Cached icon by major-mode
+               (when mm
+                 (or (gethash mm context-navigator--mode-icon-cache)
+                     (let ((ic (ignore-errors (all-the-icons-icon-for-mode mm))))
+                       (when ic (puthash mm ic context-navigator--mode-icon-cache))
+                       ic)))
+               ;; Cached icon by extension or basename
+               (when (stringp path)
+                 (let* ((key (or ext (file-name-nondirectory path))))
+                   (or (gethash key context-navigator--ext-icon-cache)
+                       (let ((ic (ignore-errors
+                                   (all-the-icons-icon-for-file (file-name-nondirectory path)))))
+                         (when ic (puthash key ic context-navigator--ext-icon-cache))
+                         ic)))))))
           "•"))
         ((or 'buffer 'selection)
          (or
           (when (and use-pro-tabs (buffer-live-p buffer))
             (ignore-errors (pro-tabs--icon buffer backend)))
-          (when (and (featurep 'all-the-icons)
-                     (or buffer mode))
+          (when (and allow-icons (or buffer mode))
             (let ((mm (or mode (and (buffer-live-p buffer)
                                     (buffer-local-value 'major-mode buffer)))))
-              (ignore-errors (all-the-icons-icon-for-mode mm))))
+              (or (and mm (gethash mm context-navigator--mode-icon-cache))
+                  (let ((ic (and mm (ignore-errors (all-the-icons-icon-for-mode mm)))))
+                    (when ic (puthash mm ic context-navigator--mode-icon-cache))
+                    ic))))
           (if (eq type 'selection) "✂" "•")))
         (_ "•")))))
 
@@ -659,7 +603,7 @@ Uses gptel-context--alist if bound, else gptel-context--collect."
                      items)))))
         (`(,(and path (pred stringp)) . ,props)
          (when (file-exists-p path)
-           (let* ((attrs (file-attributes path))
+           (let* ((attrs (context-navigator--file-attrs path))
                   (size (file-attribute-size attrs))
                   (name (file-name-nondirectory path))
                   (icon (context-navigator--icon-for 'file nil path))
@@ -678,7 +622,7 @@ Uses gptel-context--alist if bound, else gptel-context--collect."
                    items))))
         (`(,path)
          (when (file-exists-p path)
-           (let* ((attrs (file-attributes path))
+           (let* ((attrs (context-navigator--file-attrs path))
                   (size (file-attribute-size attrs))
                   (name (file-name-nondirectory path))
                   (icon (context-navigator--icon-for 'file nil path))
@@ -736,46 +680,52 @@ Uses gptel-context--alist if bound, else gptel-context--collect."
        nil))))
 
 (defun context-navigator--collector-project-file (_buffer)
-  "Collector that reads ROOT/.context-navigator/context.el and returns file items."
+  "Collector that reads per-project context file .context/context.el (project-local).
+This returns file items for the current project context file when present.
+
+Note: This collector is intentionally NOT part of `context-navigator-context-collectors`
+to keep the sidebar a pure projection of the runtime gptel-context (single source of truth)."
   (let* ((root (or (context-navigator--state-get :current-project-root)
                    (when-let ((b (context-navigator--pc-pick-active-buffer)))
                      (context-navigator--project-root-of-buffer b)))))
-    (when (and root (file-directory-p root))
-      (let* ((file (expand-file-name context-navigator-context-file-name
-                                     (expand-file-name context-navigator-dir-name root))))
-        (when (file-readable-p file)
+    (when root
+      (let* ((ctx-file (context-navigator--context-file root)))
+        (when (file-readable-p ctx-file)
           (condition-case _err
-              (let* ((sexp (with-temp-buffer
-                             (insert-file-contents file)
+              (let* ((data (with-temp-buffer
+                             (insert-file-contents ctx-file)
                              (goto-char (point-min))
                              (read (current-buffer))))
-                     items)
-                (dolist (it sexp)
-                  (pcase it
-                    (`(:file ,rel . ,_rest)
-                     (let* ((abs (if (file-name-absolute-p rel)
-                                     rel
-                                   (expand-file-name rel root))))
-                       (when (file-exists-p abs)
-                         (let* ((attrs (file-attributes abs))
-                                (size (file-attribute-size attrs))
-                                (name (file-name-nondirectory abs)))
-                           (push (make-context-navigator-item
-                                  :type 'file
-                                  :name name
-                                  :path abs
-                                  :size size
-                                  :icon (context-navigator--icon-for 'file nil abs)
-                                  :description (format "%s (%d bytes)"
-                                                       (or (file-name-directory abs) "")
-                                                       size))
-                                 items)))))))
+                     (items nil))
+                (dolist (entry data)
+                  (let ((path (plist-get entry :file)))
+                    (when (and path (stringp path))
+                      (let* ((abs (if (file-name-absolute-p path)
+                                      path
+                                    (expand-file-name path root))))
+                        (when (file-exists-p abs)
+                          (let* ((attrs (file-attributes abs))
+                                 (size (file-attribute-size attrs))
+                                 (name (file-name-nondirectory abs))
+                                 (desc (format "%s (%d bytes)"
+                                               (or (file-name-directory abs) "") size)))
+                            (push (make-context-navigator-item
+                                   :type 'file
+                                   :name name
+                                   :path abs
+                                   :size size
+                                   :icon (context-navigator--icon-for 'file nil abs)
+                                   :description desc)
+                                  items)))))))
                 (nreverse items))
             (error nil)))))))
 
+(make-obsolete 'context-navigator--collector-project-file
+               "Not used by the sidebar; sidebar shows only runtime gptel-context."
+               "1.0.0")
+
 (defvar context-navigator-context-collectors
-  '(context-navigator--collector-project-file
-    context-navigator--collector-gptel)
+  '(context-navigator--collector-gptel)
   "List of collector functions to aggregate context items.
 
 Each function is called with current buffer and should return a
@@ -818,7 +768,11 @@ list of `context-navigator-item' objects. Results are deduplicated.")
   (hl-line-mode 1))
 
 (defun context-navigator--create-item-widget (item)
-  "Create a tree-widget for ITEM."
+  "Create a tree-widget for ITEM.
+
+Preserve per-file expanded/collapsed state across refreshes by honoring
+the :expanded-file-paths entry in the internal state. That list is
+populated before re-rendering the sidebar so user-opened nodes remain open."
   (let* ((name (context-navigator--truncate
                 (context-navigator-item-name item)
                 context-navigator-max-filename-length))
@@ -843,7 +797,10 @@ list of `context-navigator-item' objects. Results are deduplicated.")
          ;; while the name can be given the active face only when selected.
          (tag-str (if sel-p
                       (concat icon " " (propertize name 'face 'context-navigator-active-buffer))
-                    (concat icon " " name))))
+                    (concat icon " " name)))
+         (expanded-list (context-navigator--state-get :expanded-file-paths))
+         (path (context-navigator-item-path item))
+         (open-p (and path expanded-list (member path expanded-list))))
     `(tree-widget
       :node (push-button
              :tag ,tag-str
@@ -854,7 +811,7 @@ list of `context-navigator-item' objects. Results are deduplicated.")
       :help-echo nil
       :dynargs context-navigator--item-children
       :has-children ,(eq type 'file)
-      )))
+      :open ,open-p)))
 
 (defun context-navigator--item-action (widget &optional _event)
   "Handle activation on WIDGET."
@@ -946,6 +903,47 @@ list of `context-navigator-item' objects. Results are deduplicated.")
        `(item :tag ,(format "📁 Path: %s" (or (context-navigator-item-path item) ""))
               :help-echo nil)))))
 
+(defun context-navigator--gather-open-file-paths ()
+  "Return list of file paths for tree nodes currently open in the sidebar buffer.
+
+This inspects the existing widget tree in the sidebar and records file
+paths whose tree nodes are currently expanded. The result is used to
+restore the open/closed state across re-renders."
+  (let ((res nil))
+    (when-let ((buf (context-navigator--state-get :sidebar-buffer)))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (save-excursion
+            (goto-char (point-min))
+            (condition-case nil
+                (let ((done nil)
+                      (cycle-limit 10000))
+                  (while (and (not done) (< (point) (point-max)) (> cycle-limit 0))
+                    (let ((w (widget-at)))
+                      (when (and w (eq (widget-type w) 'tree-widget))
+                        (let ((node (tree-widget-node w)))
+                          (when (and node (widget-get node :open))
+                            (let ((item (widget-get node :button-data)))
+                              (when (and item (eq (context-navigator-item-type item) 'file))
+                                (push (context-navigator-item-path item) res)))))))
+                    (let ((pos-before (point)))
+                      (condition-case nil
+                          (widget-forward 1)
+                        (error (setq done t)))
+                      (let ((pos-after (point)))
+                        (cond
+                         ((> pos-after pos-before) nil) ; ok, moved
+                         (t
+                          ;; No movement, try forward-char
+                          (condition-case nil
+                              (progn (forward-char 1)
+                                     (if (= (point) pos-before)
+                                         (setq done t)))
+                            (error (setq done t)))))))
+                    (setq cycle-limit (1- cycle-limit)))
+                  (error nil))))))
+      (nreverse res))))
+
 (defface context-navigator-active-buffer
   '((t :foreground "green3" :weight bold))
   "Face for highlighting the current buffer in context-navigator sidebar.")
@@ -986,6 +984,12 @@ list of `context-navigator-item' objects. Results are deduplicated.")
                         (ws (and w (window-start w))))
                    (and ws (line-number-at-pos ws))))
         (widgets-created nil))
+    ;; Preserve expanded file nodes so expanding a file is not lost after a refresh.
+    (condition-case nil
+        (let ((expanded (context-navigator--gather-open-file-paths)))
+          (when expanded
+            (context-navigator--state-put :expanded-file-paths expanded)))
+      (error nil))
     (erase-buffer)
     ;; Header
     ;; Show project name instantly on buffer switch, but ignore Dired buffers.
@@ -1056,11 +1060,8 @@ list of `context-navigator-item' objects. Results are deduplicated.")
     (when (and context-navigator-autosave
                (fboundp 'context-navigator--setup-project-context-save-advice))
       (context-navigator--setup-project-context-save-advice))
-    ;; Install lightweight hooks to keep highlight up-to-date on buffer switch.
-    (unless context-navigator--hooks-installed
-      (add-hook 'window-selection-change-functions #'context-navigator--window-buffer-change-hook)
-      (add-hook 'buffer-list-update-hook #'context-navigator--window-buffer-change-hook)
-      (setq context-navigator--hooks-installed t))
+    ;; Hooks for highlight/auto-load are installed globally via
+    ;; `context-navigator--setup-autoload-hooks'. Nothing extra here.
     buffer))
 
 (defun context-navigator--ensure-sidebar ()
@@ -1221,28 +1222,34 @@ When FRAME is nil, sync the selected frame."
 (defun context-navigator-refresh ()
   "Collect context and render the sidebar."
   (interactive)
-  (let* ((items (context-navigator--collect-context))
+  (let* ((t0 (float-time))
+         (items (context-navigator--collect-context))
          (buf (context-navigator--state-get :sidebar-buffer))
-         (now (float-time))
-         (last (or (context-navigator--state-get :last-refresh-echo) 0)))
+         (t1 (float-time)))
     (context-navigator--state-put :context-items items)
     (when (and buf (buffer-live-p buf))
       (when-let ((win (car (get-buffer-window-list buf nil t))))
         (context-navigator--state-put :sidebar-window win))
       (with-current-buffer buf
         (context-navigator--render-sidebar)))
-    ;; Никогда не показываем message о количестве элементов (вообще)
-    ;; (when (called-interactively-p 'interactive)
-    ;;   (context-navigator--state-put :last-refresh-echo now)
-    ;;   (message "🔄 GPTel context refreshed (%d items)" (length items)))
-    ))
+    (when context-navigator-debug
+      (message "context-navigator: refresh %d items in %.1f ms"
+               (length items) (* 1000.0 (- t1 t0))))))
+
+(defun context-navigator--debounced-refresh ()
+  "Internal: perform a single refresh and clear debounce timer."
+  (context-navigator--state-put :refresh-timer nil)
+  (context-navigator-refresh))
 
 (defun context-navigator--auto-refresh ()
-  "Auto-refresh sidebar if enabled."
+  "Auto-refresh sidebar if enabled (debounced)."
   (when (and context-navigator-auto-refresh
              (not context-navigator--inhibit-refresh)
              (context-navigator--state-get :sidebar-buffer))
-    (context-navigator-refresh)))
+    (unless (context-navigator--state-get :refresh-timer)
+      (context-navigator--state-put
+       :refresh-timer
+       (run-at-time 0.05 nil #'context-navigator--debounced-refresh)))))
 
 (defvar context-navigator--context-advised-fns
   '(gptel-context-add
@@ -1257,42 +1264,38 @@ When FRAME is nil, sync the selected frame."
   "Advice target: refresh sidebar after context changes."
   (context-navigator--auto-refresh))
 
+(defun context-navigator--around-remove-all (orig &rest args)
+  "Around advice for `gptel-context-remove-all' to suppress per-item effects.
+Runs the original with suppression flags, then performs a single save/refresh
+only if not already inside a higher-level bulk operation."
+  (let ((outer-load context-navigator--in-context-load)
+        (outer-inhibit context-navigator--inhibit-refresh))
+    (let ((context-navigator--in-context-load t)
+          (context-navigator--inhibit-refresh t))
+      (apply orig args))
+    ;; If this wasn't part of an outer bulk op, do one save+refresh.
+    (unless (or outer-load outer-inhibit)
+      (context-navigator--advice-save-context)
+      (context-navigator--auto-refresh))))
+
 (defun context-navigator--setup-context-advice ()
-  "Install :after advices on context-mutating functions."
+  "Install advices on context-mutating functions (refresh debounced, bulk-safe)."
   (when (and (featurep 'gptel-context)
              context-navigator-auto-refresh
              (not (context-navigator--state-get :advices-installed)))
+    ;; After-advices: refresh (debounced)
     (dolist (fn context-navigator--context-advised-fns)
       (when (fboundp fn)
         (advice-add fn :after #'context-navigator--advice-refresh)))
+    ;; Around-advise: suppress per-item storm during remove-all, do single finalize
+    (when (fboundp 'gptel-context-remove-all)
+      (unless (advice-member-p #'context-navigator--around-remove-all 'gptel-context-remove-all)
+        (advice-add 'gptel-context-remove-all :around #'context-navigator--around-remove-all)))
     (context-navigator--state-put :advices-installed t)))
 
 ;; ----------------------------------------------------------------------------
-;; Autosave advice (safe stubs)
+;; Refresh advice teardown
 ;; ----------------------------------------------------------------------------
-
-(defun context-navigator--maybe-autosave-context (&rest _)
-  "Autosave project/global context when appropriate."
-  (when (and (bound-and-true-p context-navigator-autosave)
-             (fboundp 'context-navigator-context-save))
-    (ignore-errors
-      (context-navigator-context-save))))
-
-(defun context-navigator--setup-project-context-save-advice ()
-  "Install autosave advice on gptel-context mutators."
-  (unless (context-navigator--state-get :save-advices-installed)
-    (dolist (fn context-navigator--context-advised-fns)
-      (when (fboundp fn)
-        (advice-add fn :after #'context-navigator--maybe-autosave-context)))
-    (context-navigator--state-put :save-advices-installed t)))
-
-(defun context-navigator--teardown-project-context-save-advice ()
-  "Remove autosave advice previously installed."
-  (when (context-navigator--state-get :save-advices-installed)
-    (dolist (fn context-navigator--context-advised-fns)
-      (when (advice-member-p #'context-navigator--maybe-autosave-context fn)
-        (advice-remove fn #'context-navigator--maybe-autosave-context)))
-    (context-navigator--state-put :save-advices-installed nil)))
 
 (defun context-navigator--teardown-context-advice ()
   "Remove context advices."
@@ -1300,6 +1303,13 @@ When FRAME is nil, sync the selected frame."
     (dolist (fn context-navigator--context-advised-fns)
       (when (advice-member-p #'context-navigator--advice-refresh fn)
         (advice-remove fn #'context-navigator--advice-refresh)))
+    ;; Remove the around advice from remove-all if present
+    (when (advice-member-p #'context-navigator--around-remove-all 'gptel-context-remove-all)
+      (advice-remove 'gptel-context-remove-all #'context-navigator--around-remove-all))
+    ;; Cancel pending refresh timer if any
+    (when-let ((tm (context-navigator--state-get :refresh-timer)))
+      (when (timerp tm) (cancel-timer tm)))
+    (context-navigator--state-put :refresh-timer nil)
     (context-navigator--state-put :advices-installed nil)))
 
 ;; ----------------------------------------------------------------------------
@@ -1318,9 +1328,9 @@ When FRAME is nil, sync the selected frame."
           (setq context-navigator--sidebar-open-global nil))
       (setq context-navigator--sidebar-open-global t)
       (context-navigator--state-put :current-project-root root)
-      (ignore-errors (context-navigator-context-load root))
       (context-navigator--ensure-sidebar)
-      (context-navigator-refresh))))
+      ;; Async load to avoid blocking UI; shows “Loading…” immediately.
+      (context-navigator--load-context-async root))))
 
 ;;;###autoload
 (defun context-navigator-show ()
@@ -1329,9 +1339,9 @@ When FRAME is nil, sync the selected frame."
   (let ((root (context-navigator--detect-root)))
     (setq context-navigator--sidebar-open-global t)
     (context-navigator--state-put :current-project-root root)
-    (ignore-errors (context-navigator-context-load root))
     (context-navigator--ensure-sidebar)
-    (context-navigator-refresh)))
+    ;; Async load with loading indicator
+    (context-navigator--load-context-async root)))
 
 ;;;###autoload
 (defun context-navigator-quit ()
@@ -1339,6 +1349,11 @@ When FRAME is nil, sync the selected frame."
   (interactive)
   (setq context-navigator--sidebar-open-global nil)
   (context-navigator--hide-in-frame (selected-frame))
+  ;; Cancel timers to avoid late refreshes after quitting.
+  (when-let ((tm (context-navigator--state-get :refresh-timer)))
+    (when (timerp tm) (cancel-timer tm)))
+  (context-navigator--state-put :refresh-timer nil)
+  (context-navigator--cancel-context-load)
   (context-navigator--state-put :sidebar-window nil))
 
 ;;;###autoload
@@ -1492,6 +1507,7 @@ Non-file buffers are ignored in v1."
   (let* ((root (or root (context-navigator--detect-root)))
          (file (context-navigator--context-file root))
          (result nil))
+    ;; Оптимизированная bulk-операция удаления/добавления
     (let ((context-navigator--in-context-load t)
           (context-navigator--inhibit-refresh t))
       (if-let ((spec (context-navigator--read-file-sexp file)))
@@ -1515,7 +1531,8 @@ Non-file buffers are ignored in v1."
         ;; No spec available: clear context
         (gptel-context-remove-all)
         (setq result nil)))
-    (setq context-navigator--last-project-root root)
+    ;; Вызвать autosave и refresh один раз после bulk-операции
+    (context-navigator-context-save root)
     (when (buffer-live-p (context-navigator--state-get :sidebar-buffer))
       (context-navigator-refresh))
     (when (called-interactively-p 'interactive)
@@ -1588,7 +1605,7 @@ context while staying in the same project buffer."
 ;; Project auto-load/save global mode
 ;; ----------------------------------------------------------------------------
 
-(defun context-navigator--maybe-load-project-context ()
+(defun context-navigator--maybe-load-project-context (&rest _)
   "Auto-load context when the active buffer's project root changes (throttled).
 
 The context switch only occurs for file-visiting buffers and GPTel chat buffers,
@@ -1596,7 +1613,8 @@ and is ignored for Dired buffers.
 
 If there is no project for the active buffer, load the global context from
 `context-navigator-global-dir'; if it doesn't exist, clear the context."
-  (unless context-navigator--in-context-load
+  (unless (or context-navigator--in-context-load
+              (context-navigator--state-get :context-loading-p))
     (when-let ((buf (context-navigator--pc-pick-active-buffer)))
       (with-current-buffer buf
         (when (and (not (derived-mode-p 'dired-mode))
@@ -1616,9 +1634,11 @@ Reentrancy-guarded to avoid triggering itself via window/config changes."
   (unless context-navigator--in-window-change-hook
     (let ((context-navigator--in-window-change-hook t))
       (context-navigator--maybe-load-project-context)
-      ;; Re-render sidebar to update highlight for the active buffer/file.
+      ;; Re-render sidebar to update highlight for the active buffer/file,
+      ;; but skip while bulk operations suppress refreshes.
       (let ((buf (context-navigator--state-get :sidebar-buffer)))
-        (when (buffer-live-p buf)
+        (when (and (buffer-live-p buf)
+                   (not context-navigator--inhibit-refresh))
           (with-current-buffer buf
             (context-navigator--render-sidebar)))))))
 
@@ -1646,31 +1666,18 @@ Reentrancy-guarded to avoid triggering itself via window/config changes."
 (defun context-navigator--setup-autoload-hooks ()
   "Enable automatic context loading for the current buffer/project."
   (context-navigator--setup-project-context-save-advice)
-  (add-hook 'buffer-list-update-hook #'context-navigator--maybe-load-project-context)
-  (add-hook 'window-configuration-change-hook #'context-navigator--maybe-load-project-context)
-  (when (boundp 'window-buffer-change-functions)
-    (add-hook 'window-buffer-change-functions #'context-navigator--window-buffer-change-hook))
+  ;; Single unified hook that both maybe-loads and updates sidebar highlight.
+  (add-hook 'buffer-list-update-hook #'context-navigator--window-buffer-change-hook)
   (when (boundp 'window-selection-change-functions)
     (add-hook 'window-selection-change-functions #'context-navigator--window-buffer-change-hook))
-  (when (boundp 'tab-bar-selection-change-functions)
-    (add-hook 'tab-bar-selection-change-functions #'context-navigator--window-buffer-change-hook))
-  (when (boundp 'tab-bar-switch-hook)
-    (add-hook 'tab-bar-switch-hook #'context-navigator--window-buffer-change-hook))
-  ;; Initial load for current buffer
-  (context-navigator--maybe-load-project-context))
+  ;; Initial run for current buffer
+  (context-navigator--window-buffer-change-hook))
 
 (defun context-navigator--teardown-autoload-hooks ()
   "Disable automatic context loading hooks."
-  (remove-hook 'buffer-list-update-hook #'context-navigator--maybe-load-project-context)
-  (remove-hook 'window-configuration-change-hook #'context-navigator--maybe-load-project-context)
-  (when (boundp 'window-buffer-change-functions)
-    (remove-hook 'window-buffer-change-functions #'context-navigator--window-buffer-change-hook))
+  (remove-hook 'buffer-list-update-hook #'context-navigator--window-buffer-change-hook)
   (when (boundp 'window-selection-change-functions)
-    (remove-hook 'window-selection-change-functions #'context-navigator--window-buffer-change-hook))
-  (when (boundp 'tab-bar-selection-change-functions)
-    (remove-hook 'tab-bar-selection-change-functions #'context-navigator--window-buffer-change-hook))
-  (when (boundp 'tab-bar-switch-hook)
-    (remove-hook 'tab-bar-switch-hook #'context-navigator--window-buffer-change-hook)))
+    (remove-hook 'window-selection-change-functions #'context-navigator--window-buffer-change-hook)))
 
 ;; Initialize autoload hooks if the option is enabled at load time.
 (when (bound-and-true-p context-navigator-autoload)
