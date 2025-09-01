@@ -171,12 +171,15 @@ Enabling this also ensures autosave advice is active regardless of
   end           ; selection end (selection only)
   size          ; size in chars/bytes
   icon          ; icon string
+  enabled       ; boolean: non-nil means included in GPTel context
   description)  ; additional info
 
 (defvar context-navigator--state
   (list :sidebar-buffer nil
         :sidebar-window nil
         :context-items '()
+        :model-items '()
+        :model-index (make-hash-table :test 'equal)
         :selected-item nil
         :refresh-timer nil
         :advices-installed nil
@@ -184,7 +187,8 @@ Enabling this also ensures autosave advice is active regardless of
         :last-refresh-echo 0.0
         :context-loading-p nil
         :context-load-timer nil
-        :context-load-queue nil)
+        :context-load-queue nil
+        :context-load-acc nil)
   "Global state (plist) for context-navigator.")
 
 ;; Simple icon caches to avoid heavy computation on every refresh
@@ -234,6 +238,254 @@ Enabling this also ensures autosave advice is active regardless of
   "Set KEY in the global state to VALUE."
   (setq context-navigator--state (plist-put context-navigator--state key value)))
 
+;; ----------------------------------------------------------------------------
+;; Model (source of truth): items with enabled/disabled status
+;; ----------------------------------------------------------------------------
+
+(defun context-navigator--item-key (item)
+  "Return a stable key for ITEM used in the model/index."
+  (pcase (context-navigator-item-type item)
+    ('file
+     (format "file:%s"
+             (expand-file-name (or (context-navigator-item-path item)
+                                   (context-navigator-item-name item)
+                                   ""))))
+    ('buffer
+     (let* ((buf (context-navigator-item-buffer item))
+            (bname (and (buffer-live-p buf) (buffer-name buf)))
+            (bpath (and (buffer-live-p buf)
+                        (with-current-buffer buf
+                          (and buffer-file-name (expand-file-name buffer-file-name))))))
+       (format "buf:%s:%s" (or bname "") (or bpath ""))))
+    ('selection
+     (let* ((buf (context-navigator-item-buffer item))
+            (bname (and (buffer-live-p buf) (buffer-name buf)))
+            (s (or (context-navigator-item-start item) 0))
+            (e (or (context-navigator-item-end item) 0)))
+       (format "sel:%s:%s-%s" (or bname "") s e)))
+    (_ (format "unknown:%s" (context-navigator-item-name item)))))
+
+(defun context-navigator--model-index-get ()
+  "Return the model index hash-table, creating it if missing."
+  (or (context-navigator--state-get :model-index)
+      (let ((ht (make-hash-table :test 'equal)))
+        (context-navigator--state-put :model-index ht)
+        ht)))
+
+(defun context-navigator--model-items ()
+  "Return the current list of model items."
+  (context-navigator--state-get :model-items))
+
+(defun context-navigator--model-set-items (items)
+  "Replace model items with ITEMS and rebuild index without coercing :enabled."
+  (let ((ht (make-hash-table :test 'equal)))
+    (dolist (it items)
+      (puthash (context-navigator--item-key it) it ht))
+    (context-navigator--state-put :model-items items)
+    (context-navigator--state-put :model-index ht)
+    items))
+
+(defun context-navigator--model-put (item &optional enabled)
+  "Insert or update ITEM in the model.
+ENABLED can be:
+- :enabled   (force t)
+- :disabled  (force nil)
+- t          (force t)
+- nil        (keep current value)
+Returns the stored item object."
+  (let* ((current (context-navigator-item-enabled item))
+         (en (cond
+              ((eq enabled :enabled) t)
+              ((eq enabled :disabled) nil)
+              ((eq enabled t) t)
+              ((eq enabled nil) current)
+              (t enabled)))
+         (it (if (eq en current)
+                 item
+               (let ((copy (copy-context-navigator-item item)))
+                 (setf (context-navigator-item-enabled copy) en)
+                 copy)))
+         (key (context-navigator--item-key it))
+         (ht (context-navigator--model-index-get))
+         (cur (gethash key ht)))
+    (if cur
+        ;; Replace in-place in list
+        (let* ((lst (context-navigator--model-items))
+               (new (mapcar (lambda (x)
+                              (if (string= (context-navigator--item-key x) key) it x))
+                            lst)))
+          (context-navigator--state-put :model-items new)
+          (puthash key it ht)
+          it)
+      ;; Append to the end to preserve perceived order
+      (let* ((lst (context-navigator--model-items))
+             (new (nconc (copy-sequence lst) (list it))))
+        (context-navigator--state-put :model-items new)
+        (puthash key it ht)
+        it))))
+
+(defun context-navigator--model-get (key)
+  "Get model item by KEY."
+  (gethash key (context-navigator--model-index-get)))
+
+(defun context-navigator--model-del (key)
+  "Delete model item by KEY."
+  (let* ((ht (context-navigator--model-index-get))
+         (lst (context-navigator--model-items)))
+    (remhash key ht)
+    (context-navigator--state-put
+     :model-items
+     (cl-remove-if (lambda (x) (string= (context-navigator--item-key x) key)) lst))))
+
+(defun context-navigator--ensure-model-seeded ()
+  "Seed the model from current gptel context if the model is empty."
+  (when (null (context-navigator--model-items))
+    (let* ((items (ignore-errors (context-navigator--collector-gptel (current-buffer)))))
+      (when items
+        (let ((with-en
+               (mapcar (lambda (it)
+                         (let ((copy (copy-context-navigator-item it)))
+                           (setf (context-navigator-item-enabled copy) t)
+                           copy))
+                       items)))
+          (context-navigator--model-set-items with-en))))))
+
+(defun context-navigator--alist-entry->pairs (entry)
+  "Expand a gptel CONTEXT entry to a list of (KEY . PARAMS) pairs.
+PARAMS is a plist describing how to remove/add the entry."
+  (pcase entry
+    (`(,(and buf (pred bufferp)) . ,ovs)
+     (let (pairs)
+       (dolist (ov ovs)
+         (when (and (overlayp ov) (overlay-start ov) (overlay-end ov))
+           (let* ((s (overlay-start ov))
+                  (e (overlay-end ov))
+                  (whole-buf (with-current-buffer buf
+                               (and (= s (point-min)) (= e (point-max))))))
+             (if whole-buf
+                 (push (cons (format "buf:%s:%s"
+                                     (buffer-name buf)
+                                     (or (with-current-buffer buf
+                                           (and buffer-file-name (expand-file-name buffer-file-name)))
+                                         ""))
+                             (list :type 'buffer :buffer buf))
+                       pairs)
+               (push (cons (format "sel:%s:%s-%s" (buffer-name buf) s e)
+                           (list :type 'selection :buffer buf :start s :end e))
+                     pairs)))))
+       (nreverse pairs)))
+    (`(,(and path (pred stringp)) . ,_props)
+     (list (cons (format "file:%s" (expand-file-name path))
+                 (list :type 'file :path path))))
+    (`(,path)
+     (list (cons (format "file:%s" (expand-file-name path))
+                 (list :type 'file :path path))))
+    (_ nil)))
+
+(defun context-navigator--apply-model-to-gptel ()
+  "Ensure gptel context matches enabled items in the model."
+  (let ((gtbuf (context-navigator--find-gptel-buffer)))
+    (if (not (and gtbuf (buffer-live-p gtbuf)))
+        ;; Нет активного GPTel-буфера — обновим только UI; GPTel синхронизируется позже.
+        (context-navigator--auto-refresh)
+      (with-current-buffer gtbuf
+        (let* ((alist (context-navigator--context-alist))
+               (gptel-map (make-hash-table :test 'equal))
+               (desired (cl-remove-if-not
+                         (lambda (it) (context-navigator-item-enabled it))
+                         (context-navigator--model-items)))
+               (desired-map (make-hash-table :test 'equal)))
+          ;; Build current map from gptel alist
+          (dolist (entry alist)
+            (dolist (pair (context-navigator--alist-entry->pairs entry))
+              (puthash (car pair) (cdr pair) gptel-map)))
+          ;; Build desired map from model
+          (dolist (it desired)
+            (puthash (context-navigator--item-key it) it desired-map))
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            ;; Remove extras
+            (maphash
+             (lambda (_k v)
+               (unless (gethash (pcase (plist-get v :type)
+                                  ('file (format "file:%s" (expand-file-name (plist-get v :path))))
+                                  ('buffer (format "buf:%s:%s"
+                                                   (and (buffer-live-p (plist-get v :buffer))
+                                                        (buffer-name (plist-get v :buffer)))
+                                                   (with-current-buffer (plist-get v :buffer)
+                                                     (or (and buffer-file-name (expand-file-name buffer-file-name)) ""))))
+                                  ('selection (format "sel:%s:%s-%s"
+                                                      (and (buffer-live-p (plist-get v :buffer))
+                                                           (buffer-name (plist-get v :buffer)))
+                                                      (plist-get v :start)
+                                                      (plist-get v :end))))
+                                desired-map)
+                 (pcase (plist-get v :type)
+                   ('file
+                    (when (fboundp 'gptel-context-remove)
+                      (ignore-errors (gptel-context-remove (plist-get v :path)))))
+                   ('buffer
+                    (when (fboundp 'gptel-context-remove)
+                      (ignore-errors (gptel-context-remove (plist-get v :buffer)))))
+                   ('selection
+                    (when (fboundp 'gptel-context-remove)
+                      (ignore-errors
+                        (gptel-context-remove (plist-get v :buffer)
+                                              (plist-get v :start)
+                                              (plist-get v :end))))))))
+             gptel-map)
+            ;; Add missing
+            (maphash
+             (lambda (_k it)
+               (unless (gethash (context-navigator--item-key it) gptel-map)
+                 (pcase (context-navigator-item-type it)
+                   ('file
+                    (let ((path (context-navigator-item-path it)))
+                      (when (and path (fboundp 'gptel-context-add-file))
+                        (ignore-errors (gptel-context-add-file path)))))
+                   ('buffer
+                    (let ((buf (context-navigator-item-buffer it)))
+                      (when (and (buffer-live-p buf)
+                                 (fboundp 'gptel-context--add-region))
+                        (with-current-buffer buf
+                          (ignore-errors
+                            (gptel-context--add-region buf (point-min) (point-max) t))))))
+                   ('selection
+                    (let ((buf (context-navigator-item-buffer it))
+                          (s (context-navigator-item-start it))
+                          (e (context-navigator-item-end it)))
+                      (when (and (buffer-live-p buf) s e (fboundp 'gptel-context--add-region))
+                        (ignore-errors (gptel-context--add-region buf s e t))))))))
+             desired-map)))))
+    (context-navigator--auto-refresh)))
+
+(defun context-navigator--sync-model-from-gptel ()
+  "Reflect current gptel context into the model (enabled = present in gptel)."
+  (let* ((gtbuf (context-navigator--find-gptel-buffer))
+         (items (if (and gtbuf (buffer-live-p gtbuf))
+                    (with-current-buffer gtbuf
+                      (ignore-errors (context-navigator--collector-gptel (current-buffer))))
+                  (ignore-errors (context-navigator--collector-gptel (current-buffer)))))
+         (present (make-hash-table :test 'equal)))
+    ;; Mark/add enabled
+    (dolist (it (or items '()))
+      (let ((copy (copy-context-navigator-item it)))
+        (setf (context-navigator-item-enabled copy) t)
+        (puthash (context-navigator--item-key copy) t present)
+        (context-navigator--model-put copy :enabled)))
+    ;; Mark missing ones disabled
+    (dolist (it (copy-sequence (context-navigator--model-items)))
+      (let ((k (context-navigator--item-key it)))
+        (unless (gethash k present)
+          (let ((copy (copy-context-navigator-item it)))
+            (setf (context-navigator-item-enabled copy) nil)
+            (context-navigator--model-put copy :disabled)))))))
+
+(defun context-navigator--advice-sync-model (&rest _)
+  "Advice target: sync internal model with gptel after any mutation."
+  (context-navigator--sync-model-from-gptel)
+  (context-navigator--auto-refresh))
+
 (defun context-navigator--cancel-context-load ()
   "Cancel any ongoing async context load timer and clear flags."
   (when-let ((tm (context-navigator--state-get :context-load-timer)))
@@ -249,13 +501,21 @@ Enabling this also ensures autosave advice is active regardless of
          (q (context-navigator--state-get :context-load-queue)))
     (if (null q)
         (progn
-          ;; Finish: clear flags, record root, refresh UI.
+          ;; Finish: build model from accumulated items, apply to GPTel, clear flags, refresh UI.
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            (let ((acc (nreverse (or (context-navigator--state-get :context-load-acc) '()))))
+              (context-navigator--model-set-items acc)
+              (context-navigator--apply-model-to-gptel)))
           (context-navigator--cancel-context-load)
+          (context-navigator--state-put :context-loading-p nil)
+          (context-navigator--state-put :context-load-acc nil)
           (setq context-navigator--last-project-root
                 (context-navigator--state-get :current-project-root))
           (setq context-navigator--inhibit-refresh nil)
           (when context-navigator-debug
-            (message "context-navigator: load complete"))
+            (message "context-navigator: load complete (%d items)"
+                     (length (context-navigator--model-items))))
           (context-navigator-refresh))
       (let ((context-navigator--in-context-load t)
             (context-navigator--inhibit-refresh t))
@@ -267,55 +527,105 @@ Enabling this also ensures autosave advice is active regardless of
         (context-navigator--state-put :context-load-queue q)
         (when context-navigator-debug
           (message "context-navigator: load-queue left %d" (length q)))
-        ;; If finished in this tick, finalize immediately.
         (when (null q)
+          ;; Finalize immediately on last tick.
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            (let ((acc (nreverse (or (context-navigator--state-get :context-load-acc) '()))))
+              (context-navigator--model-set-items acc)
+              (context-navigator--apply-model-to-gptel)))
           (context-navigator--cancel-context-load)
+          (context-navigator--state-put :context-loading-p nil)
+          (context-navigator--state-put :context-load-acc nil)
           (setq context-navigator--last-project-root
                 (context-navigator--state-get :current-project-root))
           (setq context-navigator--inhibit-refresh nil)
           (when context-navigator-debug
-            (message "context-navigator: load complete"))
+            (message "context-navigator: load complete (%d items)"
+                     (length (context-navigator--model-items))))
           (context-navigator-refresh))))))
 
 (defun context-navigator--load-context-async (root)
-  "Start non-blocking load of context for ROOT, rendering \"Loading…\"."
+  "Load context spec for ROOT into the internal model asynchronously.
+Shows \"Loading…\" immediately, processes entries in background batches,
+then applies the final model to GPTel once."
   (context-navigator--cancel-context-load)
   (context-navigator--state-put :current-project-root root)
   (context-navigator--state-put :context-loading-p t)
+  (context-navigator--state-put :context-load-acc nil)
   ;; Show loading immediately
   (when-let ((buf (context-navigator--state-get :sidebar-buffer)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (context-navigator--render-sidebar))))
-  ;; Build queue
+  ;; Read spec and enqueue work
   (let* ((file (context-navigator--context-file root))
-         (spec (context-navigator--read-file-sexp file))
-         (queue nil))
-    ;; First step: clear current context
-    (push (lambda () (ignore-errors (gptel-context-remove-all))) queue)
-    (when spec
-      (dolist (it spec)
-        (pcase it
-          (`(:file ,rel . ,_rest)
-           (let ((abs (context-navigator--project-abspath rel root)))
-             (push (lambda () (ignore-errors (gptel-context-add-file abs))) queue)))
-          (`(:buffer ,rel :regions ,regions . ,_rest)
-           (let* ((abs (context-navigator--project-abspath rel root)))
-             (push
-              (lambda ()
-                (let ((buf (ignore-errors (find-file-noselect abs))))
-                  (when (buffer-live-p buf)
-                    (dolist (pair regions)
-                      (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
-                        (ignore-errors
-                          (gptel-context--add-region buf (car pair) (cdr pair) t)))))))
-              queue))))))
-    (setq queue (nreverse queue))
-    (context-navigator--state-put :context-load-queue queue)
-    ;; Schedule repeating timer to process queue
-    (context-navigator--state-put
-     :context-load-timer
-     (run-at-time 0.05 0.03 #'context-navigator--process-context-load-queue))))
+         (spec (context-navigator--read-file-sexp file)))
+    (if (null spec)
+        ;; No spec: clear model and GPTel
+        (progn
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            (context-navigator--model-set-items nil)
+            (ignore-errors (gptel-context-remove-all)))
+          (context-navigator--state-put :context-loading-p nil)
+          (setq context-navigator--last-project-root (context-navigator--state-get :current-project-root))
+          (context-navigator-refresh))
+      ;; Build queue of small tasks
+      (let (queue)
+        (dolist (it spec)
+          (pcase it
+            (`(:file ,rel . ,rest)
+             (let* ((abs (context-navigator--project-abspath rel root))
+                    (enabled (plist-get rest :enabled)))
+               (when (file-exists-p abs)
+                 (push
+                  (lambda ()
+                    (let* ((attrs (context-navigator--file-attrs abs))
+                           (size (file-attribute-size attrs))
+                           (name (file-name-nondirectory abs))
+                           (icon (context-navigator--icon-for 'file nil abs))
+                           (desc (format "%s (%d bytes)"
+                                         (or (file-name-directory abs) "") size))
+                           (node (make-context-navigator-item
+                                  :type 'file :name name :path abs :size size
+                                  :icon icon :enabled (if (null enabled) t enabled)
+                                  :description desc)))
+                      (let ((acc (context-navigator--state-get :context-load-acc)))
+                        (context-navigator--state-put :context-load-acc (cons node acc)))))
+                  queue))))
+            (`(:buffer ,rel :regions ,regions . ,rest)
+             (let* ((abs (context-navigator--project-abspath rel root))
+                    (enabled (plist-get rest :enabled))
+                    ;; Открываем файл только для включённых элементов — ускоряет загрузку больших проектов.
+                    (buf (when (and (file-exists-p abs)
+                                    (or (eq enabled t) (null enabled)))
+                           (ignore-errors (find-file-noselect abs)))))
+               (dolist (pair regions)
+                 (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
+                   (let ((s (car pair)) (e (cdr pair)))
+                     (push
+                      (lambda ()
+                        (let* ((name (format "%s (selection)" (file-name-nondirectory abs)))
+                               (icon (context-navigator--icon-for 'selection buf abs))
+                               (desc (if (and context-navigator-show-line-numbers (buffer-live-p buf))
+                                         (with-current-buffer buf
+                                           (format "Lines %d-%d" (line-number-at-pos s) (line-number-at-pos e)))
+                                       (format "%d chars" (- e s))))
+                               (node (make-context-navigator-item
+                                      :type 'selection :name name :path abs :buffer buf
+                                      :start s :end e :size (- e s) :icon icon
+                                      :enabled (if (null enabled) t enabled)
+                                      :description desc)))
+                          (let ((acc (context-navigator--state-get :context-load-acc)))
+                            (context-navigator--state-put :context-load-acc (cons node acc)))))
+                      queue))))))))
+        (setq queue (nreverse queue))
+        (context-navigator--state-put :context-load-queue queue)
+        ;; Start repeating timer to process batches
+        (context-navigator--state-put
+         :context-load-timer
+         (run-at-time 0.01 0.01 #'context-navigator--process-context-load-queue))))))
 
 ;; ----------------------------------------------------------------------------
 ;; Utilities
@@ -567,8 +877,12 @@ Uses gptel-context--alist if bound, else gptel-context--collect."
 
 (defun context-navigator--collector-gptel (_buffer)
   "Collect items from gptel-context."
-  (let ((alist (context-navigator--context-alist))
-        items)
+  (let* ((gtbuf (context-navigator--find-gptel-buffer))
+         (alist (if (and gtbuf (buffer-live-p gtbuf))
+                    (with-current-buffer gtbuf
+                      (context-navigator--context-alist))
+                  (context-navigator--context-alist)))
+         items)
     (dolist (entry alist)
       (pcase entry
         (`(,(and buf (pred bufferp)) . ,ovs)
@@ -747,7 +1061,8 @@ list of `context-navigator-item' objects. Results are deduplicated.")
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'context-navigator-goto-item)
     (define-key map (kbd "SPC") #'context-navigator-preview-item)
-    (define-key map (kbd "d")   #'context-navigator-remove-item-at-point)
+    (define-key map (kbd "t")   #'context-navigator-toggle-enabled-at-point)
+    (define-key map (kbd "d")   #'context-navigator-disable-item-at-point)
     (define-key map (kbd "C-d") #'context-navigator-remove-item-at-point)
     (define-key map (kbd "r")   #'context-navigator-refresh)
     (define-key map (kbd "q")   #'context-navigator-quit)
@@ -780,6 +1095,8 @@ populated before re-rendering the sidebar so user-opened nodes remain open."
          (icon (if (stringp raw-icon) raw-icon (format "%s" (or raw-icon ""))))
          (desc (context-navigator-item-description item))
          (type (context-navigator-item-type item))
+         (enabled (context-navigator-item-enabled item))
+         (state-icon (context-navigator--state-icon enabled))
          (sel-buf (context-navigator--pc-pick-active-buffer))
          (sel-p (cond
                  ((memq type '(buffer selection))
@@ -793,11 +1110,14 @@ populated before re-rendering the sidebar so user-opened nodes remain open."
                                  (expand-file-name buffer-file-name)
                                  (and p (expand-file-name p))))))))
                  (t nil)))
-         ;; Build tag such that the icon keeps its own text-properties/faces,
-         ;; while the name can be given the active face only when selected.
-         (tag-str (if sel-p
-                      (concat icon " " (propertize name 'face 'context-navigator-active-buffer))
-                    (concat icon " " name)))
+         ;; Build tag: state icon + file/buf icon + name with face by state
+         (tag-str (cond
+                   ((not enabled)
+                    (concat state-icon " " icon " " (propertize name 'face 'context-navigator-disabled-item)))
+                   (sel-p
+                    (concat state-icon " " icon " " (propertize name 'face 'context-navigator-active-buffer)))
+                   (t
+                    (concat state-icon " " icon " " name))))
          (expanded-list (context-navigator--state-get :expanded-file-paths))
          (path (context-navigator-item-path item))
          (open-p (and path expanded-list (member path expanded-list))))
@@ -862,36 +1182,87 @@ populated before re-rendering the sidebar so user-opened nodes remain open."
 
 ;;;###autoload
 (defun context-navigator-remove-item-at-point ()
-  "Remove the context item at point from GPTel context, then refresh sidebar."
+  "Permanently remove the context item at point from model and GPTel, then refresh."
   (interactive)
   (let ((item (context-navigator--widget-item-at-point)))
     (unless item (user-error "No context item at point"))
     (unless (fboundp 'gptel-context-remove)
       (user-error "gptel-context-remove is not available"))
-    (let ((runner
-           (lambda ()
-             (pcase (context-navigator-item-type item)
-               ('file
-                (let ((path (context-navigator-item-path item)))
-                  (when path (gptel-context-remove path))))
-               ('buffer
-                (let ((buf (context-navigator-item-buffer item)))
-                  (when buf (gptel-context-remove buf))))
-               ('selection
-                (let ((buf (context-navigator-item-buffer item))
-                      (start (context-navigator-item-start item))
-                      (end (context-navigator-item-end item)))
-                  (if (and buf start end)
-                      (gptel-context-remove buf start end)
-                    (when buf (gptel-context-remove buf)))))
-               (_ (user-error "Unknown item type"))))))
-      ;; Если есть GPTel-буфер, выполним внутри него; иначе — глобально.
-      (if-let ((gtbuf (context-navigator--find-gptel-buffer)))
-          (with-current-buffer gtbuf
-            (funcall runner))
-        (funcall runner)))
-    (context-navigator-refresh)
-    (message "Removed item from GPTel context.")))
+    (let* ((key (context-navigator--item-key item))
+           (runner
+            (lambda ()
+              (pcase (context-navigator-item-type item)
+                ('file
+                 (let ((path (context-navigator-item-path item)))
+                   (when path (gptel-context-remove path))))
+                ('buffer
+                 (let ((buf (context-navigator-item-buffer item)))
+                   (when buf (gptel-context-remove buf))))
+                ('selection
+                 (let ((buf (context-navigator-item-buffer item))
+                       (start (context-navigator-item-start item))
+                       (end (context-navigator-item-end item)))
+                   (if (and buf start end)
+                       (gptel-context-remove buf start end)
+                     (when buf (gptel-context-remove buf)))))
+                (_ (user-error "Unknown item type"))))))
+      ;; Выполним удаление в GPTel с подавлением автосейва, затем обновим модель и сохраним
+      (let ((context-navigator--in-context-load t))
+        (if-let ((gtbuf (context-navigator--find-gptel-buffer)))
+            (with-current-buffer gtbuf
+              (funcall runner))
+          (funcall runner)))
+      ;; Удалить из модели
+      (context-navigator--model-del key)
+      ;; Сохранить контекст на диск после удаления из модели и GPTel
+      (when (or context-navigator-autosave (bound-and-true-p context-navigator-autoload))
+        (ignore-errors
+          (context-navigator-context-save (context-navigator--detect-root))))
+      (context-navigator-refresh)
+      (message "Deleted item from model and GPTel."))))
+
+;;;###autoload
+(defun context-navigator-disable-item-at-point ()
+  "Disable the item at point (keep in list, exclude from GPTel)."
+  (interactive)
+  (let* ((item (context-navigator--widget-item-at-point)))
+    (unless item (user-error "No context item at point"))
+    (let* ((key (context-navigator--item-key item))
+           (model (or (context-navigator--model-get key) item))
+           (already-disabled (not (context-navigator-item-enabled model)))
+           (copy (copy-context-navigator-item model)))
+      (unless already-disabled
+        (setf (context-navigator-item-enabled copy) nil)
+        (context-navigator--model-put copy :disabled)
+        (context-navigator--apply-model-to-gptel)
+        (when (or context-navigator-autosave (bound-and-true-p context-navigator-autoload))
+          (ignore-errors
+            (context-navigator-context-save (context-navigator--detect-root)))))
+      (context-navigator-refresh)
+      (message (if already-disabled
+                   "Item already disabled."
+                 "Disabled item (kept for later).")))))
+
+;;;###autoload
+(defun context-navigator-toggle-enabled-at-point ()
+  "Toggle enabled/disabled state for the item at point and reconcile GPTel."
+  (interactive)
+  (let* ((item (context-navigator--widget-item-at-point)))
+    (unless item (user-error "No context item at point"))
+    (let* ((key (context-navigator--item-key item))
+           (model (or (context-navigator--model-get key) item))
+           (cur (and (context-navigator-item-enabled model) t))
+           (new (not cur))
+           (copy (copy-context-navigator-item model)))
+      (setf (context-navigator-item-enabled copy) new)
+      (context-navigator--model-put copy (if new :enabled :disabled))
+      (context-navigator--apply-model-to-gptel)
+      (when (or context-navigator-autosave (bound-and-true-p context-navigator-autoload))
+        (ignore-errors
+          (context-navigator-context-save (context-navigator--detect-root))))
+      (context-navigator-refresh)
+      (message (if new "Enabled item (added to GPTel)"
+                 "Disabled item (excluded from GPTel)")))))
 
 (defun context-navigator--item-children (tree)
   "Return children for TREE (file details)."
@@ -947,6 +1318,34 @@ restore the open/closed state across re-renders."
 (defface context-navigator-active-buffer
   '((t :foreground "green3" :weight bold))
   "Face for highlighting the current buffer in context-navigator sidebar.")
+
+(defface context-navigator-disabled-item
+  '((t :foreground "gray55"))
+  "Face for disabled (excluded) items in the sidebar.")
+
+(defface context-navigator-state-enabled
+  '((t :foreground "green3" :weight bold))
+  "Face for the enabled state indicator dot.")
+
+(defface context-navigator-state-disabled
+  '((t :foreground "gray60"))
+  "Face for the disabled state indicator dot.")
+
+(defun context-navigator--displayable-emoji-p (char)
+  "Return non-nil if CHAR is displayable in the current frame."
+  (and (display-graphic-p)
+       (char-displayable-p char)))
+
+(defun context-navigator--state-icon (enabled)
+  "Return a propertized state indicator string for ENABLED."
+  (let* ((have-emoji (and (context-navigator--displayable-emoji-p ?🟢)
+                          (context-navigator--displayable-emoji-p ?⚪)))
+         (str (if have-emoji
+                  (if enabled "🟢" "⚪")
+                "●"))
+         (face (if enabled 'context-navigator-state-enabled
+                 'context-navigator-state-disabled)))
+    (propertize str 'face face)))
 
 (defcustom context-navigator-squelch-tree-widget-echo t
   "When non-nil, silence tree-widget help-echo messages like “Expand node”."
@@ -1183,6 +1582,10 @@ When FRAME is nil, sync the selected frame."
       (message "📍 Opened file: %s" (or (context-navigator-item-name item) path)))
      ;; Buffers and selections
      (t
+      ;; Ленивая подгрузка буфера, если он ещё не открыт (важно для selection из сохранённого контекста)
+      (unless (buffer-live-p buf)
+        (when (and path (file-exists-p path))
+          (setq buf (find-file-noselect path))))
       (when (buffer-live-p buf)
         (if-let ((win (get-buffer-window buf)))
             (select-window win)
@@ -1220,21 +1623,22 @@ When FRAME is nil, sync the selected frame."
 ;; ----------------------------------------------------------------------------
 
 (defun context-navigator-refresh ()
-  "Collect context and render the sidebar."
+  "Render the sidebar from the internal model (seeding from GPTel if needed)."
   (interactive)
-  (let* ((t0 (float-time))
-         (items (context-navigator--collect-context))
-         (buf (context-navigator--state-get :sidebar-buffer))
-         (t1 (float-time)))
-    (context-navigator--state-put :context-items items)
-    (when (and buf (buffer-live-p buf))
-      (when-let ((win (car (get-buffer-window-list buf nil t))))
-        (context-navigator--state-put :sidebar-window win))
-      (with-current-buffer buf
-        (context-navigator--render-sidebar)))
-    (when context-navigator-debug
-      (message "context-navigator: refresh %d items in %.1f ms"
-               (length items) (* 1000.0 (- t1 t0))))))
+  (let* ((t0 (float-time)))
+    (context-navigator--ensure-model-seeded)
+    (let* ((items (context-navigator--model-items))
+           (buf (context-navigator--state-get :sidebar-buffer))
+           (t1 (float-time)))
+      (context-navigator--state-put :context-items items)
+      (when (and buf (buffer-live-p buf))
+        (when-let ((win (car (get-buffer-window-list buf nil t))))
+          (context-navigator--state-put :sidebar-window win))
+        (with-current-buffer buf
+          (context-navigator--render-sidebar)))
+      (when context-navigator-debug
+        (message "context-navigator: refresh %d items in %.1f ms"
+                 (length items) (* 1000.0 (- t1 t0)))))))
 
 (defun context-navigator--debounced-refresh ()
   "Internal: perform a single refresh and clear debounce timer."
@@ -1283,10 +1687,11 @@ only if not already inside a higher-level bulk operation."
   (when (and (featurep 'gptel-context)
              context-navigator-auto-refresh
              (not (context-navigator--state-get :advices-installed)))
-    ;; After-advices: refresh (debounced)
+    ;; After-advices: refresh (debounced) + sync model from gptel
     (dolist (fn context-navigator--context-advised-fns)
       (when (fboundp fn)
-        (advice-add fn :after #'context-navigator--advice-refresh)))
+        (advice-add fn :after #'context-navigator--advice-refresh)
+        (advice-add fn :after #'context-navigator--advice-sync-model)))
     ;; Around-advise: suppress per-item storm during remove-all, do single finalize
     (when (fboundp 'gptel-context-remove-all)
       (unless (advice-member-p #'context-navigator--around-remove-all 'gptel-context-remove-all)
@@ -1302,7 +1707,9 @@ only if not already inside a higher-level bulk operation."
   (when (context-navigator--state-get :advices-installed)
     (dolist (fn context-navigator--context-advised-fns)
       (when (advice-member-p #'context-navigator--advice-refresh fn)
-        (advice-remove fn #'context-navigator--advice-refresh)))
+        (advice-remove fn #'context-navigator--advice-refresh))
+      (when (advice-member-p #'context-navigator--advice-sync-model fn)
+        (advice-remove fn #'context-navigator--advice-sync-model)))
     ;; Remove the around advice from remove-all if present
     (when (advice-member-p #'context-navigator--around-remove-all 'gptel-context-remove-all)
       (advice-remove 'gptel-context-remove-all #'context-navigator--around-remove-all))
@@ -1360,7 +1767,7 @@ only if not already inside a higher-level bulk operation."
 (defun context-navigator-help ()
   "Show short help in the echo area."
   (interactive)
-  (message "GPTel Navigator: RET=goto, SPC=preview, r=refresh, q=quit, TAB/S-TAB=navigate"))
+  (message "GPTel Navigator: RET=goto, SPC=preview, t=toggle, d=disable, C-d=delete, r=refresh, q=quit, TAB/S-TAB=navigate"))
 
 ;; ----------------------------------------------------------------------------
 ;; Transient menu
@@ -1439,36 +1846,39 @@ only if not already inside a higher-level bulk operation."
     (expand-file-name path)))
 
 (defun context-navigator--serialize-context (&optional root)
-  "Serialize `gptel-context--alist' into a portable list for saving.
-Format:
-- (:file RELPATH [:mime MIME])
-- (:buffer RELPATH :regions ((BEG . END) ...)) ; only file-backed buffers
-Non-file buffers are ignored in v1."
-  (let ((alist (context-navigator--context-alist))
+  "Serialize internal model into a portable list for saving.
+Format (v2):
+- (:file RELPATH [:mime MIME] :enabled t/nil)
+- (:buffer RELPATH :regions ((BEG . END) ...) :enabled t/nil) ; only file-backed buffers
+Non-file buffers are ignored."
+  (let ((items (context-navigator--model-items))
         out)
-    (dolist (entry alist)
-      (pcase entry
-        (`(,(and buf (pred bufferp)) . ,ovs)
-         (with-current-buffer buf
-           (when-let ((path (buffer-file-name)))
-             (let ((regions (delq nil
-                                  (mapcar (lambda (ov)
-                                            (when (and (overlay-start ov) (overlay-end ov))
-                                              (cons (overlay-start ov) (overlay-end ov))))
-                                          ovs))))
-               (if (and regions (cl-some #'identity regions))
-                   (push (list :buffer (context-navigator--project-relativize path root)
-                               :regions regions)
-                         out)
-                 (push (list :file (context-navigator--project-relativize path root)) out))))))
-        (`(,(and path (pred stringp)) . ,props)
-         (let* ((rel (context-navigator--project-relativize path root))
-                (mime (plist-get props :mime)))
-           (if mime
-               (push (list :file rel :mime mime) out)
-             (push (list :file rel) out))))
-        (`(,path)
-         (push (list :file (context-navigator--project-relativize path root)) out))))
+    (dolist (it items)
+      (pcase (context-navigator-item-type it)
+        ('file
+         (let* ((path (context-navigator-item-path it)))
+           (when path
+             (push (list :file (context-navigator--project-relativize path root)
+                         :enabled (and (context-navigator-item-enabled it) t))
+                   out))))
+        ('buffer
+         (with-current-buffer (context-navigator-item-buffer it)
+           (when-let ((path buffer-file-name))
+             ;; Store as file-level entry (full buffer)
+             (push (list :file (context-navigator--project-relativize path root)
+                         :enabled (and (context-navigator-item-enabled it) t))
+                   out))))
+        ('selection
+         (let ((buf (context-navigator-item-buffer it))
+               (s (context-navigator-item-start it))
+               (e (context-navigator-item-end it)))
+           (when (and (buffer-live-p buf) s e)
+             (with-current-buffer buf
+               (when-let ((path buffer-file-name))
+                 (push (list :buffer (context-navigator--project-relativize path root)
+                             :regions (list (cons s e))
+                             :enabled (and (context-navigator-item-enabled it) t))
+                       out))))))))
     (nreverse out)))
 
 (defun context-navigator--read-file-sexp (file)
@@ -1483,7 +1893,7 @@ Non-file buffers are ignored in v1."
 
 ;;;###autoload
 (defun context-navigator-context-save (&optional root)
-  "Save current gptel context for project ROOT (or global if ROOT nil)."
+  "Save current model (enabled/disabled) for project ROOT (or global if ROOT nil)."
   (interactive)
   (let* ((root (or root (context-navigator--detect-root)))
          (dir (if root
@@ -1497,64 +1907,41 @@ Non-file buffers are ignored in v1."
       (prin1 data (current-buffer))
       (insert "\n"))
     (when (called-interactively-p 'interactive)
-      (message "Saved gptel context to %s" file))
+      (message "Saved context (with enabled flags) to %s" file))
     file))
 
 ;;;###autoload
 (defun context-navigator-context-load (&optional root)
-  "Load project context for ROOT (or global). Replaces current gptel context."
+  "Load project context for ROOT (or global) into the model and apply to GPTel."
   (interactive)
   (let* ((root (or root (context-navigator--detect-root)))
          (file (context-navigator--context-file root))
-         (result nil))
-    ;; Оптимизированная bulk-операция удаления/добавления
-    (let ((context-navigator--in-context-load t)
-          (context-navigator--inhibit-refresh t))
-      (if-let ((spec (context-navigator--read-file-sexp file)))
-          (progn
-            ;; Replace current context with loaded spec
-            (gptel-context-remove-all)
-            (dolist (it spec)
-              (pcase it
-                (`(:file ,rel . ,_rest)
-                 (let ((abs (context-navigator--project-abspath rel root)))
-                   (ignore-errors (gptel-context-add-file abs))))
-                (`(:buffer ,rel :regions ,regions . ,_rest)
-                 (let* ((abs (context-navigator--project-abspath rel root))
-                        (buf (ignore-errors (find-file-noselect abs))))
-                   (when (buffer-live-p buf)
-                     (dolist (pair regions)
-                       (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
-                         (ignore-errors
-                           (gptel-context--add-region buf (car pair) (cdr pair) t)))))))))
-            (setq result t))
-        ;; No spec available: clear context
-        (gptel-context-remove-all)
-        (setq result nil)))
-    ;; Вызвать autosave и refresh один раз после bulk-операции
-    (context-navigator-context-save root)
-    (when (buffer-live-p (context-navigator--state-get :sidebar-buffer))
-      (context-navigator-refresh))
-    (when (called-interactively-p 'interactive)
-      (message (if result
-                   "Loaded gptel context from %s"
-                 "No saved gptel context at %s — cleared current context")
-               file))
-    result))
+         (spec (context-navigator--read-file-sexp file)))
+    (if spec
+        (progn
+          (context-navigator--state-put :current-project-root root)
+          ;; Build items from spec (reuse async loader logic)
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            (context-navigator--load-context-async root))
+          (when (called-interactively-p 'interactive)
+            (message "Loaded context (model) from %s" file))
+          t)
+      ;; No spec: clear model and GPTel
+      (let ((context-navigator--in-context-load t)
+            (context-navigator--inhibit-refresh t))
+        (context-navigator--state-put :model-items '())
+        (context-navigator--state-put :model-index (make-hash-table :test 'equal))
+        (ignore-errors (gptel-context-remove-all)))
+      (context-navigator-refresh)
+      (when (called-interactively-p 'interactive)
+        (message "No saved context at %s — cleared current model and GPTel" file))
+      nil)))
 
 ;;;###autoload
 (defun context-navigator-unload ()
-  "Close the current project: switch to the global GPTel context (or clear),
-and set GPTel chat buffer's directory to filesystem root (/).
-
-Forces GPTel Navigator to behave as if we're outside any project:
-- Sets internal state to a global sentinel
-- Loads the global context from `context-navigator-global-dir' if present
-- Otherwise clears the current GPTel context
-- Changes `default-directory' of the active GPTel buffer to \"/\"
-
-Autoload throttling is set so we don't immediately jump back to the project's
-context while staying in the same project buffer."
+  "Switch to global context: load global model and apply to GPTel, or clear if absent.
+Also set GPTel chat buffer directory to filesystem root (/)."
   (interactive)
   (let ((cur-root (context-navigator--detect-root)))
     ;; Prevent immediate autoload switch back to CUR-ROOT
@@ -1562,44 +1949,31 @@ context while staying in the same project buffer."
     ;; Mark UI/state as global (non-string to avoid being treated as a dir)
     (context-navigator--state-put :current-project-root :global))
   (let* ((file (context-navigator--context-file nil))
-         (result nil))
-    (let ((context-navigator--in-context-load t)
-          (context-navigator--inhibit-refresh t))
-      (if-let ((spec (context-navigator--read-file-sexp file)))
-          (progn
-            ;; Replace current context with global spec
-            (gptel-context-remove-all)
-            (dolist (it spec)
-              (pcase it
-                (`(:file ,rel . ,_rest)
-                 (let ((abs (context-navigator--project-abspath rel nil)))
-                   (ignore-errors (gptel-context-add-file abs))))
-                (`(:buffer ,rel :regions ,regions . ,_rest)
-                 (let* ((abs (context-navigator--project-abspath rel nil))
-                        (buf (ignore-errors (find-file-noselect abs))))
-                   (when (buffer-live-p buf)
-                     (dolist (pair regions)
-                       (when (and (consp pair) (numberp (car pair)) (numberp (cdr pair)))
-                         (ignore-errors
-                           (gptel-context--add-region buf (car pair) (cdr pair) t)))))))))
-            (setq result t))
-        ;; No global spec available: clear context
-        (gptel-context-remove-all)
-        (setq result nil)))
-    ;; Also switch GPTel chat buffer `default-directory' to filesystem root
-    (when-let ((gtbuf (context-navigator--find-gptel-buffer)))
-      (with-current-buffer gtbuf
-        ;; Keep previous dir in state in case we want to restore later
-        (context-navigator--state-put :prev-gptel-default-directory default-directory)
-        (setq default-directory (expand-file-name "/"))))
-    (when (buffer-live-p (context-navigator--state-get :sidebar-buffer))
-      (context-navigator-refresh))
-    (when (called-interactively-p 'interactive)
-      (message (if result
-                   "Loaded global gptel context from %s"
-                 "No global gptel context at %s — cleared current context")
-               file))
-    result))
+         (spec (context-navigator--read-file-sexp file)))
+    (if spec
+        (progn
+          ;; Build model from global spec and apply
+          (let ((context-navigator--in-context-load t)
+                (context-navigator--inhibit-refresh t))
+            (context-navigator--load-context-async nil))
+          (when (called-interactively-p 'interactive)
+            (message "Loaded global context from %s" file)))
+      ;; Clear model and GPTel
+      (let ((context-navigator--in-context-load t)
+            (context-navigator--inhibit-refresh t))
+        (context-navigator--state-put :model-items '())
+        (context-navigator--state-put :model-index (make-hash-table :test 'equal))
+        (ignore-errors (gptel-context-remove-all)))
+      (when (called-interactively-p 'interactive)
+        (message "No global context at %s — cleared current model and GPTel" file))))
+  ;; Switch GPTel chat buffer `default-directory' to filesystem root
+  (when-let ((gtbuf (context-navigator--find-gptel-buffer)))
+    (with-current-buffer gtbuf
+      (context-navigator--state-put :prev-gptel-default-directory default-directory)
+      (setq default-directory (expand-file-name "/"))))
+  (when (buffer-live-p (context-navigator--state-get :sidebar-buffer))
+    (context-navigator-refresh))
+  t)
 
 ;; ----------------------------------------------------------------------------
 ;; Project auto-load/save global mode
@@ -1684,4 +2058,17 @@ Reentrancy-guarded to avoid triggering itself via window/config changes."
   (ignore-errors (context-navigator--setup-autoload-hooks)))
 
 (provide 'context-navigator)
+;; Ensure hard deletion semantics for gptel-context-remove-all: purge model and save.
+(defun context-navigator--around-remove-all (orig-fn &rest args)
+  "Ensure gptel-context-remove-all purges model, sidebar, and saved context."
+  (let ((context-navigator--inhibit-refresh t))
+    (prog1 (apply orig-fn args)
+      ;; Clear our model completely (hard delete)
+      (context-navigator--model-set-items nil)
+      ;; Persist to disk if autosave is enabled
+      (when context-navigator-autosave
+        (context-navigator-context-save))
+      ;; Update UI
+      (context-navigator--debounced-refresh))))
+
 ;;; context-navigator.el ends here
