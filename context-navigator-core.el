@@ -324,12 +324,18 @@ Also suppress auto-apply for a short time window to avoid re-adding."
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
-  ;; Update last project root via an immutable-style copy
+  ;; Update last project root via an immutable-style copy and inhibit autosave/refresh while switching.
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur)))
     (setf (context-navigator-state-last-project-root new) root)
+    (setf (context-navigator-state-inhibit-refresh new) t)
+    (setf (context-navigator-state-inhibit-autosave new) t)
+    (setf (context-navigator-state-loading-p new) t)
     (context-navigator--set-state new))
   (context-navigator--log "Project switch -> %s" (or root "~"))
+  ;; Fully unload previous context (model + gptel) so contexts don't mix.
+  (context-navigator-set-items '())
+  (ignore-errors (context-navigator-gptel-apply '()))
   (when context-navigator-autoload
     (context-navigator--load-context-for-root root)))
 
@@ -345,11 +351,17 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
                           (expand-file-name dir)))
                  (ignore-errors
                    (context-navigator-project-current-root (current-buffer))))))
-    ;; Update last project root via a copy to avoid direct mutation
+    ;; Update last project root via a copy to avoid direct mutation; inhibit autosave/refresh while switching.
     (let* ((cur (context-navigator--state-get))
            (new (context-navigator--state-copy cur)))
       (setf (context-navigator-state-last-project-root new) root)
+      (setf (context-navigator-state-inhibit-refresh new) t)
+      (setf (context-navigator-state-inhibit-autosave new) t)
+      (setf (context-navigator-state-loading-p new) t)
       (context-navigator--set-state new))
+    ;; Fully unload previous context (model + gptel) before loading the new one.
+    (context-navigator-set-items '())
+    (ignore-errors (context-navigator-gptel-apply '()))
     (context-navigator--log "Manual load -> %s" (or root "~"))
     (context-navigator--load-context-for-root root)))
 

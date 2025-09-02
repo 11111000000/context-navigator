@@ -46,7 +46,7 @@
   (let* ((root (context-navigator-state-last-project-root state))
          (loading (context-navigator-state-loading-p state))
          (base (if root
-                   (format "Context for [%s]" (abbreviate-file-name root))
+                   (format "[%s]" (abbreviate-file-name root))
                  "Global context"))
          (suffix
           (cond
