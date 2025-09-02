@@ -44,19 +44,13 @@
          (eq major-mode 'gptel-mode)))))
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)
-  "Publish :project-switch when project root meaningfully changes."
-  (let* ((buf (or buffer (current-buffer)))
-         (ok (context-navigator-project--interesting-buffer-p buf)))
-    (when ok
-      (let* ((root (context-navigator-project-current-root buf))
-             (now (context-navigator-project--now))
-             (interval (and (boundp 'context-navigator-context-switch-interval)
-                            (symbol-value 'context-navigator-context-switch-interval)))
-             (interval (or interval 0.7)))
-        (when (or (not (equal root context-navigator-project--last-root))
-                  (> (- now context-navigator-project--last-switch-time) interval))
+  "Publish :project-switch only when the project root actually changes."
+  (let* ((buf (or buffer (current-buffer))))
+    (when (context-navigator-project--interesting-buffer-p buf)
+      (let* ((root (context-navigator-project-current-root buf)))
+        (unless (equal root context-navigator-project--last-root)
           (setq context-navigator-project--last-root root
-                context-navigator-project--last-switch-time now)
+                context-navigator-project--last-switch-time (context-navigator-project--now))
           (context-navigator-events-publish :project-switch root)
           root)))))
 
