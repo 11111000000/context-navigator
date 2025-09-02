@@ -347,5 +347,109 @@ Sets up event wiring and keybindings."
     (ignore-errors (context-navigator-project-teardown-hooks))
     (context-navigator--log "mode disabled")))
 
+(defun context-navigator-set-items (items)
+  "Replace current model ITEMS with ITEMS and publish :model-refreshed.
+Return the new state."
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-with-items (context-navigator--state-copy cur) items)))
+    (context-navigator--set-state new)
+    (context-navigator-events-publish :model-refreshed new)
+    new))
+
+(defun context-navigator-add-item (item)
+  "Add ITEM to the model (deduplicated by key; last wins). Return new state."
+  (let* ((cur (context-navigator--state-get))
+         (old (and cur (context-navigator-state-items cur)))
+         (items (append old (list item))))
+    (context-navigator-set-items items)))
+
+(defun context-navigator-remove-item-by-key (key)
+  "Remove item with stable KEY from the model. Return new state."
+  (let* ((cur (context-navigator--state-get))
+         (old (and cur (context-navigator-state-items cur)))
+         (keep (cl-remove-if (lambda (it)
+                               (string= (context-navigator-model-item-key it) key))
+                             old)))
+    (context-navigator-set-items keep)))
+
+(defun context-navigator-toggle-item (key &optional enabled)
+  "Toggle enabled flag for item with KEY. If ENABLED non-nil, set explicitly.
+Return new state. If KEY not found, return current state."
+  (let* ((cur (context-navigator--state-get))
+         (idx (and cur (context-navigator-state-index cur)))
+         (it  (and idx (gethash key idx))))
+    (if (not (context-navigator-item-p it))
+        cur
+      (let* ((new-enabled (if (null enabled)
+                              (not (context-navigator-item-enabled it))
+                            (and enabled t)))
+             (updated (context-navigator-item-create
+                       :type (context-navigator-item-type it)
+                       :name (context-navigator-item-name it)
+                       :path (context-navigator-item-path it)
+                       :buffer (context-navigator-item-buffer it)
+                       :beg (context-navigator-item-beg it)
+                       :end (context-navigator-item-end it)
+                       :size (context-navigator-item-size it)
+                       :enabled new-enabled
+                       :meta (context-navigator-item-meta it)))
+             (items (mapcar (lambda (x)
+                              (if (string= (context-navigator-model-item-key x) key)
+                                  updated x))
+                            (context-navigator-state-items cur))))
+        (context-navigator-set-items items)))))
+
+(defun context-navigator-set-items (items)
+  "Replace current model ITEMS with ITEMS and publish :model-refreshed.
+Return the new state."
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-with-items (context-navigator--state-copy cur) items)))
+    (context-navigator--set-state new)
+    (context-navigator-events-publish :model-refreshed new)
+    new))
+
+(defun context-navigator-add-item (item)
+  "Add ITEM to the model (deduplicated by key; last wins). Return new state."
+  (let* ((cur (context-navigator--state-get))
+         (old (and cur (context-navigator-state-items cur)))
+         (items (append old (list item))))
+    (context-navigator-set-items items)))
+
+(defun context-navigator-remove-item-by-key (key)
+  "Remove item with stable KEY from the model. Return new state."
+  (let* ((cur (context-navigator--state-get))
+         (old (and cur (context-navigator-state-items cur)))
+         (keep (cl-remove-if (lambda (it)
+                               (string= (context-navigator-model-item-key it) key))
+                             old)))
+    (context-navigator-set-items keep)))
+
+(defun context-navigator-toggle-item (key &optional enabled)
+  "Toggle enabled flag for item with KEY. If ENABLED non-nil, set explicitly.
+Return new state. If KEY not found, return current state."
+  (let* ((cur (context-navigator--state-get))
+         (idx (and cur (context-navigator-state-index cur)))
+         (it  (and idx (gethash key idx))))
+    (if (not (context-navigator-item-p it))
+        cur
+      (let* ((new-enabled (if (null enabled)
+                              (not (context-navigator-item-enabled it))
+                            (and enabled t)))
+             (updated (context-navigator-item-create
+                       :type (context-navigator-item-type it)
+                       :name (context-navigator-item-name it)
+                       :path (context-navigator-item-path it)
+                       :buffer (context-navigator-item-buffer it)
+                       :beg (context-navigator-item-beg it)
+                       :end (context-navigator-item-end it)
+                       :size (context-navigator-item-size it)
+                       :enabled new-enabled
+                       :meta (context-navigator-item-meta it)))
+             (items (mapcar (lambda (x)
+                              (if (string= (context-navigator-model-item-key x) key)
+                                  updated x))
+                            (context-navigator-state-items cur))))
+        (context-navigator-set-items items)))))
+
 (provide 'context-navigator-core)
 ;;; context-navigator-core.el ends here

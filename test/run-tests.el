@@ -25,6 +25,7 @@
 (require 'context-navigator-persist-test)
 (require 'context-navigator-gptel-bridge-test)
 (require 'context-navigator-core-test)
+(require 'context-navigator-core-api-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."
