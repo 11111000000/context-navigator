@@ -1,4 +1,4 @@
-* Context Navigator for Emacs/gptel
+* Emacs Context Manager
 Context Navigator is a lightweight, modular context manager and sidebar
 for gptel. It mirrors gptel's context (files, buffers, selections), lets
 you navigate quickly, toggle what's included, and persists per-project
