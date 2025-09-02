@@ -217,26 +217,32 @@ present in the pulled gptel set (which contains only enabled items)."
   (context-navigator-persist-load-async
    root
    (lambda (items)
-     ;; Inhibit autosave/refresh during apply
-     (let ((cur (context-navigator--state-get)))
-       (setf (context-navigator-state-inhibit-refresh cur) t)
-       (setf (context-navigator-state-inhibit-autosave cur) t)
-       (setf (context-navigator-state-loading-p cur) t)
-       (context-navigator--set-state (copy-context-navigator-state cur)))
+     ;; Inhibit autosave/refresh during apply — create a copy and mutate the copy.
+     (let* ((cur (context-navigator--state-get))
+            (new (context-navigator--state-copy cur)))
+       (setf (context-navigator-state-inhibit-refresh new) t)
+       (setf (context-navigator-state-inhibit-autosave new) t)
+       (setf (context-navigator-state-loading-p new) t)
+       (context-navigator--set-state new))
      ;; Apply to gptel and mirror back to model
      (ignore-errors (context-navigator-gptel-apply (or items '())))
      (context-navigator--sync-from-gptel)
-     ;; Clear inhibit flags and notify done
-     (let ((cur2 (context-navigator--state-get)))
-       (setf (context-navigator-state-inhibit-refresh cur2) nil)
-       (setf (context-navigator-state-inhibit-autosave cur2) nil)
-       (setf (context-navigator-state-loading-p cur2) nil)
-       (context-navigator--set-state (copy-context-navigator-state cur2)))
+     ;; Clear inhibit flags and notify done — again operate on a fresh copy.
+     (let* ((cur2 (context-navigator--state-get))
+            (new2 (context-navigator--state-copy cur2)))
+       (setf (context-navigator-state-inhibit-refresh new2) nil)
+       (setf (context-navigator-state-inhibit-autosave new2) nil)
+       (setf (context-navigator-state-loading-p new2) nil)
+       (context-navigator--set-state new2))
      (context-navigator-events-publish :context-load-done root (and items t)))))
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
-  (setf (context-navigator-state-last-project-root context-navigator--state) root)
+  ;; Update last project root via an immutable-style copy
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-copy cur)))
+    (setf (context-navigator-state-last-project-root new) root)
+    (context-navigator--set-state new))
   (context-navigator--log "Project switch -> %s" (or root "~"))
   (when context-navigator-autoload
     (context-navigator--load-context-for-root root)))
@@ -253,7 +259,11 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
                           (expand-file-name dir)))
                  (ignore-errors
                    (context-navigator-project-current-root (current-buffer))))))
-    (setf (context-navigator-state-last-project-root context-navigator--state) root)
+    ;; Update last project root via a copy to avoid direct mutation
+    (let* ((cur (context-navigator--state-get))
+           (new (context-navigator--state-copy cur)))
+      (setf (context-navigator-state-last-project-root new) root)
+      (context-navigator--set-state new))
     (context-navigator--log "Manual load -> %s" (or root "~"))
     (context-navigator--load-context-for-root root)))
 
@@ -275,23 +285,28 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
 Removes all gptel context entries and resets state flags safely."
   (interactive)
   (let ((root nil))
-    ;; Mark root as global
-    (setf (context-navigator-state-last-project-root context-navigator--state) root)
-    ;; Inhibit autosave/refresh during apply
-    (let ((cur (context-navigator--state-get)))
-      (setf (context-navigator-state-inhibit-refresh cur) t)
-      (setf (context-navigator-state-inhibit-autosave cur) t)
-      (setf (context-navigator-state-loading-p cur) t)
-      (context-navigator--set-state (copy-context-navigator-state cur)))
+    ;; Mark root as global (use copy to avoid direct mutation)
+    (let* ((cur (context-navigator--state-get))
+           (new (context-navigator--state-copy cur)))
+      (setf (context-navigator-state-last-project-root new) root)
+      (context-navigator--set-state new))
+    ;; Inhibit autosave/refresh during apply (operate on a copy)
+    (let* ((cur (context-navigator--state-get))
+           (new (context-navigator--state-copy cur)))
+      (setf (context-navigator-state-inhibit-refresh new) t)
+      (setf (context-navigator-state-inhibit-autosave new) t)
+      (setf (context-navigator-state-loading-p new) t)
+      (context-navigator--set-state new))
     ;; Apply empty set, mirror back
     (ignore-errors (context-navigator-gptel-apply '()))
     (context-navigator--sync-from-gptel)
-    ;; Clear inhibit flags and notify done
-    (let ((cur2 (context-navigator--state-get)))
-      (setf (context-navigator-state-inhibit-refresh cur2) nil)
-      (setf (context-navigator-state-inhibit-autosave cur2) nil)
-      (setf (context-navigator-state-loading-p cur2) nil)
-      (context-navigator--set-state (copy-context-navigator-state cur2)))
+    ;; Clear inhibit flags and notify done (operate on a fresh copy)
+    (let* ((cur2 (context-navigator--state-get))
+           (new2 (context-navigator--state-copy cur2)))
+      (setf (context-navigator-state-inhibit-refresh new2) nil)
+      (setf (context-navigator-state-inhibit-autosave new2) nil)
+      (setf (context-navigator-state-loading-p new2) nil)
+      (context-navigator--set-state new2))
     (context-navigator-events-publish :context-load-done root nil)
     (message "Context unloaded (global mode)")))
 

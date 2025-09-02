@@ -318,13 +318,19 @@ Robustness improvements:
 
 (defun context-navigator-gptel--reset-to (items)
   "Replace gptel context with ITEMS using remove-all + add.
-Only enabled items are (re)added."
+Only enabled items are (re)added.
+
+This function attempts a best-effort remove-all when supported by the
+underlying gptel; it publishes a :gptel-change :reset event so listeners
+(e.g. the core sync) can react. We keep the call guarded and tolerate
+errors from different gptel versions."
   (when (context-navigator-gptel--can-remove-all)
-    (gptel-context-remove-all))
+    (ignore-errors (gptel-context-remove-all)))
   (let ((count 0))
     (dolist (it items)
       (when (context-navigator-item-enabled it)
         (setq count (+ count (if (context-navigator-gptel--add-item it) 1 0)))))
+    ;; publish a clear reset event so consumers can schedule a sync/update
     (context-navigator-events-publish :gptel-change :reset count)
     (list :method 'reset :count count)))
 
@@ -339,33 +345,59 @@ Only enabled items are (re)added."
          (rems (plist-get diff :remove))
          (upds (plist-get diff :update)))
     (cond
-     ;; Падение на reset при отсутствии базовых возможностей
+     ;; Fall back to reset when core remove/add primitives are missing.
      ((or (not (context-navigator-gptel--can-remove))
           (not (context-navigator-gptel--can-add-file)))
       (let ((r (context-navigator-gptel--reset-to desired-items)))
         (append (list :applied t) r)))
-     ;; Если нужно удалить/обновить selection — fallback на reset
+     ;; If selections are involved in removals/updates, conservative reset.
      ((or (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) rems)
           (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) upds))
       (let ((r (context-navigator-gptel--reset-to desired-items)))
         (append (list :applied t) r)))
      (t
-      ;; Точечный дифф: remove (только file), затем update как remove+add, затем add
+      ;; Fine-grained diff: try to remove/update/add as needed.
       (let ((ops 0))
-        ;; Removes
+        ;; Removes: attempt to remove files and buffers when possible.
         (dolist (old rems)
           (pcase (context-navigator-item-type old)
             ('file
              (when (context-navigator-gptel--can-remove)
-               (ignore-errors (gptel-context-remove (context-navigator-item-path old))))
-             (setq ops (1+ ops)))
-            (_ nil)))
+               (ignore-errors
+                 (gptel-context-remove (context-navigator-item-path old)))))
+            ('buffer
+             (when (context-navigator-gptel--can-remove)
+               (ignore-errors
+                 ;; Try several reasonable identifiers for gptel to remove:
+                 ;; 1) the buffer object itself
+                 ;; 2) the persisted path
+                 ;; 3) the buffer name
+                 (let ((buf (context-navigator-item-buffer old))
+                       (p (context-navigator-item-path old))
+                       (name (context-navigator-item-name old)))
+                   (cond
+                    ((and buf (buffer-live-p buf))
+                     (ignore-errors (gptel-context-remove buf)))
+                    ((and (stringp p)) (ignore-errors (gptel-context-remove p)))
+                    ((and (stringp name)) (ignore-errors (gptel-context-remove name))))))))
+            (_ nil))
+          (setq ops (1+ ops)))
         ;; Updates -> remove then add (add only when target is enabled)
         (dolist (nu upds)
           (pcase (context-navigator-item-type nu)
             ('file
              (when (context-navigator-gptel--can-remove)
                (ignore-errors (gptel-context-remove (context-navigator-item-path nu)))))
+            ('buffer
+             (when (context-navigator-gptel--can-remove)
+               (ignore-errors
+                 (let ((buf (context-navigator-item-buffer nu))
+                       (p (context-navigator-item-path nu))
+                       (name (context-navigator-item-name nu)))
+                   (cond
+                    ((and buf (buffer-live-p buf)) (ignore-errors (gptel-context-remove buf)))
+                    ((and (stringp p)) (ignore-errors (gptel-context-remove p)))
+                    ((and (stringp name)) (ignore-errors (gptel-context-remove name))))))))
             (_ nil))
           (when (context-navigator-item-enabled nu)
             (when (context-navigator-gptel--add-item nu)

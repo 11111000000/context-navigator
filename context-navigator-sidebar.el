@@ -27,7 +27,7 @@
 (declare-function context-navigator-state-loading-p "context-navigator-core" (state))
 (declare-function context-navigator-state-items "context-navigator-core" (state))
 
-(defconst context-navigator-sidebar--buffer-name "*context-navigator/*")
+(defconst context-navigator-sidebar--buffer-name "*context-navigator-sidebar/")
 
 (defvar-local context-navigator-sidebar--subs nil)
 (defvar-local context-navigator-sidebar--header "Context")
@@ -43,7 +43,7 @@
   (let* ((root (context-navigator-state-last-project-root state))
          (loading (context-navigator-state-loading-p state))
          (base (if root
-                   (format "Project: %s" (abbreviate-file-name root))
+                   (format "Context for [%s]" (abbreviate-file-name root))
                  "Global context"))
          (suffix
           (cond
@@ -65,8 +65,16 @@
   (let* ((state (context-navigator--state-get))
          (items (context-navigator-state-items state))
          (header (context-navigator-sidebar--header state))
+         (win (get-buffer-window (current-buffer) 'visible))
+         (total (or (and win (window-body-width win))
+                    (and (boundp 'context-navigator-sidebar-width)
+                         (symbol-value 'context-navigator-sidebar-width))
+                    32))
+         ;; Aim for ~55% for left column, but leave at least 10 chars for right part and 2 spaces padding.
+         (left-width (max 16 (min (- total 10) (floor (* 0.55 total)))))
          (lines (context-navigator-render-build-lines items header
-                                                      #'context-navigator-icons-for-item)))
+                                                      #'context-navigator-icons-for-item
+                                                      left-width)))
     (setq context-navigator-sidebar--last-lines lines
           context-navigator-sidebar--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)))

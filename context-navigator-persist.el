@@ -196,7 +196,14 @@ CALLBACK is called once with full list of items (enabled or not)."
         ;; Nothing to load; still callback with empty list.
         (run-at-time 0 nil (lambda () (funcall callback nil)))
       (let* ((raw (context-navigator-persist--read-one file))
-             (v3 (and raw (ignore-errors (context-navigator-persist-migrate-if-needed raw))))
+             (v3 (cond
+                  ((not raw) nil)
+                  (t (condition-case err
+                         (context-navigator-persist-migrate-if-needed raw)
+                       (error
+                        (when (bound-and-true-p context-navigator-debug)
+                          (message "[context-navigator/persist] migrate error: %S" err))
+                        nil)))))
              (items-pl (and v3 (plist-get v3 :items)))
              (total (length items-pl))
              (acc (list))
