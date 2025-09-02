@@ -77,20 +77,21 @@ stubs so :commands works fine. - If Emacs can't find the package, ensure
   context and stays responsive with debounced updates.
 
 ** Key bindings
-Global (context-navigator-mode keymap): - C-c i s Refresh model and
-notify UI - C-c i c Toggle sidebar - C-c i l Load context
-(project/global, async) - C-c i S Save current model to context file -
-C-c i u Unload context (switch to global, or clear)
+Global (context-navigator-mode keymap):
+- C-c i s  Refresh model and notify UI
+- C-c i n  Toggle sidebar
+- C-c i l  Load context (project/global, async)
+- C-c i S  Save current model to context file
+- C-c i u  Unload context (switch to global, or clear)
 
-Sidebar (context-navigator-sidebar-mode): - RET Visit item (file/buffer
-or jump to selection) - SPC Preview in other window (non-disruptive) - d
-Remove item from gptel context - g Refresh sidebar - q Quit sidebar - ?
-Help
-
-Note: Toggle/disable commands are planned to be exposed in the sidebar
-as "t" (toggle) and "C-d" (delete permanently) once UI wiring is
-completed in this module. Currently, "d" removes an item from gptel;
-model mirrors via pull.
+Sidebar (context-navigator-sidebar-mode):
+- RET   Visit item (file/buffer or jump to selection)
+- SPC   Preview in other window (non-disruptive)
+- t     Toggle enabled/disabled (updates model and applies to gptel)
+- d     Delete item (from model and apply diff to gptel)
+- g     Refresh sidebar
+- q     Quit sidebar
+- ?     Help
 
 ** Features
 - Sync with gptel
@@ -177,11 +178,9 @@ completion
     sidebar.
 
 ** Development
-Run all tests: #+end_srcsh emacs -Q -batch -l test/run-tests.el -f
-ert-run-tests-batch-and-exit #+begin_src
-
-Interactive: - M-x ert RET - Load runner: (load-file
-"test/run-tests.el") - Select tests or run all
+Run all tests:
+#+begin_src sh
+emacs -Q -batch -l test/run-tests.el -f ert-run-tests-batch-and-exit
 
 Project layout (modules): - context-navigator.el (umbrella entry,
 autoloads) - context-navigator-core.el (state, commands, wiring) -
@@ -196,8 +195,7 @@ context-navigator-icons.el (optional icon provider) -
 context-navigator-sidebar.el (sidebar UI)
 
 *** Roadmap
-- Sidebar actions: toggle enabled (t), disable (d), delete (C-d) ---
-  richer UX with clear semantics
+- Sidebar actions: toggle enabled (t), delete (d) --- richer UX with clear semantics
 - Patch/diff rendering for the sidebar (stable expand state)
 - Robust selection tracking (markers/anchors)
 - Transient menu, bulk operations, search/filter

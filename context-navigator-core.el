@@ -172,25 +172,59 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 (defvar context-navigator--event-tokens nil
   "Subscription tokens registered by core while the mode is enabled.")
 
+(defvar context-navigator--suppress-apply-until nil
+  "If non-nil, a time (float-time) until which applying to gptel is suppressed.")
+
+(defun context-navigator--apply-allowed-p ()
+  "Return non-nil when it is allowed to apply to gptel now."
+  (let ((till context-navigator--suppress-apply-until))
+    (or (null till)
+        (> (float-time) till))))
+
+(defun context-navigator--suppress-apply-for (seconds)
+  "Suppress applying to gptel for SECONDS (float)."
+  (setq context-navigator--suppress-apply-until
+        (+ (float-time) (or seconds 1.0))))
+
 (defun context-navigator--sync-from-gptel ()
   "Pull items from gptel (if available) and install them into the model.
-Keeps disabled items from the previous model (by key) when they are not
-present in the pulled gptel set (which contains only enabled items)."
+
+Behavior:
+- Items present in gptel become enabled in the model (fields prefer incoming).
+- Items absent from gptel remain in the model but are marked disabled (not lost).
+This keeps user's context history intact while reflecting current gptel state."
   (if (context-navigator-gptel-available-p)
-      (let* ((incoming (context-navigator-gptel-pull)) ;; all enabled=t
+      (let* ((incoming (or (context-navigator-gptel-pull) '())) ;; enabled=t
              (cur (context-navigator--state-get))
              (old (and cur (context-navigator-state-items cur)))
-             (seen (let ((h (make-hash-table :test 'equal)))
-                     (dolist (it incoming) (puthash (context-navigator-model-item-key it) t h))
-                     h))
-             ;; take disabled from old that are not present in incoming
-             (disabled-old
-              (cl-remove-if
-               (lambda (it)
-                 (or (context-navigator-item-enabled it)
-                     (gethash (context-navigator-model-item-key it) seen)))
-               old))
-             (merged (append incoming disabled-old))
+             (old-index (context-navigator-model-build-index (or old '())))
+             (inc-index (context-navigator-model-build-index (or incoming '())))
+             (keys (let (acc)
+                     (maphash (lambda (k _v) (push k acc)) old-index)
+                     (maphash (lambda (k _v) (push k acc)) inc-index)
+                     (delete-dups acc)))
+             (merged
+              (delq nil
+                    (mapcar
+                     (lambda (k)
+                       (let ((in (gethash k inc-index))
+                             (ov (gethash k old-index)))
+                         (cond
+                          ;; Prefer incoming item (already enabled)
+                          (in in)
+                          ;; Otherwise keep old item but ensure it's disabled
+                          (ov (context-navigator-item-create
+                               :type (context-navigator-item-type ov)
+                               :name (context-navigator-item-name ov)
+                               :path (context-navigator-item-path ov)
+                               :buffer (context-navigator-item-buffer ov)
+                               :beg (context-navigator-item-beg ov)
+                               :end (context-navigator-item-end ov)
+                               :size (context-navigator-item-size ov)
+                               :enabled nil
+                               :meta (context-navigator-item-meta ov)))
+                          (t nil))))
+                     keys)))
              (new (context-navigator--state-with-items (copy-context-navigator-state cur) merged)))
         (context-navigator--set-state new)
         (context-navigator-events-publish :model-refreshed new)
@@ -202,14 +236,47 @@ present in the pulled gptel set (which contains only enabled items)."
       (message "[context-navigator/core] gptel unavailable; skip sync"))
     nil))
 
-(defun context-navigator--on-gptel-change (&rest _)
-  "Handle :gptel-change event (debounced)."
-  (let ((st (context-navigator--state-get)))
+(defun context-navigator--on-gptel-change (&rest args)
+  "Handle :gptel-change event (debounced).
+Special case:
+- When OP is `gptel-context-remove-all' or :reset, mark all current model
+  items as disabled (do not lose them), then schedule a sync from gptel.
+Also suppress auto-apply for a short time window to avoid re-adding."
+  (let* ((op (car args))
+         (st (context-navigator--state-get)))
     (when (and context-navigator-auto-refresh
                (not (and st (context-navigator-state-inhibit-refresh st))))
-      (context-navigator-events-debounce
-       :core-sync 0.05
-       #'context-navigator--sync-from-gptel))))
+      (if (memq op '(gptel-context-remove-all :reset))
+          (progn
+            ;; Suppress auto-apply for a brief window to avoid re-adding.
+            (context-navigator--suppress-apply-for 1.0)
+            ;; Mark all existing items disabled (history preserved).
+            (let* ((old (and st (context-navigator-state-items st)))
+                   (disabled
+                    (mapcar (lambda (it)
+                              (if (context-navigator-item-enabled it)
+                                  (context-navigator-item-create
+                                   :type (context-navigator-item-type it)
+                                   :name (context-navigator-item-name it)
+                                   :path (context-navigator-item-path it)
+                                   :buffer (context-navigator-item-buffer it)
+                                   :beg (context-navigator-item-beg it)
+                                   :end (context-navigator-item-end it)
+                                   :size (context-navigator-item-size it)
+                                   :enabled nil
+                                   :meta (context-navigator-item-meta it))
+                                it))
+                            (or old '()))))
+              ;; Set new items and publish :model-refreshed.
+              (context-navigator-set-items disabled))
+            ;; Additionally schedule a sync from gptel (will see empty).
+            (context-navigator-events-debounce
+             :core-sync 0.05
+             #'context-navigator--sync-from-gptel))
+        ;; Generic case: just sync from gptel.
+        (context-navigator-events-debounce
+         :core-sync 0.05
+         #'context-navigator--sync-from-gptel)))))
 
 (defun context-navigator--load-context-for-root (root)
   "Load context for ROOT (or global) asynchronously and apply to gptel."
@@ -224,9 +291,28 @@ present in the pulled gptel set (which contains only enabled items)."
        (setf (context-navigator-state-inhibit-autosave new) t)
        (setf (context-navigator-state-loading-p new) t)
        (context-navigator--set-state new))
-     ;; Apply to gptel and mirror back to model
-     (ignore-errors (context-navigator-gptel-apply (or items '())))
-     (context-navigator--sync-from-gptel)
+     (if (context-navigator--apply-allowed-p)
+         (progn
+           ;; Apply to gptel and mirror back to model
+           (ignore-errors (context-navigator-gptel-apply (or items '())))
+           (context-navigator--sync-from-gptel))
+       ;; Suppressed apply: just update the model. Mark items disabled to reflect cleared gptel.
+       (let* ((disabled
+               (mapcar (lambda (it)
+                         (if (context-navigator-item-enabled it)
+                             (context-navigator-item-create
+                              :type (context-navigator-item-type it)
+                              :name (context-navigator-item-name it)
+                              :path (context-navigator-item-path it)
+                              :buffer (context-navigator-item-buffer it)
+                              :beg (context-navigator-item-beg it)
+                              :end (context-navigator-item-end it)
+                              :size (context-navigator-item-size it)
+                              :enabled nil
+                              :meta (context-navigator-item-meta it))
+                           it))
+                       (or items '()))))
+         (context-navigator-set-items disabled)))
      ;; Clear inhibit flags and notify done — again operate on a fresh copy.
      (let* ((cur2 (context-navigator--state-get))
             (new2 (context-navigator--state-copy cur2)))

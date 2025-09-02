@@ -44,13 +44,15 @@ The returned string carries the text property 'context-navigator-key and
 Render a circular state icon (green for enabled, gray for disabled) so the
 state marker is more visible than the small checkbox glyph previously used.
 
-When LEFT-WIDTH is non-nil, align the left column to that width."
+When LEFT-WIDTH IS non-nil, align the left column to that width."
   (let* ((key (context-navigator-model-item-key item))
          (enabled (and (context-navigator-item-enabled item) t))
          (name (context-navigator-render--truncate
                 (or (context-navigator-item-name item) "") context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
-         (raw-icon "●")
+         ;; Use distinct glyphs for enabled vs disabled so textual content changes
+         ;; and re-render is detected by hash comparison.
+         (raw-icon (if enabled "●" "○"))
          (color (if enabled "green4" "gray"))
          (state-icon (propertize raw-icon 'face (list :foreground color :height 1.15)))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))

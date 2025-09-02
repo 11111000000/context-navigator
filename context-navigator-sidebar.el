@@ -7,7 +7,7 @@
 ;; - Opens in a left side window with configurable width
 ;; - Subscribes to :model-refreshed and :context-load-(start|done)
 ;; - Renders via context-navigator-render, optional icons
-;; - Minimal keymap: RET/SPC to visit/preview, d remove, g refresh, q quit
+;; - Minimal keymap: RET/SPC to visit/preview, d delete, g refresh, q quit
 ;;
 ;; Functional by design: no state mutation outside buffer-local vars for UI.
 
@@ -26,6 +26,9 @@
 (declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
 (declare-function context-navigator-state-loading-p "context-navigator-core" (state))
 (declare-function context-navigator-state-items "context-navigator-core" (state))
+(declare-function context-navigator-state-index "context-navigator-core" (state))
+(declare-function context-navigator-toggle-item "context-navigator-core" (key &optional enabled))
+(declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
 
 (defconst context-navigator-sidebar--buffer-name "*context-navigator-sidebar/")
 
@@ -63,7 +66,15 @@
 (defun context-navigator-sidebar--render ()
   "Render current items into the sidebar buffer."
   (let* ((state (context-navigator--state-get))
-         (items (context-navigator-state-items state))
+         (items (context-navigator-state-items
+                 state))
+         ;; Always sort items alphabetically by name (case-insensitive)
+         (sorted-items
+          (sort (copy-sequence (or items '()))
+                (lambda (a b)
+                  (let ((na (downcase (or (context-navigator-item-name a) "")))
+                        (nb (downcase (or (context-navigator-item-name b) ""))))
+                    (string-lessp na nb)))))
          (header (context-navigator-sidebar--header state))
          (win (get-buffer-window (current-buffer) 'visible))
          (total (or (and win (window-body-width win))
@@ -72,9 +83,11 @@
                     32))
          ;; Aim for ~55% for left column, but leave at least 10 chars for right part and 2 spaces padding.
          (left-width (max 16 (min (- total 10) (floor (* 0.55 total)))))
-         (lines (context-navigator-render-build-lines items header
+         (lines (context-navigator-render-build-lines sorted-items header
                                                       #'context-navigator-icons-for-item
                                                       left-width)))
+    ;; Append footer hint
+    (setq lines (append lines (list "" (propertize "Press ? for help" 'face 'shadow))))
     (setq context-navigator-sidebar--last-lines lines
           context-navigator-sidebar--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)))
@@ -88,7 +101,12 @@
         (context-navigator-sidebar--render)))))
 
 (defun context-navigator-sidebar--schedule-render ()
-  "Debounced request to render the sidebar if visible."
+  "Debounced request to render the sidebar if visible. Reset render cache to force update."
+  ;; Ensure next render is not short-circuited by the render hash cache.
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil))))
   (context-navigator-events-debounce
    :sidebar-render 0.06
    #'context-navigator-sidebar--render-if-visible))
@@ -138,6 +156,35 @@
   (interactive)
   (context-navigator-sidebar--visit t))
 
+(defun context-navigator-sidebar-next-item ()
+  "Move point to the next item line."
+  (interactive)
+  (let* ((start (min (1+ (line-end-position)) (point-max)))
+         (pos (text-property-not-all start (point-max)
+                                     'context-navigator-item nil)))
+    (when pos
+      (goto-char pos)
+      (beginning-of-line))))
+
+(defun context-navigator-sidebar-previous-item ()
+  "Move point to the previous item line."
+  (interactive)
+  (let ((pos nil))
+    (save-excursion
+      (let ((done nil))
+        (while (and (not done) (> (line-beginning-position) (point-min)))
+          (forward-line -1)
+          (when (get-text-property (point) 'context-navigator-item)
+            (setq pos (point))
+            (setq done t)))))
+    (if pos
+        (goto-char pos)
+      ;; Fallback to first item if any
+      (let ((first (text-property-not-all (point-min) (point-max)
+                                          'context-navigator-item nil)))
+        (when first (goto-char first)))))
+  (beginning-of-line))
+
 (defun context-navigator-sidebar--remove-at-point ()
   "Remove the item at point from gptel context."
   (interactive)
@@ -150,6 +197,49 @@
       (ignore-errors (context-navigator-gptel-apply keep))
       ;; model обновится через :gptel-change → core sync
       (message "Removed from context: %s" (or (context-navigator-item-name item) key)))))
+(make-obsolete 'context-navigator-sidebar--remove-at-point
+               'context-navigator-sidebar-delete-from-model
+               "0.2.1")
+
+(defun context-navigator-sidebar-toggle-enabled ()
+  "Toggle enabled/disabled for the item at point, apply to gptel.
+
+This updates the core model via `context-navigator-toggle-item' and then
+applies the desired items to gptel. After the operation we schedule a
+sidebar re-render so the visual indicator updates immediately."
+  (interactive)
+  (when-let* ((item (context-navigator-sidebar--at-item)))
+    (let* ((key (context-navigator-model-item-key item))
+           (st (ignore-errors (context-navigator-toggle-item key))) ;; update model via core API
+           (idx (and (context-navigator-state-p st) (context-navigator-state-index st)))
+           (it* (and idx (gethash key idx)))
+           (enabled (and it* (context-navigator-item-enabled it*)))
+           (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
+      (when items
+        ;; Apply desired state to gptel (add/remove depending on enabled).
+        (ignore-errors (context-navigator-gptel-apply items)))
+      ;; Force the next render to apply text even if hash matched previously.
+      (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf
+            (setq-local context-navigator-render--last-hash nil))))
+      ;; Ensure the sidebar updates visually right away.
+      (context-navigator-sidebar--schedule-render)
+      (context-navigator-sidebar--render-if-visible)
+      (message "Toggled: %s -> %s"
+               (or (context-navigator-item-name item) key)
+               (if enabled "enabled" "disabled")))))
+
+(defun context-navigator-sidebar-delete-from-model ()
+  "Delete the item at point from the model permanently and apply to gptel."
+  (interactive)
+  (when-let* ((item (context-navigator-sidebar--at-item)))
+    (let* ((key (context-navigator-model-item-key item))
+           (st (ignore-errors (context-navigator-remove-item-by-key key)))
+           (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
+      (when items
+        (ignore-errors (context-navigator-gptel-apply items)))
+      (message "Deleted from model: %s" (or (context-navigator-item-name item) key)))))
 
 (defun context-navigator-sidebar-refresh ()
   "Force re-render of the sidebar, if visible."
@@ -222,9 +312,12 @@ MAP is a keymap to search for COMMAND bindings."
   "Show help for context-navigator sidebar."
   (interactive)
   (with-help-window "*Context Navigator Help*"
-    (let ((pairs '((context-navigator-sidebar-visit . "visit item")
+    (let ((pairs '((context-navigator-sidebar-next-item . "next item")
+                   (context-navigator-sidebar-previous-item . "previous item")
+                   (context-navigator-sidebar-visit . "visit item")
                    (context-navigator-sidebar-preview . "preview item (other window)")
-                   (context-navigator-sidebar--remove-at-point . "remove item from gptel context")
+                   (context-navigator-sidebar-toggle-enabled . "toggle enabled/disabled")
+                   (context-navigator-sidebar-delete-from-model . "delete from model (and gptel)")
                    (context-navigator-sidebar-refresh . "refresh")
                    (context-navigator-sidebar-quit . "quit sidebar")
                    (context-navigator-sidebar-help . "show this help"))))
@@ -233,20 +326,30 @@ MAP is a keymap to search for COMMAND bindings."
       (princ "\n\nGlobal keys (context-navigator-mode):\n")
       (princ "C-c i n  toggle sidebar\n")
       (princ "C-c i l  load context (project/global)\n")
-      (princ "C-c i s  save context\n")
-      (princ "C-c i g  refresh\n")
+      (princ "C-c i S  save context\n")
+      (princ "C-c i s  refresh\n")
       (princ "C-c i u  unload (clear) context\n"))))
 
 (defvar context-navigator-sidebar-mode-map
   (let ((m (make-sparse-keymap)))
     (define-key m (kbd "RET") #'context-navigator-sidebar-visit)
     (define-key m (kbd "SPC") #'context-navigator-sidebar-preview)
-    (define-key m (kbd "d")   #'context-navigator-sidebar--remove-at-point) ;; явное remove
+    (define-key m (kbd "n")   #'context-navigator-sidebar-next-item)
+    (define-key m (kbd "p")   #'context-navigator-sidebar-previous-item)
+    (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-enabled)
+    (define-key m (kbd "d")   #'context-navigator-sidebar-delete-from-model) ;; unified delete: model + gptel
     (define-key m (kbd "g")   #'context-navigator-sidebar-refresh)
     (define-key m (kbd "q")   #'context-navigator-sidebar-quit)
     (define-key m (kbd "?")   #'context-navigator-sidebar-help)
     m)
   "Keymap for =context-navigator-sidebar-mode'.")
+
+(defun context-navigator-sidebar--hl-line-range ()
+  "Return the region to highlight for the current line only if over an item.
+When point is not on an item line, return nil to avoid highlighting headers."
+  (when (get-text-property (point) 'context-navigator-item)
+    (cons (line-beginning-position)
+          (min (point-max) (1+ (line-end-position))))))
 
 (define-derived-mode context-navigator-sidebar-mode special-mode "Context-Nav"
   "Major mode for context-navigator sidebar buffer."
@@ -254,6 +357,7 @@ MAP is a keymap to search for COMMAND bindings."
   (setq truncate-lines t
         cursor-type t
         mode-line-format nil)
+  (setq-local hl-line-range-function #'context-navigator-sidebar--hl-line-range)
   (hl-line-mode 1))
 
 ;;;###autoload
