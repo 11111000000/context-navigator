@@ -1,0 +1,224 @@
+# Context Navigator for Emacs/gptel
+
+Context Navigator is a lightweight, modular context manager and sidebar for gptel. It mirrors gptel’s context (files, buffers, selections), lets you navigate quickly, toggle what’s included, and persists per-project or global context safely.
+
+- Sidebar on the left side (side window)
+- Real-time sync with gptel (debounced)
+- Per-project/global persistence with async loading
+- Optional icons, no heavy hooks, minimal UI overhead
+
+Status: early but test-backed core. See “Roadmap” for planned improvements.
+
+## Requirements
+
+- Emacs 29.1+ (recommended 30.1+)
+- gptel 0.8.0+ (recommended) — Context Navigator degrades gracefully if gptel is not present
+- Optional: project.el or projectile for project detection
+- Optional: all-the-icons (icons in the sidebar)
+
+## Installation
+
+You can use Context Navigator locally while developing, or wire it with use-package.
+
+### Local checkout + use-package
+
+```
+;; Adjust to your local path
+(add-to-list 'load-path "/home/az/Code/context-navigator")
+
+(use-package context-navigator
+  :commands
+  (context-navigator-start
+   context-navigator-mode
+   context-navigator-sidebar-open
+   context-navigator-refresh
+   context-navigator-context-load
+   context-navigator-context-save
+   context-navigator-context-unload)
+  :init
+  ;; Recommended defaults
+  (setq context-navigator-autoload t   ;; auto-load context when switching projects
+        context-navigator-autosave t)  ;; autosave after model refresh
+  :config
+  ;; Enable the global mode and open the sidebar on demand
+  (context-navigator-mode 1))
+```
+
+To open the sidebar immediately:
+```
+(context-navigator-start)
+```
+
+Notes:
+- The top-level entry “context-navigator.el” provides autoload stubs so :commands works fine.
+- If Emacs can’t find the package, ensure `load-path` points to the repo root before the use-package form.
+
+### straight.el (local or fork)
+
+```
+(use-package context-navigator
+  :straight (context-navigator
+             :type git
+             :host github
+             :repo "your-user/context-navigator")
+  :init (setq context-navigator-autoload t
+              context-navigator-autosave t)
+  :config (context-navigator-mode 1))
+```
+
+## Quick start
+
+- Enable the mode and open the sidebar:
+  - M-x context-navigator-start
+  - or M-x context-navigator-mode, then M-x context-navigator-sidebar-open
+- Work with your GPTel buffer and files. The sidebar mirrors gptel context and stays responsive with debounced updates.
+
+## Key bindings
+
+Global (context-navigator-mode keymap):
+- C-c i s  Refresh model and notify UI
+- C-c i c  Toggle sidebar
+- C-c i l  Load context (project/global, async)
+- C-c i S  Save current model to context file
+- C-c i u  Unload context (switch to global, or clear)
+
+Sidebar (context-navigator-sidebar-mode):
+- RET       Visit item (file/buffer or jump to selection)
+- SPC       Preview in other window (non-disruptive)
+- d         Remove item from gptel context
+- g         Refresh sidebar
+- q         Quit sidebar
+- ?         Help
+
+Note: Toggle/disable commands are planned to be exposed in the sidebar as “t” (toggle) and “C-d” (delete permanently) once UI wiring is completed in this module. Currently, “d” removes an item from gptel; model mirrors via pull.
+
+## Features
+
+- Sync with gptel
+  - Pulls current gptel context into a pure model
+  - Debounced syncing on context mutations (after-advices on gptel mutators)
+  - Only “enabled” items are applied to gptel; “disabled” items are kept in the model/persistence, but not added to gptel
+
+- Sidebar UI
+  - Side window on the left with configurable width
+  - Header shows project name or “~” in global mode
+  - Optional icons via all-the-icons (auto-disabled on TRAMP if configured)
+  - Preserves scroll and point best-effort on refresh
+
+- Persistence (v3 format)
+  - Project: ROOT/.context/context.el
+  - Global: ~/.context/context.el
+  - Safe s-exp read (no eval), with migrations and validation
+  - Async load with batching and progress notifications
+
+- Project auto-load/save
+  - Hooks to detect project changes (buffer/window selection), throttle interval
+  - Auto-loads context; when absent, can clear to global
+  - Auto-save after model refresh (configurable)
+
+## Configuration (defcustom)
+
+Core:
+- context-navigator-auto-refresh (t)
+- context-navigator-autosave (t)
+- context-navigator-autoload (t)
+- context-navigator-sidebar-width (32)
+- context-navigator-max-filename-length (64)
+- context-navigator-context-switch-interval (0.7)
+- context-navigator-context-load-batch-size (64)
+- context-navigator-dir-name (".context")
+- context-navigator-context-file-name ("context.el")
+- context-navigator-global-dir ("~/.context")
+- context-navigator-debug (nil)
+
+Render:
+- context-navigator-render-show-path (t)
+- context-navigator-render-truncate-name (64)
+
+Icons:
+- context-navigator-enable-icons (t)
+- context-navigator-icons-disable-on-remote (t)
+
+Example tweaks:
+```
+(setq context-navigator-sidebar-width 40
+      context-navigator-render-show-path t
+      context-navigator-enable-icons t
+      context-navigator-icons-disable-on-remote t
+      context-navigator-context-switch-interval 0.7
+      context-navigator-context-load-batch-size 64)
+```
+
+## Persistence and async loading
+
+- Save explicitly:
+  - M-x context-navigator-context-save
+- Load explicitly:
+  - M-x context-navigator-context-load
+- Unload (switch to global / clear):
+  - M-x context-navigator-context-unload
+
+During async load:
+- Progress events: :context-load-start / :context-load-step / :context-load-done
+- UI shows a “Loading…” header
+- Autosave/refresh are temporarily inhibited and fired once after completion
+
+## Troubleshooting
+
+- “M-x context-navigator-mode” not found:
+  - Ensure the repo root is added to `load-path` before loading:
+    #+end_srcelisp
+    (add-to-list 'load-path "/home/az/Code/context-navigator")
+    #+begin_src 
+  - Or refer to the use-package :load-path setup above.
+
+- No GPTel buffer found:
+  - Context Navigator will still render and persist the model; applying to gptel requires GPTel installed and a chat buffer.
+
+- Icons don’t show:
+  - Ensure all-the-icons is installed and `context-navigator-enable-icons` is non-nil. Icons are disabled automatically for remote paths if `context-navigator-icons-disable-on-remote` is non-nil.
+
+- Sidebar flicker:
+  - Rendering is debounced and tries to preserve scroll/point. For very large contexts, prefer async load and avoid heavy operations in the sidebar.
+
+## Development
+
+Run all tests:
+#+end_srcsh
+emacs -Q -batch -l test/run-tests.el -f ert-run-tests-batch-and-exit
+#+begin_src 
+
+Interactive:
+- M-x ert RET
+- Load runner: (load-file "test/run-tests.el")
+- Select tests or run all
+
+Project layout (modules):
+- context-navigator.el           (umbrella entry, autoloads)
+- context-navigator-core.el      (state, commands, wiring)
+- context-navigator-events.el    (event bus, debounce)
+- context-navigator-fp.el        (functional helpers)
+- context-navigator-model.el     (pure model, diff, keys)
+- context-navigator-persist.el   (v3 persistence, async load)
+- context-navigator-gptel-bridge.el (gptel adapter)
+- context-navigator-project.el   (project detection, throttled switches)
+- context-navigator-render.el    (pure render helpers)
+- context-navigator-icons.el     (optional icon provider)
+- context-navigator-sidebar.el   (sidebar UI)
+
+### Roadmap
+
+- Sidebar actions: toggle enabled (t), disable (d), delete (C-d) — richer UX with clear semantics
+- Patch/diff rendering for the sidebar (stable expand state)
+- Robust selection tracking (markers/anchors)
+- Transient menu, bulk operations, search/filter
+- CI matrix for Emacs versions
+
+## License
+
+MIT. See LICENSE.
+
+## Acknowledgements
+
+- GPTel for the chat interface
+- Emacs community for project.el, all-the-icons, and inspiration
