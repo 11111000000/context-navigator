@@ -1,7 +1,7 @@
 ;;; context-navigator.el --- Umbrella entry for Context Navigator -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
-;; Package-Requires: ((emacs "29.1") (gptel "0.8.0") (transient "0.4.0"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;;; Commentary:
 ;; This is a small, clear entry point (umbrella) that exposes public commands
