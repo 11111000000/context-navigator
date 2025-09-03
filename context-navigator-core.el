@@ -185,13 +185,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 
 (defvar context-navigator-mode-map
   (let ((m (make-sparse-keymap)))
-    (define-key m (kbd "C-c i s") #'context-navigator-refresh)
-    (define-key m (kbd "C-c i n") #'context-navigator-sidebar-toggle)
-    (define-key m (kbd "C-c i l") #'context-navigator-context-load)
-    (define-key m (kbd "C-c i S") #'context-navigator-context-save)
-    (define-key m (kbd "C-c i u") #'context-navigator-context-unload)
-    ;; Open sidebar (if needed) and show groups list
-    (define-key m (kbd "C-c i g") #'context-navigator-sidebar-show-groups)
+    ;; Transient entry point on C-c n
+    (define-key m (kbd "C-c n") #'context-navigator-transient)
     m)
   "Keymap for `context-navigator-mode'.")
 
@@ -309,8 +304,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
            (setf (context-navigator-state-inhibit-autosave new2) nil)
            (setf (context-navigator-state-loading-p new2) nil)
            (context-navigator--set-state new2))
-         (context-navigator-events-publish :context-load-done root (and items t))
-         (context-navigator-events-publish :group-switch-done root slug (and items t)))))))
+         (context-navigator-events-publish :context-load-done root (listp items))
+         (context-navigator-events-publish :group-switch-done root slug (listp items)))))))
 
 (defun context-navigator--load-context-for-root (root)
   "Load current group for ROOT (or global) using state.el.
@@ -406,7 +401,7 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
           (if file
               (message "Context saved to %s" (abbreviate-file-name file))
             (message "Failed to save context")))
-      (message "No active group — select a group first (C-c i g)"))))
+      (message "No active group — open groups list to select one"))))
 
 ;;;###autoload
 (defun context-navigator-context-unload ()
@@ -480,9 +475,18 @@ Sets up event wiring and keybindings."
 
 (defun context-navigator-set-items (items)
   "Replace current model ITEMS with ITEMS and publish :model-refreshed.
-Return the new state."
-  (let* ((cur (context-navigator--state-get))
-         (new (context-navigator--state-with-items (context-navigator--state-copy cur) items)))
+Prunes dead buffer items (non-live buffers). Return the new state."
+  (let* ((pruned
+          (cl-remove-if
+           (lambda (it)
+             (and (eq (context-navigator-item-type it) 'buffer)
+                  (not (buffer-live-p (context-navigator-item-buffer it)))))
+           (or items '())))
+         (removed (- (length (or items '())) (length pruned)))
+         (cur (context-navigator--state-get))
+         (new (context-navigator--state-with-items (context-navigator--state-copy cur) pruned)))
+    (when (> removed 0)
+      (message "Removed %d dead buffer item(s)" removed))
     (context-navigator--set-state new)
     (context-navigator-events-publish :model-refreshed new)
     new))
@@ -675,12 +679,19 @@ Autosaves current group before switching. Prompts when SLUG is nil."
       (let ((file (context-navigator-persist-context-file root slug)))
         (when (file-exists-p file)
           (ignore-errors (delete-file file))))
-      ;; State: only :current may change
+      ;; State: drop from :groups mapping and unset :current if needed
       (let* ((st (context-navigator--state-read root))
-             (deleted-active (equal (plist-get st :current) slug)))
+             (deleted-active (equal (plist-get st :current) slug))
+             (groups (and (plist-member st :groups) (plist-get st :groups)))
+             (groups* (and (listp groups)
+                           (cl-remove-if (lambda (cell) (equal (car-safe cell) slug))
+                                         groups))))
+        ;; Remove slug from mapping (if mapping present)
+        (when (plist-member st :groups)
+          (setq st (plist-put (copy-sequence st) :groups groups*)))
+        ;; If deleted group was active, unset :current and clear model/gptel
         (when deleted-active
           (setq st (plist-put (copy-sequence st) :current nil))
-          (context-navigator--state-write root st)
           ;; Clear gptel and model
           (when context-navigator--push-to-gptel
             (if (fboundp 'gptel-context-remove-all)
@@ -694,6 +705,18 @@ Autosaves current group before switching. Prompts when SLUG is nil."
             (context-navigator--set-state cur*))
           ;; Show groups list
           (ignore-errors (context-navigator-sidebar-show-groups))))
+      ;; Persist updated state regardless of active status
+      (let* ((st-final (context-navigator--state-read root))
+             ;; ensure we don't re-introduce the deleted slug if another writer raced:
+             (groups-final (and (plist-member st-final :groups) (plist-get st-final :groups)))
+             (groups-final* (and (listp groups-final)
+                                 (cl-remove-if (lambda (cell) (equal (car-safe cell) slug))
+                                               groups-final))))
+        (when (plist-member st-final :groups)
+          (setq st-final (plist-put (copy-sequence st-final) :groups groups-final*)))
+        (when (equal (plist-get st-final :current) slug)
+          (setq st-final (plist-put (copy-sequence st-final) :current nil)))
+        (context-navigator--state-write root st-final))
       ;; Always refresh groups list for UI
       (context-navigator-groups-open)
       (message "Deleted group: %s" slug)

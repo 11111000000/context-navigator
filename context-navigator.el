@@ -54,6 +54,8 @@
 (autoload 'context-navigator-sidebar-toggle "context-navigator-sidebar" "Toggle the sidebar window." t)
 ;;;###autoload
 (autoload 'context-navigator-sidebar-show-groups "context-navigator-sidebar" "Open the sidebar and show groups list." t)
+;;;###autoload
+(autoload 'context-navigator-transient "context-navigator-transient" "Open Context Navigator transient." t)
 
 ;;;###autoload
 (defun context-navigator-version ()

@@ -63,5 +63,30 @@
               (puthash key icon context-navigator-icons--cache)
               icon))))))
 
+(defun context-navigator-icons-for-indicator (state)
+  "Return a small icon string for indicator STATE or nil.
+STATE is one of: 'ok, 'mismatch, 'absent."
+  (let* ((color (pcase state
+                  ('ok "green4")
+                  ('mismatch "goldenrod2")
+                  (_ "gray")))
+         (icon
+          (cond
+           ;; Prefer Font Awesome if available
+           ((fboundp 'all-the-icons-faicon)
+            (pcase state
+              ('ok (all-the-icons-faicon "circle"))
+              ('absent (all-the-icons-faicon "circle-o"))
+              ('mismatch (all-the-icons-faicon "dot-circle-o"))))
+           ;; Material fallback if faicon missing
+           ((fboundp 'all-the-icons-material)
+            (pcase state
+              ('ok (all-the-icons-material "lens"))
+              ('absent (all-the-icons-material "panorama_fish_eye"))
+              ('mismatch (all-the-icons-material "brightness_1"))))
+           (t nil))))
+    (when (stringp icon)
+      (propertize icon 'face (list :foreground color :height 1.0)))))
+
 (provide 'context-navigator-icons)
 ;;; context-navigator-icons.el ends here

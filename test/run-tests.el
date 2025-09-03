@@ -29,6 +29,15 @@
 (require 'context-navigator-core-push-toggle-test)
 (require 'context-navigator-core-project-toggle-test)
 (require 'context-navigator-groups-create-switch-test)
+(require 'context-navigator-transient-test)
+(require 'context-navigator-add-test)
+(require 'context-navigator-render-indicators-test)
+(require 'context-navigator-sidebar-wrap-test)
+(require 'context-navigator-core-prune-test)
+(require 'context-navigator-render-style-test)
+(require 'context-navigator-render-truncate-test)
+(require 'context-navigator-transient-tramp-test)
+(require 'context-navigator-sidebar-controls-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

@@ -20,7 +20,7 @@
   "Rendering settings for context-navigator."
   :group 'context-navigator)
 
-(defcustom context-navigator-render-show-path t
+(defcustom context-navigator-render-show-path nil
   "Show item path on the right side when non-nil."
   :type 'boolean :group 'context-navigator-render)
 
@@ -28,7 +28,22 @@
   "Max display length for item names."
   :type 'integer :group 'context-navigator-render)
 
+(defcustom context-navigator-render-indicator-style 'text
+  "Indicator style for item activity lamps:
+- auto  : use icons when available, otherwise text bullets
+- icons : force icon glyphs (requires all-the-icons); fallback to text if unavailable
+- text  : use plain text bullets (●/○) with colors
+- off   : hide indicators entirely"
+  :type '(choice (const auto) (const icons) (const text) (const off))
+  :group 'context-navigator-render)
+
 (defvar-local context-navigator-render--last-hash nil)
+(defvar context-navigator-render--gptel-keys nil
+  "Optional list of stable keys of items currently present in gptel.
+When non-nil, enables tri-state indicator in the sidebar:
+- green  ● : item enabled and present in gptel
+- gray   ○ : item disabled and absent in gptel
+- yellow ● : mismatch between model and gptel (present when disabled, or absent when enabled).")
 
 (defun context-navigator-render--truncate (s n)
   "Return S truncated to N chars with ellipsis."
@@ -36,45 +51,96 @@
       (concat (substring s 0 (- n 3)) "…")
     s))
 
+(defun context-navigator-render--indicator (present enabled)
+  "Return indicator string (or nil) for PRESENT/ENABLED, honoring style settings.
+When style is 'off, return nil. When style is 'icons or 'auto with icon
+provider available, return icon glyph. Otherwise return colored text bullet.
+
+This function robustly falls back to a text bullet when an icon provider
+is present but returns nil for the requested state."
+  (let ((style (or context-navigator-render-indicator-style 'auto)))
+    (cond
+     ((eq style 'off) nil)
+     ((and (memq style '(icons auto))
+           (fboundp 'context-navigator-icons-for-indicator))
+      ;; Try to get icon; if provider returns nil or non-string, fall back to text bullet.
+      (let ((icon (ignore-errors
+                    (context-navigator-icons-for-indicator
+                     (cond
+                      ((and present enabled) 'ok)
+                      ((not (eq present enabled)) 'mismatch)
+                      (t 'absent))))))
+        (if (and (stringp icon) (> (length icon) 0))
+            icon
+          ;; Fallback to text bullet with coloring below
+          (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
+                 (color (cond
+                         ((and present enabled) "green4")
+                         ((not (eq present enabled)) "goldenrod2")
+                         (t "gray"))))
+            (propertize raw 'face (list :foreground color :height 1.15))))))
+     (t
+      (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
+             (color (cond
+                     ((and present enabled) "green4")
+                     ((not (eq present enabled)) "goldenrod2")
+                     (t "gray"))))
+        (propertize raw 'face (list :foreground color :height 1.15)))))))
+
+(defun context-navigator-render--left-column (state-icon icon name)
+  "Build left column string from STATE-ICON, ICON and NAME."
+  (string-trim
+   (mapconcat #'identity
+              (delq nil (list state-icon icon name))
+              " ")))
+
+(defun context-navigator-render--right-column (path)
+  "Return right column string for PATH or nil when not shown."
+  (when (and context-navigator-render-show-path
+             (stringp path) (not (string-empty-p path)))
+    (abbreviate-file-name path)))
+
+(defun context-navigator-render--compose-line (left right left-width)
+  "Compose final line from LEFT and RIGHT using LEFT-WIDTH."
+  (if right
+      (format (format "%%-%ds  %%s" (or left-width 48)) left right)
+    left))
+
+(defun context-navigator-render--propertize-line (line key item)
+  "Return a copy of LINE with text properties for KEY and ITEM."
+  (let ((s (copy-sequence line)))
+    (add-text-properties 0 (length s)
+                         (list 'context-navigator-key key
+                               'context-navigator-item item)
+                         s)
+    s))
+
 (defun context-navigator-render--format-line (item icon-fn &optional left-width)
   "Format a single ITEM into a propertized line string, using ICON-FN if non-nil.
-The returned string carries the text property 'context-navigator-key and
-'context-navigator-item for later retrieval at point.
+When LEFT-WIDTH is non-nil, align the left column to that width.
 
-Render a circular state icon (green for enabled, gray for disabled) so the
-state marker is more visible than the small checkbox glyph previously used.
-
-When LEFT-WIDTH IS non-nil, align the left column to that width."
+Tri-state indicator (when gptel keys list is provided):
+- green  ● : item enabled and present in gptel
+- gray   ○ : item disabled and absent in gptel
+- yellow ● : mismatch between model and gptel."
   (let* ((key (context-navigator-model-item-key item))
          (enabled (and (context-navigator-item-enabled item) t))
          (name (context-navigator-render--truncate
-                (or (context-navigator-item-name item) "") context-navigator-render-truncate-name))
+                (or (context-navigator-item-name item) "")
+                context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
-         ;; Use distinct glyphs for enabled vs disabled so textual content changes
-         ;; and re-render is detected by hash comparison.
-         (raw-icon (if enabled "●" "○"))
-         (color (if enabled "green4" "gray"))
-         (state-icon (propertize raw-icon 'face (list :foreground color :height 1.15)))
+         (have-keys (listp context-navigator-render--gptel-keys))
+         (present (and have-keys (member key context-navigator-render--gptel-keys)))
+         (state-icon (and have-keys
+                          (context-navigator-render--indicator present enabled)))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
-         (col-left (string-trim (mapconcat #'identity
-                                           (delq nil (list state-icon
-                                                           (and (stringp icon) icon)
-                                                           name))
-                                           " ")))
-         (col-right (and context-navigator-render-show-path
-                         (stringp path) (not (string-empty-p path))
-                         (abbreviate-file-name path)))
-         (lw (or left-width 48))
-         (line (if col-right
-                   (format (format "%%-%ds  %%s" lw) col-left col-right)
-                 col-left)))
-    ;; Ensure we return a copy so adding text properties doesn't mutate shared strings
-    (let ((s (copy-sequence line)))
-      (add-text-properties 0 (length s)
-                           (list 'context-navigator-key key
-                                 'context-navigator-item item)
-                           s)
-      s)))
+         (left (context-navigator-render--left-column
+                state-icon
+                (and (stringp icon) icon)
+                name))
+         (right (context-navigator-render--right-column path))
+         (line (context-navigator-render--compose-line left right left-width)))
+    (context-navigator-render--propertize-line line key item)))
 
 (defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
   "Return list of propertized lines for ITEMS with HEADER line first.
@@ -84,7 +150,8 @@ When LEFT-WIDTH is non-nil, align left column to that width."
          (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
          (sep (make-string (max 8 (min 120 (length hl))) ?-)))
     (append (list hl sep)
-            (mapcar (lambda (it) (context-navigator-render--format-line it icon-fn left-width))
+            (mapcar (lambda (it)
+                      (context-navigator-render--format-line it icon-fn left-width))
                     items))))
 
 (defun context-navigator-render-apply-to-buffer (buffer lines)

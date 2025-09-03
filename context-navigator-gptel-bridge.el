@@ -410,13 +410,35 @@ errors from different gptel versions."
         (context-navigator-events-publish :gptel-change :diff ops)
         (list :applied t :method 'diff :ops ops))))))
 
+(defun context-navigator-gptel--advise (sym)
+  "Add an :after advice to SYM that publishes :gptel-change. Return advice fn or nil."
+  (when (fboundp sym)
+    (let ((fn (lambda (&rest _)
+                (context-navigator-events-publish :gptel-change sym))))
+      (advice-add sym :after fn)
+      fn)))
+
 (defun context-navigator-gptel-on-change-register ()
-  "No-op: Navigator no longer listens to gptel changes."
-  (setq context-navigator--gptel-advices nil)
-  t)
+  "Install lightweight advices on gptel context mutations to publish :gptel-change.
+This is used ONLY to keep UI indicators up-to-date; it never imports from gptel."
+  (let (added)
+    (dolist (sym '(gptel-context-add
+                   gptel-context-add-file
+                   gptel-context--add-region
+                   gptel-context-remove
+                   gptel-context-remove-all))
+      (let ((fn (context-navigator-gptel--advise sym)))
+        (when fn
+          (push (cons sym fn) context-navigator--gptel-advices)
+          (setq added t))))
+    added))
 
 (defun context-navigator-gptel-on-change-unregister ()
-  "No-op: Navigator no longer listens to gptel changes."
+  "Remove previously installed advices for :gptel-change publishing."
+  (dolist (cell context-navigator--gptel-advices)
+    (condition-case _err
+        (advice-remove (car cell) (cdr cell))
+      (error nil)))
   (setq context-navigator--gptel-advices nil)
   t)
 

@@ -75,16 +75,16 @@ stubs so :commands works fine. - If Emacs can't find the package, ensure
     context-navigator-sidebar-open
 - Work with your GPTel buffer and files. By default, Navigator does not
   modify gptel. Enable [→gptel: on] in the sidebar header to push
-  (one-way), or use [Push now]/[Clear] when auto-push is off.
+  (one-way). Use footer buttons [Push now] (when auto-push is off) and
+  [Clear gptel] to manage gptel manually.
 
 ** Key bindings
-Global (context-navigator-mode keymap):
-- C-c i s  Refresh model and notify UI
-- C-c i n  Toggle sidebar
-- C-c i l  Load context (project/global, async)
-- C-c i S  Save current model to context file
-- C-c i u  Unload context (switch to global, or clear)
-- C-c i g  Open groups list in the sidebar
+Global (context-navigator-mode):
+- C-c n  Open transient menu
+  Within transient:
+  n toggle sidebar; p switch to current project; a add (universal);
+  g groups; s save; l load; u unload; x push→gptel; T auto-project;
+  P push now; C clear gptel
 - M-x context-navigator-switch-to-current-buffer-project  Manually switch to the current buffer's project
 
 Sidebar (context-navigator-sidebar-mode):
@@ -100,7 +100,7 @@ Sidebar (context-navigator-sidebar-mode):
 - x     Toggle push → gptel (sidebar header shows [→gptel: on/off])
 - T     Toggle auto-project switching (sidebar header shows [auto-proj: on/off])
 - P     Push now (when auto-push is off)
-- C     Clear gptel (when auto-push is off)
+- C     Clear gptel
 - q     Quit sidebar
 - ?     Help
 
@@ -111,8 +111,8 @@ Sidebar (context-navigator-sidebar-mode):
   - With push OFF: gptel is untouched; use [Push now]/[Clear] for manual control
 - Sidebar UI
   - Side window on the left with configurable width
-  - Header shows project name and active group slug, or "~" in global mode
-  - Status toggles in header: [→gptel: on/off], [auto-proj: on/off]; when push is off, buttons [Push now] and [Clear] are shown
+  - Header shows project name and active group slug, or "Global context" in global mode
+  - Status toggles in header: [→gptel: on/off], [auto-proj: on/off]; action buttons [Push now] (when auto-push is off) and [Clear gptel] are shown in the footer
   - Optional icons via all-the-icons (auto-disabled on TRAMP if configured)
   - Preserves scroll and point best-effort on refresh
 - Persistence (v3 format)
@@ -139,11 +139,16 @@ context-navigator-global-dir ("~/.context") - context-navigator-debug
 (nil) - context-navigator-default-push-to-gptel (nil) -
 context-navigator-default-auto-project-switch (nil)
 
-Render: - context-navigator-render-show-path (t) -
-context-navigator-render-truncate-name (64)
+Render: - context-navigator-render-show-path (nil) -
+context-navigator-render-truncate-name (64) -
+context-navigator-render-indicator-style (auto)
 
 Icons: - context-navigator-enable-icons (t) -
 context-navigator-icons-disable-on-remote (t)
+
+Sidebar controls: - context-navigator-controls-style (auto)
+
+Add: - context-navigator-max-file-size (2MB)
 
 Example tweaks:
 
@@ -188,10 +193,16 @@ completion
     large contexts, prefer async load and avoid heavy operations in the
     sidebar.
 
+** Localization (i18n)
+- Languages: English (en), Russian (ru), French (fr), German (de), Spanish (es)
+- Auto-selected from system locale by default
+- Customize via: context-navigator-language (auto|en|ru|fr|de|es)
+
 ** Development
 Run all tests:
 #+begin_src sh
 emacs -Q -batch -l test/run-tests.el -f ert-run-tests-batch-and-exit
+#+end_src
 
 Project layout (modules): - context-navigator.el (umbrella entry,
 autoloads) - context-navigator-core.el (state, commands, wiring) -
