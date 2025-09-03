@@ -635,55 +635,68 @@ returns without rebuilding buffer contents."
     it))
 
 (defun context-navigator-sidebar--visit (preview)
-  "Open item at point. If PREVIEW non-nil, show in other window."
+  "Open item at point. If PREVIEW non-nil, show in other window.
+
+When the sidebar buffer/window is currently selected, prefer opening targets
+in another window (never replace the sidebar buffer). This avoids the
+situation where visiting a file replaces the sidebar buffer and makes it
+hard to restore the sidebar afterward."
   (when-let* ((item (context-navigator-sidebar--at-item)))
-    (pcase (context-navigator-item-type item)
-      ('file
-       (let ((f (context-navigator-item-path item)))
-         (when (and (stringp f) (file-exists-p f))
-           (if preview
-               (find-file-other-window f)
-             (find-file f)))))
-      ('buffer
-       (let ((buf (or (context-navigator-item-buffer item)
-                      (and (context-navigator-item-path item)
-                           (find-file-noselect (context-navigator-item-path item))))))
-         (when (buffer-live-p buf)
-           (if preview
-               (switch-to-buffer-other-window buf)
-             (switch-to-buffer buf)))))
-      ('selection
-       (let* ((f   (context-navigator-item-path item))
-              (buf (or (context-navigator-item-buffer item)
-                       (and (stringp f) (file-exists-p f)
-                            (find-file-noselect f))))
-              (b   (context-navigator-item-beg item))
-              (e   (context-navigator-item-end item))
-              (valid-pos (and (integerp b) (integerp e))))
-         (cond
-          ;; Если буфер живой: используем уже открытое окно (если есть),
-          ;; иначе открываем в соседнем окне.
-          ((and (bufferp buf) (buffer-live-p buf))
-           (let ((win (get-buffer-window buf 0)))
-             (if win
-                 (select-window win)
-               (switch-to-buffer-other-window buf)))
-           (when valid-pos
-             (goto-char (min b e))
-             (push-mark (max b e) t t)))
-          ;; Иначе пробуем открыть файл в соседнем окне и перейти к региону.
-          ((and (stringp f) (file-exists-p f))
-           (let ((win (and (get-file-buffer f)
-                           (get-buffer-window (get-file-buffer f) 0))))
-             (if win
-                 (select-window win)
-               (find-file-other-window f)))
-           (when valid-pos
-             (goto-char (min b e))
-             (push-mark (max b e) t t)))
-          (t
-           (message "Cannot locate selection target")))))
-      (_ (message "Unknown item")))))
+    (let* ((win (selected-window))
+           (is-sidebar (and (window-live-p win)
+                            (window-parameter win 'window-side)
+                            (eq (window-buffer win) (current-buffer))))
+           (open-in-other (or preview is-sidebar)))
+      (pcase (context-navigator-item-type item)
+        ('file
+         (let ((f (context-navigator-item-path item)))
+           (when (and (stringp f) (file-exists-p f))
+             (if open-in-other
+                 (find-file-other-window f)
+               (find-file f)))))
+        ('buffer
+         (let ((buf (or (context-navigator-item-buffer item)
+                        (and (context-navigator-item-path item)
+                             (find-file-noselect (context-navigator-item-path item))))))
+           (when (buffer-live-p buf)
+             (if open-in-other
+                 (switch-to-buffer-other-window buf)
+               (switch-to-buffer buf)))))
+        ('selection
+         (let* ((f   (context-navigator-item-path item))
+                (buf (or (context-navigator-item-buffer item)
+                         (and (stringp f) (file-exists-p f)
+                              (find-file-noselect f))))
+                (b   (context-navigator-item-beg item))
+                (e   (context-navigator-item-end item))
+                (valid-pos (and (integerp b) (integerp e))))
+           (cond
+            ;; If a live buffer exists: use its window if visible, otherwise open in other window.
+            ((and (bufferp buf) (buffer-live-p buf))
+             (let ((win (get-buffer-window buf 0)))
+               (if win
+                   (select-window win)
+                 (if open-in-other
+                     (switch-to-buffer-other-window buf)
+                   (switch-to-buffer buf))))
+             (when valid-pos
+               (goto-char (min b e))
+               (push-mark (max b e) t t)))
+            ;; Otherwise open the file in other window when appropriate and go to region.
+            ((and (stringp f) (file-exists-p f))
+             (let ((win (and (get-file-buffer f)
+                             (get-buffer-window (get-file-buffer f) 0))))
+               (if win
+                   (select-window win)
+                 (if open-in-other
+                     (find-file-other-window f)
+                   (find-file f))))
+             (when valid-pos
+               (goto-char (min b e))
+               (push-mark (max b e) t t)))
+            (t
+             (message "Cannot locate selection target")))))
+        (_ (message "Unknown item"))))))
 
 (defun context-navigator-sidebar-visit ()
   "Visit item at point."
@@ -1097,6 +1110,10 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "S-<tab>")   #'context-navigator-sidebar-tab-previous)
     ;; Remap global indent command to our TAB-next to ensure override everywhere.
     (define-key m [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
+
+    ;; Ensure delete-other-windows behaves sensibly when the sidebar is present:
+    ;; close sidebar windows first to avoid making a side window the only window.
+    (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
 
     ;; New global toggles/actions in sidebar
     (define-key m (kbd "x")   #'context-navigator-sidebar-toggle-push)

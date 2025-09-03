@@ -224,9 +224,28 @@ Example: \"C-c n\". When nil (default), nothing is bound to keep defaults unobtr
 
 (defvar context-navigator-mode-map
   (let ((m (make-sparse-keymap)))
+    ;; Remap delete-other-windows to close navigator side windows first when mode enabled.
+    (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
     ;; no default global bindings; see `context-navigator-global-key'
     m)
   "Keymap for `context-navigator-mode'.")
+
+(defun context-navigator-delete-other-windows ()
+  "Close any Context Navigator sidebar windows first; then call `delete-other-windows'.
+This avoids the situation where a side window (the sidebar) becomes the only
+window after `delete-other-windows' and preserves the user's intended layout.
+
+If no sidebar windows are present, behave like `delete-other-windows'."
+  (interactive)
+  (let ((buf (and (boundp 'context-navigator-sidebar--buffer-name)
+                  (get-buffer context-navigator-sidebar--buffer-name))))
+    (when buf
+      (dolist (w (get-buffer-window-list buf nil t))
+        (when (window-live-p w)
+          (delete-window w)))))
+  ;; Finally, perform the normal delete-other-windows in the currently selected frame.
+  (when (fboundp 'delete-other-windows)
+    (call-interactively #'delete-other-windows)))
 
 ;; Apply user-defined binding (if any) on load
 (ignore-errors (context-navigator--update-global-keybinding))
