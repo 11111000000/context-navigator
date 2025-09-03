@@ -68,7 +68,8 @@
     (define-key m [mouse-1] #'context-navigator-sidebar-mouse-open-group)
     m)
   "Keymap attached to group lines to support mouse clicks.")
-(defvar-local context-navigator-sidebar--load-progress nil) ;; cons (POS . TOTAL) | nil
+(defvar-local context-navigator-sidebar--load-progress nil) ;; cons (POS . TOTAL) | nil)
+(defvar-local context-navigator-sidebar--winselect-fn nil)  ;; function added to window-selection-change-functions
 
 (defvar context-navigator-sidebar-window-params
   '((side . left) (slot . -1))
@@ -157,8 +158,9 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                              (when gptel-available
                                (define-key km [mouse-1] #'context-navigator-sidebar-toggle-push))
                              km))
-                        (fg (if (and push-on gptel-available) "green4" "gray")))
-                   (add-text-properties 0 (length s)
+                        (fg (if (and push-on gptel-available) "green4" "gray"))
+                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                   (add-text-properties beg (length s)
                                         (list 'mouse-face 'highlight
                                               'help-echo (if gptel-available
                                                              (context-navigator-i18n :toggle-push)
@@ -174,8 +176,9 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                         (m (let ((km (make-sparse-keymap)))
                              (define-key km [mouse-1] #'context-navigator-sidebar-toggle-auto-project)
                              km))
-                        (fg (if auto-on "green4" "gray")))
-                   (add-text-properties 0 (length s)
+                        (fg (if auto-on "green4" "gray"))
+                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                   (add-text-properties beg (length s)
                                         (list 'mouse-face 'highlight
                                               'help-echo (context-navigator-i18n :toggle-auto)
                                               'keymap m
@@ -193,7 +196,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
-  "Build footer control segments: toggles + [Push now] and [Clear gptel].
+  "Build footer control segments: toggles + [Push now], [Open buffers] and [Clear gptel].
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
@@ -203,23 +206,71 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
          (segs '()))
     ;; Toggles first (push → gptel, auto-project)
     (setq segs (append segs (context-navigator-sidebar--make-toggle-segments)))
+    ;; [Open buffers] — open file-backed buffers/selections/files in background
+    (let* ((st (ignore-errors (context-navigator--state-get)))
+           (items (and st (context-navigator-state-items st)))
+           (openable 0))
+      (dolist (it (or items '()))
+        (pcase (context-navigator-item-type it)
+          ('buffer
+           (let ((buf (context-navigator-item-buffer it))
+                 (p (context-navigator-item-path it)))
+             (when (and (stringp p) (file-exists-p p)
+                        (not (and buf (buffer-live-p buf)))
+                        (not (get-file-buffer p)))
+               (setq openable (1+ openable)))))
+          ('selection
+           (let ((p (context-navigator-item-path it)))
+             (when (and (stringp p) (file-exists-p p)
+                        (not (get-file-buffer p)))
+               (setq openable (1+ openable)))))
+          ('file
+           (let ((p (context-navigator-item-path it)))
+             (when (and (stringp p) (file-exists-p p)
+                        (not (get-file-buffer p)))
+               (setq openable (1+ openable)))))
+          (_ nil)))
+      (let* ((label (pcase style
+                      ((or 'icons 'auto) " [O]")
+                      (_ " [Open buffers]")))
+             (s (copy-sequence label))
+             (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+        ;; Mark as an action so RET handler can attempt it.
+        (add-text-properties beg (length s)
+                             (list 'context-navigator-action 'open-buffers)
+                             s)
+        (if (> openable 0)
+            (let ((m (let ((km (make-sparse-keymap)))
+                       (define-key km [mouse-1] #'context-navigator-sidebar-open-all-buffers)
+                       km)))
+              (add-text-properties beg (length s)
+                                   (list 'mouse-face 'highlight
+                                         'help-echo (format "Open %d context buffer(s) in background (o)" openable)
+                                         'keymap m)
+                                   s))
+          (add-text-properties beg (length s)
+                               (list 'face 'shadow
+                                     'help-echo "No buffers to open")
+                               s))
+        (push s segs)))
     ;; [Push now] — always shown; when auto-push is ON it is inactive (visually and without keymap).
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [⇪]")
                     (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
-           (s (copy-sequence label)))
+           (s (copy-sequence label))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
       ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
-      (add-text-properties 0 (length s) (list 'context-navigator-action 'push-now) s)
+      (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
       (if push-on
           ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
-          (add-text-properties 0 (length s)
+          (add-text-properties beg (length s)
                                (list 'face 'shadow
                                      'help-echo (context-navigator-i18n :push-tip))
                                s)
         (let ((m (let ((km (make-sparse-keymap)))
                    (define-key km [mouse-1] #'context-navigator-sidebar-push-now)
                    km)))
-          (add-text-properties 0 (length s)
+          (add-text-properties beg (length s)
                                (list 'mouse-face 'highlight
                                      'help-echo (context-navigator-i18n :push-tip)
                                      'keymap m)
@@ -229,19 +280,20 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [✖]")
                     (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
-           (s (copy-sequence label)))
+           (s (copy-sequence label))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
       ;; Always expose an action property so RET can activate/attempt the command.
-      (add-text-properties 0 (length s) (list 'context-navigator-action 'clear-gptel) s)
+      (add-text-properties beg (length s) (list 'context-navigator-action 'clear-gptel) s)
       (if has-gptel
           (let ((m (let ((km (make-sparse-keymap)))
                      (define-key km [mouse-1] #'context-navigator-sidebar-clear-gptel)
                      km)))
-            (add-text-properties 0 (length s)
+            (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
                                        'help-echo (context-navigator-i18n :clear-tip)
                                        'keymap m)
                                  s))
-        (add-text-properties 0 (length s)
+        (add-text-properties beg (length s)
                              (list 'face 'shadow
                                    'help-echo (context-navigator-i18n :clear-tip))
                              s))
@@ -703,6 +755,8 @@ sidebar re-render so the visual indicator updates immediately."
       ;; Ensure the sidebar updates visually right away.
       (context-navigator-sidebar--schedule-render)
       (context-navigator-sidebar--render-if-visible)
+      ;; Move to the next item after toggling
+      (context-navigator-sidebar-next-item)
       (message "Toggled: %s -> %s"
                (or (context-navigator-item-name item) key)
                (if enabled "enabled" "disabled")))))
@@ -786,6 +840,15 @@ Guard against duplicate subscriptions."
           context-navigator-sidebar--subs)
     ;; register gptel advices (UI-only)
     (ignore-errors (context-navigator-gptel-on-change-register))
+    ;; Re-render when the sidebar window becomes selected
+    (setq context-navigator-sidebar--winselect-fn
+          (lambda (_frame)
+            (let ((win (selected-window)))
+              (when (and (window-live-p win)
+                         (eq (window-buffer win) (get-buffer context-navigator-sidebar--buffer-name)))
+                (with-selected-window win
+                  (context-navigator-sidebar--schedule-render))))))
+    (add-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
     ;; Гарантированная отписка при убийстве буфера
     (add-hook 'kill-buffer-hook #'context-navigator-sidebar--remove-subs nil t)))
 
@@ -794,6 +857,10 @@ Guard against duplicate subscriptions."
   (when context-navigator-sidebar--subs
     (mapc #'context-navigator-events-unsubscribe context-navigator-sidebar--subs)
     (setq context-navigator-sidebar--subs nil))
+  ;; Remove focus render hook if installed.
+  (when context-navigator-sidebar--winselect-fn
+    (remove-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
+    (setq context-navigator-sidebar--winselect-fn nil))
   ;; Also unregister gptel advices installed for UI updates.
   (ignore-errors (context-navigator-gptel-on-change-unregister)))
 
@@ -829,6 +896,7 @@ MAP is a keymap to search for COMMAND bindings."
                    (context-navigator-sidebar-group-duplicate . "duplicate group")
                    (context-navigator-sidebar-toggle-push . "toggle push → gptel")
                    (context-navigator-sidebar-toggle-auto-project . "toggle auto-project switching")
+                   (context-navigator-sidebar-open-all-buffers . "open all context buffers (background)")
                    (context-navigator-sidebar-push-now . "push now to gptel (when auto-push is off)")
                    (context-navigator-sidebar-clear-gptel . "clear gptel context")
                    (context-navigator-sidebar-quit . "quit sidebar")
@@ -873,6 +941,8 @@ MAP is a keymap to search for COMMAND bindings."
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-sidebar-delete-dispatch)
     (define-key m (kbd "g")   #'context-navigator-sidebar-refresh-dispatch)
+    ;; Additional action: open all context buffers in background
+    (define-key m (kbd "o")   #'context-navigator-sidebar-open-all-buffers)
     ;; Groups-specific keys
     (define-key m (kbd "h")   #'context-navigator-sidebar-go-up)      ;; show groups from items
     (define-key m (kbd "a")   #'context-navigator-sidebar-group-create)
@@ -987,6 +1057,42 @@ Do not highlight header/separator lines."
   (ignore-errors (context-navigator-push-to-gptel-now))
   (context-navigator-sidebar--schedule-render))
 
+(defun context-navigator-sidebar-open-all-buffers ()
+  "Open all file/buffer/selection items from current model in background (no window selection).
+
+This opens file-backed buffers (via `find-file-noselect') for items of
+type `file', `buffer' and `selection' when they reference an existing file.
+Buffers are opened in background; we do not change window focus."
+  (interactive)
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (count 0))
+    (dolist (it (or items '()))
+      (pcase (context-navigator-item-type it)
+        ('buffer
+         (let ((buf (context-navigator-item-buffer it))
+               (p (context-navigator-item-path it)))
+           (when (and (stringp p) (file-exists-p p)
+                      (not (and buf (buffer-live-p buf)))
+                      (not (get-file-buffer p)))
+             (ignore-errors (find-file-noselect p))
+             (setq count (1+ count)))))
+        ('selection
+         (let ((p (context-navigator-item-path it)))
+           (when (and (stringp p) (file-exists-p p)
+                      (not (get-file-buffer p)))
+             (ignore-errors (find-file-noselect p))
+             (setq count (1+ count)))))
+        ('file
+         (let ((p (context-navigator-item-path it)))
+           (when (and (stringp p) (file-exists-p p)
+                      (not (get-file-buffer p)))
+             (ignore-errors (find-file-noselect p))
+             (setq count (1+ count)))))
+        (_ nil)))
+    (context-navigator-sidebar--schedule-render)
+    (message "Opened %d context buffer(s) in background" count)))
+
 (defun context-navigator-sidebar-clear-gptel ()
   "Manually clear gptel context without touching the model."
   (interactive)
@@ -998,7 +1104,7 @@ Do not highlight header/separator lines."
 (defun context-navigator-sidebar-activate ()
   "RET action:
 - On toggle segments in header: toggle push/auto flags
-- On footer action segments: invoke the assigned action (push/clear)
+- On footer action segments: invoke the assigned action (push/clear/open buffers)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
@@ -1008,6 +1114,7 @@ Do not highlight header/separator lines."
      ;; Footer actions (explicit)
      ((eq act 'push-now) (context-navigator-sidebar-push-now))
      ((eq act 'clear-gptel) (context-navigator-sidebar-clear-gptel))
+     ((eq act 'open-buffers) (context-navigator-sidebar-open-all-buffers))
      ;; Header toggles
      ((eq tgl 'push) (context-navigator-sidebar-toggle-push))
      ((eq tgl 'auto) (context-navigator-sidebar-toggle-auto-project))

@@ -1,7 +1,7 @@
 ;;; context-navigator.el --- Umbrella entry for Context Navigator -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
-;; Author: Peter Kosov
+;; Author: Peter Kosov <11111000000@email.com>
 ;; Maintainer: Peter Kosov <11111000000@email.com>
 ;; URL: https://github.com/11111000000/context-navigator
 ;; Keywords: convenience, tools
