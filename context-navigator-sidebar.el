@@ -461,15 +461,36 @@ Returns the list of lines that were rendered."
                (switch-to-buffer-other-window buf)
              (switch-to-buffer buf)))))
       ('selection
-       (let ((f (context-navigator-item-path item))
-             (b (context-navigator-item-beg item))
-             (e (context-navigator-item-end item)))
-         (when (and f (file-exists-p f) (integerp b) (integerp e))
-           (if preview
-               (find-file-other-window f)
-             (find-file f))
-           (goto-char (min b e))
-           (push-mark (max b e) t t))))
+       (let* ((f   (context-navigator-item-path item))
+              (buf (or (context-navigator-item-buffer item)
+                       (and (stringp f) (file-exists-p f)
+                            (find-file-noselect f))))
+              (b   (context-navigator-item-beg item))
+              (e   (context-navigator-item-end item))
+              (valid-pos (and (integerp b) (integerp e))))
+         (cond
+          ;; Если буфер живой: используем уже открытое окно (если есть),
+          ;; иначе открываем в соседнем окне.
+          ((and (bufferp buf) (buffer-live-p buf))
+           (let ((win (get-buffer-window buf 0)))
+             (if win
+                 (select-window win)
+               (switch-to-buffer-other-window buf)))
+           (when valid-pos
+             (goto-char (min b e))
+             (push-mark (max b e) t t)))
+          ;; Иначе пробуем открыть файл в соседнем окне и перейти к региону.
+          ((and (stringp f) (file-exists-p f))
+           (let ((win (and (get-file-buffer f)
+                           (get-buffer-window (get-file-buffer f) 0))))
+             (if win
+                 (select-window win)
+               (find-file-other-window f)))
+           (when valid-pos
+             (goto-char (min b e))
+             (push-mark (max b e) t t)))
+          (t
+           (message "Cannot locate selection target")))))
       (_ (message "Unknown item")))))
 
 (defun context-navigator-sidebar-visit ()
