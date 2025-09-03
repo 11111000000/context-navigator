@@ -510,25 +510,39 @@ Returns the list of lines that were rendered."
   (context-navigator-sidebar--visit t))
 
 (defun context-navigator-sidebar-next-item ()
-  "Move point to the next item line or \"..\"."
+  "Move point to the next item line or \"..\" or group line."
   (interactive)
   (let* ((start (min (1+ (line-end-position)) (point-max)))
-         (pos (context-navigator-sidebar--find-next-itemish-pos start)))
+         (pos (or (context-navigator-sidebar--find-next-itemish-pos start)
+                  (text-property-not-all start (point-max) 'context-navigator-group-slug nil))))
     (unless pos
-      ;; wrap to the first item-ish element
-      (setq pos (context-navigator-sidebar--find-next-itemish-pos (point-min))))
+      ;; wrap to the first item-ish or group element
+      (setq pos (or (context-navigator-sidebar--find-next-itemish-pos (point-min))
+                    (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))))
     (when pos
       (goto-char pos)
       (beginning-of-line))))
 
 (defun context-navigator-sidebar-previous-item ()
-  "Move point to the previous item line or \"..\"."
+  "Move point to the previous item line or \"..\" or group line."
   (interactive)
   (let* ((start (line-beginning-position))
-         (pos (context-navigator-sidebar--find-prev-itemish-pos start)))
+         (pos (or (context-navigator-sidebar--find-prev-itemish-pos start)
+                  (let ((p nil) (best nil))
+                    (setq p (text-property-not-all (point-min) start 'context-navigator-group-slug nil))
+                    (while (and p (< p start))
+                      (setq best p)
+                      (setq p (text-property-not-all (1+ p) start 'context-navigator-group-slug nil)))
+                    best))))
     (unless pos
-      ;; wrap to the last item-ish element
-      (setq pos (context-navigator-sidebar--find-prev-itemish-pos (point-max))))
+      ;; wrap to the last item-ish or group element
+      (setq pos (or (context-navigator-sidebar--find-prev-itemish-pos (point-max))
+                    (let ((p nil) (best nil))
+                      (setq p (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))
+                      (while p
+                        (setq best p)
+                        (setq p (text-property-not-all (1+ p) (point-max) 'context-navigator-group-slug nil)))
+                      best))))
     (when pos
       (goto-char pos)
       (beginning-of-line))))
