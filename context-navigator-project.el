@@ -49,15 +49,38 @@ auto-project switching is enabled."
          (derived-mode-p 'dired-mode)))))
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)
-  "Publish :project-switch only when the project root actually changes."
+  "Publish :project-switch only when the project root actually changes.
+
+Throttled by `context-navigator-context-switch-interval' to avoid publishing
+a flurry of events during rapid buffer/window changes. When a change is
+detected but the last publish was too recent, schedule a debounced publish
+for the remaining interval."
   (let* ((buf (or buffer (current-buffer))))
     (when (context-navigator-project--interesting-buffer-p buf)
       (let* ((root (context-navigator-project-current-root buf)))
         (unless (equal root context-navigator-project--last-root)
-          (setq context-navigator-project--last-root root
-                context-navigator-project--last-switch-time (context-navigator-project--now))
-          (context-navigator-events-publish :project-switch root)
-          root)))))
+          (let* ((now (context-navigator-project--now))
+                 (elapsed (and (numberp context-navigator-project--last-switch-time)
+                               (- now context-navigator-project--last-switch-time)))
+                 (interval (if (and (boundp 'context-navigator-context-switch-interval)
+                                    (numberp context-navigator-context-switch-interval))
+                               context-navigator-context-switch-interval
+                             0.0)))
+            (if (or (not (numberp elapsed)) (>= elapsed interval))
+                (progn
+                  (setq context-navigator-project--last-root root
+                        context-navigator-project--last-switch-time now)
+                  (context-navigator-events-publish :project-switch root)
+                  root)
+              ;; Too soon: debounce a publish for the remaining time.
+              (let ((delay (max 0.0 (- interval (or elapsed 0.0)))))
+                (context-navigator-events-debounce
+                 :project-switch delay
+                 (lambda ()
+                   (setq context-navigator-project--last-root root
+                         context-navigator-project--last-switch-time (context-navigator-project--now))
+                   (context-navigator-events-publish :project-switch root)))))
+            nil))))))
 
 (defun context-navigator-project--on-buffer-list-update ()
   (context-navigator-project--maybe-publish-switch (current-buffer)))

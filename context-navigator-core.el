@@ -75,6 +75,15 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Autosave context file on model refresh (when not inhibited)."
   :type 'boolean :group 'context-navigator)
 
+(defcustom context-navigator-autosave-debounce 0.5
+  "Debounce interval (seconds) for autosave on model refresh.
+
+When many :model-refreshed events occur in quick succession, autosave is
+debounced to avoid excessive disk IO. The debounced callback will use the
+latest state at execution time; setting this to 0 disables debouncing
+(autosave will still occur but may be suppressed by other inhibit flags)."
+  :type 'number :group 'context-navigator)
+
 (defcustom context-navigator-autoload t
   "Autoload context when switching projects."
   :type 'boolean :group 'context-navigator)
@@ -499,16 +508,24 @@ Sets up event wiring and keybindings."
               context-navigator--event-tokens)
         (push (context-navigator-events-subscribe
                :model-refreshed
-               (lambda (state)
-                 (when (and context-navigator-autosave
-                            (not (context-navigator-state-inhibit-autosave state)))
-                   (let* ((root (context-navigator-state-last-project-root state))
-                          (slug (context-navigator-state-current-group-slug state))
-                          (items (context-navigator-state-items state)))
-                     ;; Guard: do not save when no active group; avoid legacy single-file write.
-                     (when (and (stringp slug) (not (string-empty-p slug)))
-                       (ignore-errors
-                         (context-navigator-persist-save items root slug)))))))
+               (lambda (_state)
+                 ;; Debounced autosave: schedule a save using the latest state when the timer fires.
+                 ;; We debounce at the module-level to coalesce many rapid model updates.
+                 (when context-navigator-autosave
+                   (context-navigator-events-debounce
+                    :autosave
+                    (or context-navigator-autosave-debounce 0.5)
+                    (lambda ()
+                      (let ((st (context-navigator--state-get)))
+                        (when (and context-navigator-autosave
+                                   (context-navigator-state-p st)
+                                   (not (context-navigator-state-inhibit-autosave st)))
+                          (let ((root (context-navigator-state-last-project-root st))
+                                (slug (context-navigator-state-current-group-slug st))
+                                (items (context-navigator-state-items st)))
+                            ;; Guard: do not save when no active group; avoid legacy single-file write.
+                            (when (and (stringp slug) (not (string-empty-p slug)))
+                              (ignore-errors (context-navigator-persist-save items root slug)))))))))))
               context-navigator--event-tokens)
         ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
         (context-navigator--log "mode enabled"))
