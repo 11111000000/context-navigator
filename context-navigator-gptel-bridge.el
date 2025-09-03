@@ -6,11 +6,11 @@
 ;; This module adapts to gptel context API if present.
 ;; - Pulls current gptel context into model items (pure transformation)
 ;; - Applies desired items back to gptel (graceful degradation)
-;; - Registers lightweight advices to publish :gptel-change events
+;; - Does not install advices by default; core no longer listens to :gptel-change
 ;;
 ;; Design:
 ;; - Functional by default: conversion routines are pure.
-;; - Side-effects are constrained to `apply' and advice setup/teardown.
+;; - Side-effects are constrained to `apply' only.
 ;; - If precise per-item removal is not available, fallback to reset (remove-all + add).
 
 ;;; Code:
@@ -411,28 +411,12 @@ errors from different gptel versions."
         (list :applied t :method 'diff :ops ops))))))
 
 (defun context-navigator-gptel-on-change-register ()
-  "Install lightweight advices on gptel mutators to publish :gptel-change."
-  (let ((targets '(gptel-context-add
-                   gptel-context-add-file
-                   gptel-context--add-region
-                   gptel-context--add-directory
-                   gptel-context-remove
-                   gptel-context-remove-all)))
-    (dolist (sym targets)
-      (when (and (fboundp sym)
-                 (not (assoc sym context-navigator--gptel-advices)))
-        (let ((fn (lambda (&rest _)
-                    (context-navigator-events-publish :gptel-change sym))))
-          (advice-add sym :after fn)
-          (push (cons sym fn) context-navigator--gptel-advices)))))
+  "No-op: Navigator no longer listens to gptel changes."
+  (setq context-navigator--gptel-advices nil)
   t)
 
 (defun context-navigator-gptel-on-change-unregister ()
-  "Remove previously registered advices."
-  (dolist (pair context-navigator--gptel-advices)
-    (let ((sym (car pair)) (fn (cdr pair)))
-      (when (fboundp sym)
-        (ignore-errors (advice-remove sym fn)))))
+  "No-op: Navigator no longer listens to gptel changes."
   (setq context-navigator--gptel-advices nil)
   t)
 

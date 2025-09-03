@@ -32,6 +32,18 @@
 (autoload 'context-navigator-context-save "context-navigator-core" "Save current context to file." t)
 ;;;###autoload
 (autoload 'context-navigator-context-unload "context-navigator-core" "Unload/clear context and switch to global." t)
+;;;###autoload
+(autoload 'context-navigator-groups-open "context-navigator-core" "Open groups list (publish event for sidebar)." t)
+;;;###autoload
+(autoload 'context-navigator-group-switch "context-navigator-core" "Switch active group." t)
+;;;###autoload
+(autoload 'context-navigator-group-create "context-navigator-core" "Create a new group." t)
+;;;###autoload
+(autoload 'context-navigator-group-rename "context-navigator-core" "Rename a group." t)
+;;;###autoload
+(autoload 'context-navigator-group-delete "context-navigator-core" "Delete a group." t)
+;;;###autoload
+(autoload 'context-navigator-group-duplicate "context-navigator-core" "Duplicate a group." t)
 
 ;; Sidebar entry points (autoloaded)
 ;;;###autoload
@@ -40,13 +52,15 @@
 (autoload 'context-navigator-sidebar-close "context-navigator-sidebar" "Close the sidebar window." t)
 ;;;###autoload
 (autoload 'context-navigator-sidebar-toggle "context-navigator-sidebar" "Toggle the sidebar window." t)
+;;;###autoload
+(autoload 'context-navigator-sidebar-show-groups "context-navigator-sidebar" "Open the sidebar and show groups list." t)
 
 ;;;###autoload
 (defun context-navigator-version ()
   "Return version string for Context Navigator."
   (interactive)
-  (message "context-navigator — 0.2.1")
-  "0.2.1")
+  (message "context-navigator — 0.3.0")
+  "0.3.0")
 
 ;;;###autoload
 (defun context-navigator-start ()

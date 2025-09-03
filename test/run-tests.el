@@ -26,6 +26,9 @@
 (require 'context-navigator-gptel-bridge-test)
 (require 'context-navigator-core-test)
 (require 'context-navigator-core-api-test)
+(require 'context-navigator-core-push-toggle-test)
+(require 'context-navigator-core-project-toggle-test)
+(require 'context-navigator-groups-create-switch-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

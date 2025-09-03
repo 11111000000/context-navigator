@@ -5,7 +5,7 @@ you navigate quickly, toggle what's included, and persists per-project
 or global context safely.
 
 - Sidebar on the left side (side window)
-- Real-time sync with gptel (debounced)
+- Optional push to gptel (one-way, toggleable)
 - Per-project/global persistence with async loading
 - Optional icons, no heavy hooks, minimal UI overhead
 
@@ -73,8 +73,9 @@ stubs so :commands works fine. - If Emacs can't find the package, ensure
   - M-x context-navigator-start
   - or M-x context-navigator-mode, then M-x
     context-navigator-sidebar-open
-- Work with your GPTel buffer and files. The sidebar mirrors gptel
-  context and stays responsive with debounced updates.
+- Work with your GPTel buffer and files. By default, Navigator does not
+  modify gptel. Enable [→gptel: on] in the sidebar header to push
+  (one-way), or use [Push now]/[Clear] when auto-push is off.
 
 ** Key bindings
 Global (context-navigator-mode keymap):
@@ -83,34 +84,43 @@ Global (context-navigator-mode keymap):
 - C-c i l  Load context (project/global, async)
 - C-c i S  Save current model to context file
 - C-c i u  Unload context (switch to global, or clear)
+- C-c i g  Open groups list in the sidebar
+- M-x context-navigator-switch-to-current-buffer-project  Manually switch to the current buffer's project
 
 Sidebar (context-navigator-sidebar-mode):
-- RET   Visit item (file/buffer or jump to selection)
+- RET   Visit item (items mode) / Open group (groups mode)
 - SPC   Preview in other window (non-disruptive)
-- t     Toggle enabled/disabled (updates model and applies to gptel)
-- d     Delete item (from model and apply diff to gptel)
-- g     Refresh sidebar
+- t     Toggle enabled/disabled (updates model; applies to gptel only when push is ON)
+- d     Delete item (items mode) / Delete group (groups mode)
+- g     Refresh items (items mode) / Refresh groups (groups mode)
+- h     Toggle items <-> groups (in items shows groups; in groups goes back)
+- a     Create group (groups mode)
+- r     Rename group (groups mode)
+- c     Duplicate group (groups mode)
+- x     Toggle push → gptel (sidebar header shows [→gptel: on/off])
+- T     Toggle auto-project switching (sidebar header shows [auto-proj: on/off])
+- P     Push now (when auto-push is off)
+- C     Clear gptel (when auto-push is off)
 - q     Quit sidebar
 - ?     Help
 
 ** Features
-- Sync with gptel
-  - Pulls current gptel context into a pure model
-  - Debounced syncing on context mutations (after-advices on gptel
-    mutators)
-  - Only "enabled" items are applied to gptel; "disabled" items are kept
-    in the model/persistence, but not added to gptel
+- Push to gptel (one-way)
+  - Navigator never imports from gptel
+  - With push ON: model changes and group switches reset gptel and add enabled items
+  - With push OFF: gptel is untouched; use [Push now]/[Clear] for manual control
 - Sidebar UI
   - Side window on the left with configurable width
-  - Header shows project name or "~" in global mode
-  - Optional icons via all-the-icons (auto-disabled on TRAMP if
-    configured)
+  - Header shows project name and active group slug, or "~" in global mode
+  - Status toggles in header: [→gptel: on/off], [auto-proj: on/off]; when push is off, buttons [Push now] and [Clear] are shown
+  - Optional icons via all-the-icons (auto-disabled on TRAMP if configured)
   - Preserves scroll and point best-effort on refresh
 - Persistence (v3 format)
-  - Project: ROOT/.context/context.el
-  - Global: ~/.context/context.el
+  - Project groups: ROOT/.context/<group>.el
+  - Global groups: ~/.context/<group>.el
+  - State file: ROOT/.context/state.el (or ~/.context/state.el) with (:version 1 :current "group-slug")
   - Safe s-exp read (no eval), with migrations and validation
-  - Async load with batching and progress notifications
+  - Async load per-group with batching and progress notifications
 - Project auto-load/save
   - Hooks to detect project changes (buffer/window selection), throttle
     interval
@@ -126,7 +136,8 @@ context-navigator-context-load-batch-size (64) -
 context-navigator-dir-name (".context") -
 context-navigator-context-file-name ("context.el") -
 context-navigator-global-dir ("~/.context") - context-navigator-debug
-(nil)
+(nil) - context-navigator-default-push-to-gptel (nil) -
+context-navigator-default-auto-project-switch (nil)
 
 Render: - context-navigator-render-show-path (t) -
 context-navigator-render-truncate-name (64)

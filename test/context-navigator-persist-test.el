@@ -36,9 +36,9 @@
                                                   (got-keys  (sort (mapcar #'context-navigator-model-item-key got) #'string<)))
                                               (should (equal orig-keys got-keys)))
                                             (should (equal (mapcar #'context-navigator-item-enabled (sort got (lambda (a b) (string< (context-navigator-model-item-key a)
-                                                                                                                                     (context-navigator-model-item-key b)))))
+                                                                                                                                (context-navigator-model-item-key b)))))
                                                            (mapcar #'context-navigator-item-enabled (sort items (lambda (a b) (string< (context-navigator-model-item-key a)
-                                                                                                                                       (context-navigator-model-item-key b)))))))))))
+                                                                                                                                  (context-navigator-model-item-key b)))))))))))
 
 (ert-deftest context-navigator-persist/migrate-wraps-v2-like-list ()
   (let* ((v2 '((:type file :path "a" :enabled t)
@@ -57,6 +57,32 @@
                                             (context-navigator-persist-load-async root (lambda (items) (setq got items)))
                                             (context-navigator-test-wait 0.02)
                                             (should (equal got nil))))))
+
+(ert-deftest context-navigator-persist/list-groups-includes-state-mapping ()
+  (context-navigator-test-with-temp-dir dir
+                                        (let* ((root dir)
+                                               (context-navigator-dir-name ".context"))
+                                          ;; Save state with mapping but do not create any group files
+                                          (context-navigator-persist-state-save root '(:version 1 :current "foo" :groups (("foo" . "Имя"))))
+                                          (let* ((lst (context-navigator-persist-list-groups root))
+                                                 (slugs (mapcar (lambda (pl) (plist-get pl :slug)) lst)))
+                                            (should (member "foo" slugs))
+                                            (let ((cell (cl-find "foo" lst :key (lambda (pl) (plist-get pl :slug)) :test #'equal)))
+                                              (should (equal (plist-get cell :display) "Имя"))
+                                              ;; mtime may be nil if file missing; path should be a proper path under dir
+                                              (should (string-match-p (regexp-quote (file-name-as-directory (expand-file-name ".context" root)))
+                                                                      (plist-get cell :path))))))))
+
+(ert-deftest context-navigator-persist/slugify-basic-rules ()
+  (let* ((s1 (context-navigator-persist-slugify "MyGroup"))
+         (s2 (context-navigator-persist-slugify "Группа-тест 1!"))
+         (s3 (context-navigator-persist-slugify (make-string 120 ?a))))
+    (should (equal s1 "mygroup"))
+    ;; No whitespace, only allowed chars, and lowercase
+    (should (not (string-match-p "[[:space:]]" s2)))
+    (should (equal s2 (downcase s2)))
+    ;; Length capped at 100
+    (should (<= (length s3) 100))))
 
 (provide 'context-navigator-persist-test)
 ;;; context-navigator-persist-test.el ends here
