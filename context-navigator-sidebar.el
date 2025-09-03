@@ -78,24 +78,26 @@
   "Compute compact header title from STATE (without toggle segments).
 
 Title only:
-- [<root>] Groups                 when in groups mode
-- [<root>] group: <slug>          when in items mode
-- Global context ...              when no root
+- [<project>: <group>]            when group is active
+- [<project>] Groups             when in groups mode
+- [context-navigator]            when no root
 
-Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered below the title (wrapped)."
+Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the footer."
   (let* ((root (context-navigator-state-last-project-root state))
          (loading (context-navigator-state-loading-p state))
          (group (context-navigator-state-current-group-slug state))
-         (base (if root
-                   (format "[%s]" (abbreviate-file-name root))
+         ;; Use project basename (or a sensible default) instead of full path.
+         (proj-name (if root
+                        (file-name-nondirectory (directory-file-name root))
+                      "context-navigator"))
+         (base (if proj-name
+                   (if group
+                       (format "[%s: %s]" proj-name group)
+                     (format "[%s]" proj-name))
                  (context-navigator-i18n :global-context)))
          (extra
-          (cond
-           ((eq context-navigator-sidebar--mode 'groups)
-            (concat " " (context-navigator-i18n :groups)))
-           (group
-            (format "  %s" (format (context-navigator-i18n :group-label) group)))
-           (t nil)))
+          (when (eq context-navigator-sidebar--mode 'groups)
+            (concat " " (context-navigator-i18n :groups))))
          (suffix
           (cond
            ((and loading context-navigator-sidebar--load-progress)
@@ -185,7 +187,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
-  "Build footer control segments for [Push now] and [Clear gptel].
+  "Build footer control segments: toggles + [Push now] and [Clear gptel].
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
@@ -193,36 +195,47 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
          (has-gptel (and (listp gptel-items) (> (length gptel-items) 0)))
          (style (or context-navigator-controls-style 'auto))
          (segs '()))
-    ;; [Push now] only when auto-push is OFF
-    (when (not push-on)
-      (let* ((label (pcase style
-                      ((or 'icons 'auto) " [⇪]")
-                      (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
-             (m (let ((km (make-sparse-keymap)))
-                  (define-key km [mouse-1] #'context-navigator-sidebar-push-now)
-                  km))
-             (s (copy-sequence label)))
+    ;; Toggles first (push → gptel, auto-project)
+    (setq segs (append segs (context-navigator-sidebar--make-toggle-segments)))
+    ;; [Push now] — always shown; when auto-push is ON it is inactive (visually and without keymap).
+    (let* ((label (pcase style
+                    ((or 'icons 'auto) " [⇪]")
+                    (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
+           (s (copy-sequence label)))
+      (if push-on
+          ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
+          (add-text-properties 0 (length s)
+                               (list 'face 'shadow
+                                     'help-echo (context-navigator-i18n :push-tip))
+                               s)
+        (let ((m (let ((km (make-sparse-keymap)))
+                   (define-key km [mouse-1] #'context-navigator-sidebar-push-now)
+                   km)))
+          (add-text-properties 0 (length s)
+                               (list 'mouse-face 'highlight
+                                     'help-echo (context-navigator-i18n :push-tip)
+                                     'keymap m)
+                               s)))
+      (push s segs))
+    ;; [Clear gptel] — always shown; inactive (shadowed) when no entries available.
+    (let* ((label (pcase style
+                    ((or 'icons 'auto) " [✖]")
+                    (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
+           (s (copy-sequence label)))
+      (if has-gptel
+          (let ((m (let ((km (make-sparse-keymap)))
+                     (define-key km [mouse-1] #'context-navigator-sidebar-clear-gptel)
+                     km)))
+            (add-text-properties 0 (length s)
+                                 (list 'mouse-face 'highlight
+                                       'help-echo (context-navigator-i18n :clear-tip)
+                                       'keymap m)
+                                 s))
         (add-text-properties 0 (length s)
-                             (list 'mouse-face 'highlight
-                                   'help-echo (context-navigator-i18n :push-tip)
-                                   'keymap m)
-                             s)
-        (push s segs)))
-    ;; [Clear gptel] always when there are entries
-    (when has-gptel
-      (let* ((label (pcase style
-                      ((or 'icons 'auto) " [✖]")
-                      (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
-             (m (let ((km (make-sparse-keymap)))
-                  (define-key km [mouse-1] #'context-navigator-sidebar-clear-gptel)
-                  km))
-             (s (copy-sequence label)))
-        (add-text-properties 0 (length s)
-                             (list 'mouse-face 'highlight
-                                   'help-echo (context-navigator-i18n :clear-tip)
-                                   'keymap m)
-                             s)
-        (push s segs)))
+                             (list 'face 'shadow
+                                   'help-echo (context-navigator-i18n :clear-tip))
+                             s))
+      (push s segs))
     (nreverse segs)))
 
 
@@ -236,9 +249,9 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
   "Return list of header lines for groups view using HEADER and TOTAL-WIDTH."
   (let* ((title (or header (context-navigator-i18n :groups)))
          (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         (sep (make-string (max 8 (min 120 (length hl))) ?-))
-         (toggle-lines (context-navigator-sidebar--header-toggle-lines total-width)))
-    (append (list hl sep) toggle-lines)))
+         ;; Use full-width ASCII separator across the sidebar.
+         (sep (make-string (max 1 total-width) ?-)))
+    (list hl sep)))
 
 
 (defun context-navigator-sidebar--groups-body-lines (state)
@@ -272,7 +285,8 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 (defun context-navigator-sidebar--groups-footer-lines (total-width)
   "Return footer lines for groups view wrapped to TOTAL-WIDTH."
-  (let* ((help-segments
+  (let* ((ctrl-lines (context-navigator-sidebar--footer-control-lines total-width))
+         (help-segments
           (list (context-navigator-i18n :groups-help-open)
                 (context-navigator-i18n :groups-help-add)
                 (context-navigator-i18n :groups-help-rename)
@@ -284,9 +298,10 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                 (context-navigator-i18n :groups-help-help)))
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-sidebar--wrap-segments help-segments total-width)))
-         (ctrl-lines (context-navigator-sidebar--footer-control-lines total-width)))
-    (append (cons "" help-lines) ctrl-lines)))
+                  (context-navigator-sidebar--wrap-segments help-segments total-width))))
+    ;; Insert a blank separator line between body and controls, then controls,
+    ;; then an empty line before help lines to satisfy the requested layout.
+    (append (list "") ctrl-lines (cons "" help-lines))))
 
 
 (defun context-navigator-sidebar--render-groups (state header total-width)
@@ -327,7 +342,8 @@ and the item lines (REST...)."
                                                        #'context-navigator-icons-for-item
                                                        left-width)))
          (hl (car base))
-         (sep (cadr base))
+         ;; Replace short separator generated by render with a full-width ASCII separator.
+         (sep (make-string (max 1 total-width) ?-))
          (rest (cddr base))
          (up (let ((s (copy-sequence "..")))
                (add-text-properties 0 (length s)
@@ -340,13 +356,14 @@ and the item lines (REST...)."
 
 (defun context-navigator-sidebar--items-footer-lines (total-width)
   "Return footer lines for items view wrapped to TOTAL-WIDTH."
-  (let* ((help-segments (list (context-navigator-i18n :items-help-view-groups)
+  (let* ((ctrl-lines (context-navigator-sidebar--footer-control-lines total-width))
+         (help-segments (list (context-navigator-i18n :items-help-view-groups)
                               (context-navigator-i18n :items-help-help)))
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-sidebar--wrap-segments help-segments total-width)))
-         (ctrl-lines (context-navigator-sidebar--footer-control-lines total-width)))
-    (append (cons "" help-lines) ctrl-lines)))
+                  (context-navigator-sidebar--wrap-segments help-segments total-width))))
+    ;; Blank line before controls to visually separate items list from controls.
+    (append (list "") ctrl-lines (cons "" help-lines))))
 
 
 (defun context-navigator-sidebar--render-items (state header total-width)
@@ -354,8 +371,7 @@ and the item lines (REST...)."
 Returns the list of lines that were rendered."
   (cl-destructuring-bind (hl sep up rest)
       (context-navigator-sidebar--items-base-lines state header total-width)
-    (let* ((toggle-lines (context-navigator-sidebar--items-header-toggle-lines total-width))
-           (lines (append (list hl sep) toggle-lines (list up) rest
+    (let* ((lines (append (list hl sep up) rest
                           (context-navigator-sidebar--items-footer-lines total-width))))
       (setq context-navigator-sidebar--last-lines lines
             context-navigator-sidebar--header header)
@@ -646,7 +662,8 @@ MAP is a keymap to search for COMMAND bindings."
                    (context-navigator-sidebar-help . "show this help"))))
       (princ "Context Navigator — keys:\n\n")
       (princ (context-navigator-sidebar--format-bindings pairs context-navigator-sidebar-mode-map))
-      (princ "\n\nGlobal keys (context-navigator-mode):\n")
+      (princ "\n")
+      (princ "Global keys (context-navigator-mode):\n")
       (princ "C-c n  transient: n panel, p project, a add, g groups, s save, l load, u unload, x push, T auto, P push-now, C clear\n")
       (princ "\nGroups mode keys: RET open, a add, r rename, d delete, c copy, g refresh, h back, q quit\n"))))
 

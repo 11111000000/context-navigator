@@ -57,7 +57,10 @@ When style is 'off, return nil. When style is 'icons or 'auto with icon
 provider available, return icon glyph. Otherwise return colored text bullet.
 
 This function robustly falls back to a text bullet when an icon provider
-is present but returns nil for the requested state."
+is present but returns nil for the requested state.
+
+The visual size and vertical alignment of text bullets are adjusted so the
+indicator sits centered and appears smaller (half-size) relative to item text."
   (let ((style (or context-navigator-render-indicator-style 'auto)))
     (cond
      ((eq style 'off) nil)
@@ -72,20 +75,25 @@ is present but returns nil for the requested state."
                       (t 'absent))))))
         (if (and (stringp icon) (> (length icon) 0))
             icon
-          ;; Fallback to text bullet with coloring below
+          ;; Fallback to a smaller text bullet, slightly raised to better vertically center.
           (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
                  (color (cond
                          ((and present enabled) "green4")
                          ((not (eq present enabled)) "goldenrod2")
                          (t "gray"))))
-            (propertize raw 'face (list :foreground color :height 1.15))))))
+            (propertize raw
+                        'face (list :foreground color :height 0.55)
+                        ;; Small raise to visually center the glyph relative to surrounding text.
+                        'display '(raise 0.12))))))
      (t
       (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
              (color (cond
                      ((and present enabled) "green4")
                      ((not (eq present enabled)) "goldenrod2")
                      (t "gray"))))
-        (propertize raw 'face (list :foreground color :height 1.15)))))))
+        (propertize raw
+                    'face (list :foreground color :height 0.55)
+                    'display '(raise 0.12)))))))
 
 (defun context-navigator-render--left-column (state-icon icon name)
   "Build left column string from STATE-ICON, ICON and NAME."

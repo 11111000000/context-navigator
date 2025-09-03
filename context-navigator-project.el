@@ -36,12 +36,17 @@
       (directory-file-name (expand-file-name root)))))
 
 (defun context-navigator-project--interesting-buffer-p (buffer)
-  "Return non-nil if BUFFER should trigger project switching."
+  "Return non-nil if BUFFER should trigger project switching.
+
+Previously Dired buffers were excluded; include them so that entering a
+Dired buffer inside a project also triggers project context loading when
+auto-project switching is enabled."
   (with-current-buffer buffer
     (and
-     (not (derived-mode-p 'dired-mode))
+     ;; Trigger on file-backed buffers, gptel buffers, and also Dired buffers.
      (or buffer-file-name
-         (eq major-mode 'gptel-mode)))))
+         (eq major-mode 'gptel-mode)
+         (derived-mode-p 'dired-mode)))))
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)
   "Publish :project-switch only when the project root actually changes."

@@ -65,7 +65,10 @@
 
 (defun context-navigator-icons-for-indicator (state)
   "Return a small icon string for indicator STATE or nil.
-STATE is one of: 'ok, 'mismatch, 'absent."
+STATE is one of: 'ok, 'mismatch, 'absent.
+
+Icons are rendered smaller and slightly raised so they align vertically
+with surrounding item text and appear visually centered."
   (let* ((color (pcase state
                   ('ok "green4")
                   ('mismatch "goldenrod2")
@@ -86,7 +89,10 @@ STATE is one of: 'ok, 'mismatch, 'absent."
               ('mismatch (all-the-icons-material "brightness_1"))))
            (t nil))))
     (when (stringp icon)
-      (propertize icon 'face (list :foreground color :height 1.0)))))
+      (propertize icon
+                  'face (list :foreground color :height 0.5)
+                  ;; Small raise to visually center the icon relative to item text.
+                  'display '(raise 0.12)))))
 
 (provide 'context-navigator-icons)
 ;;; context-navigator-icons.el ends here
