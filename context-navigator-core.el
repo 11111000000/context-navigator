@@ -222,17 +222,21 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
   (context-navigator-refresh))
 
 (defun context-navigator-push-to-gptel-now ()
-  "Manually push current model to gptel (reset + add enabled)."
+  "Manually push current model to gptel (reset + add enabled).
+
+Graceful when gptel is absent: show an informative message and do nothing."
   (interactive)
-  (unless (context-navigator-gptel-available-p)
-    (user-error "gptel is unavailable"))
-  ;; Try a best-effort clear, then apply desired state.
-  (when (fboundp 'gptel-context-remove-all)
-    (ignore-errors (gptel-context-remove-all)))
-  (let* ((st (context-navigator--state-get))
-         (items (and st (context-navigator-state-items st))))
-    (ignore-errors (context-navigator-gptel-apply (or items '())))
-    (message "Pushed %d items to gptel" (length (or items '())))))
+  (if (not (context-navigator-gptel-available-p))
+      (progn
+        (message "gptel not available — skipping push (Navigator works fine without it)")
+        nil)
+    ;; Try a best-effort clear, then apply desired state.
+    (when (fboundp 'gptel-context-remove-all)
+      (ignore-errors (gptel-context-remove-all)))
+    (let* ((st (context-navigator--state-get))
+           (items (and st (context-navigator-state-items st))))
+      (ignore-errors (context-navigator-gptel-apply (or items '())))
+      (message "Pushed %d items to gptel" (length (or items '()))))))
 
 (defun context-navigator-clear-gptel-now ()
   "Manually clear gptel context (does not touch the model)."
