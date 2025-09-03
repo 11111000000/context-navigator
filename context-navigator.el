@@ -1,7 +1,12 @@
 ;;; context-navigator.el --- Umbrella entry for Context Navigator -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
-;; Package-Requires: ((emacs "29.1"))
+;; Author: Peter Kosov
+;; Maintainer: Peter Kosov <11111000000@email.com>
+;; URL: https://github.com/11111000000/context-navigator
+;; Keywords: convenience, tools
+;; Version: 1.0.0
+;; Package-Requires: ((emacs "29.1") (transient "0.3.0"))
 
 ;;; Commentary:
 ;; This is a small, clear entry point (umbrella) that exposes public commands
@@ -61,8 +66,8 @@
 (defun context-navigator-version ()
   "Return version string for Context Navigator."
   (interactive)
-  (message "context-navigator — 0.3.0")
-  "0.3.0")
+  (message "context-navigator — 1.0.0")
+  "1.0.0")
 
 ;;;###autoload
 (defun context-navigator-start ()

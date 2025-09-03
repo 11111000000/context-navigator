@@ -159,7 +159,7 @@ Returns the file path or nil on error."
          (dir (file-name-directory file))
          (payload
           (list :version context-navigator-persist--version
-                :generator "context-navigator/0.1.x"
+                :generator "context-navigator/1.0.0"
                 :root (and root (expand-file-name root))
                 :items (delq nil (mapcar (lambda (it)
                                            (context-navigator-persist--item->sexp it root))

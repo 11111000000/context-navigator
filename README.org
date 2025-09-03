@@ -23,7 +23,7 @@ Navigator is also very useful together with gptel: it can push enabled items
 (one-way) into gptel so your chat sessions are always grounded in the right
 context, and you can return to your “saved” context groups at any time.
 
-Status: 0.3.x — usable, test-backed core with evolving UI. See “Roadmap”.
+Status: 1.0.0 — usable, test-backed core with evolving UI. See “Roadmap”.
 
 ** Requirements
 - Emacs 29.1+ (recommended 30.1+)
