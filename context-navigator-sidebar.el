@@ -202,6 +202,8 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                     ((or 'icons 'auto) " [⇪]")
                     (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
            (s (copy-sequence label)))
+      ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
+      (add-text-properties 0 (length s) (list 'context-navigator-action 'push-now) s)
       (if push-on
           ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
           (add-text-properties 0 (length s)
@@ -222,6 +224,8 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                     ((or 'icons 'auto) " [✖]")
                     (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
            (s (copy-sequence label)))
+      ;; Always expose an action property so RET can activate/attempt the command.
+      (add-text-properties 0 (length s) (list 'context-navigator-action 'clear-gptel) s)
       (if has-gptel
           (let ((m (let ((km (make-sparse-keymap)))
                      (define-key km [mouse-1] #'context-navigator-sidebar-clear-gptel)
@@ -489,6 +493,73 @@ Returns the list of lines that were rendered."
         (when first (goto-char first)))))
   (beginning-of-line))
 
+;; TAB navigation helpers ----------------------------------------------------
+
+(defun context-navigator-sidebar--find-next-interactive-pos (&optional start)
+  "Return the nearest position >= START (or point) with an interactive property.
+Searches for known interactive properties used in the sidebar."
+  (let* ((start (or start (point)))
+         (props '(context-navigator-item
+                  context-navigator-group-slug
+                  context-navigator-action
+                  context-navigator-toggle
+                  context-navigator-groups-up))
+         (best nil))
+    (dolist (p props)
+      (let ((pos (text-property-not-all start (point-max) p nil)))
+        (when (and pos (or (null best) (< pos best)))
+          (setq best pos))))
+    best))
+
+(defun context-navigator-sidebar-tab-next ()
+  "Move point to the next interactive element (items, groups, toggles, actions).
+
+Wraps to the top when no further element is found after point."
+  (interactive)
+  (let* ((start (1+ (point)))
+         (pos (context-navigator-sidebar--find-next-interactive-pos start)))
+    (unless pos
+      ;; wrap
+      (setq pos (context-navigator-sidebar--find-next-interactive-pos (point-min))))
+    (if pos
+        (progn
+          (goto-char pos)
+          (beginning-of-line))
+      (message "No interactive elements"))))
+
+(defun context-navigator-sidebar-tab-previous ()
+  "Move point to the previous interactive element (items, groups, toggles, actions).
+
+Wraps to the bottom when no previous element is found before point."
+  (interactive)
+  (let ((found nil))
+    (save-excursion
+      (while (and (not found) (> (line-beginning-position) (point-min)))
+        (forward-line -1)
+        (when (or (get-text-property (point) 'context-navigator-item)
+                  (get-text-property (point) 'context-navigator-group-slug)
+                  (get-text-property (point) 'context-navigator-action)
+                  (get-text-property (point) 'context-navigator-toggle)
+                  (get-text-property (point) 'context-navigator-groups-up))
+          (setq found (point)))))
+    (if found
+        (progn (goto-char found) (beginning-of-line))
+      ;; wrap to last interactive element
+      (let ((last nil))
+        (save-excursion
+          (goto-char (point-min))
+          (while (< (point) (point-max))
+            (when (or (get-text-property (point) 'context-navigator-item)
+                      (get-text-property (point) 'context-navigator-group-slug)
+                      (get-text-property (point) 'context-navigator-action)
+                      (get-text-property (point) 'context-navigator-toggle)
+                      (get-text-property (point) 'context-navigator-groups-up))
+              (setq last (point)))
+            (forward-line 1)))
+        (if last
+            (progn (goto-char last) (beginning-of-line))
+          (message "No interactive elements"))))))
+
 (defun context-navigator-sidebar--remove-at-point ()
   "Remove the item at point from gptel context."
   (interactive)
@@ -675,6 +746,19 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "n")   #'context-navigator-sidebar-next-item)
     (define-key m (kbd "p")   #'context-navigator-sidebar-previous-item)
     (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-enabled)
+
+    ;; TAB navigation between interactive elements
+    ;; Bind several TAB event representations to be robust across terminals/minor-modes.
+    (define-key m (kbd "TAB")       #'context-navigator-sidebar-tab-next)
+    (define-key m (kbd "<tab>")     #'context-navigator-sidebar-tab-next)
+    (define-key m [tab]             #'context-navigator-sidebar-tab-next)
+    (define-key m (kbd "C-i")       #'context-navigator-sidebar-tab-next)
+    (define-key m (kbd "<backtab>") #'context-navigator-sidebar-tab-previous)
+    (define-key m [backtab]         #'context-navigator-sidebar-tab-previous)
+    (define-key m (kbd "S-<tab>")   #'context-navigator-sidebar-tab-previous)
+    ;; Remap global indent command to our TAB-next to ensure override everywhere.
+    (define-key m [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
+
     ;; New global toggles/actions in sidebar
     (define-key m (kbd "x")   #'context-navigator-sidebar-toggle-push)
     (define-key m (kbd "T")   #'context-navigator-sidebar-toggle-auto-project)
@@ -808,11 +892,17 @@ Do not highlight header/separator lines."
 (defun context-navigator-sidebar-activate ()
   "RET action:
 - On toggle segments in header: toggle push/auto flags
+- On footer action segments: invoke the assigned action (push/clear)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
-  (let ((tgl (get-text-property (point) 'context-navigator-toggle)))
+  (let ((act (get-text-property (point) 'context-navigator-action))
+        (tgl (get-text-property (point) 'context-navigator-toggle)))
     (cond
+     ;; Footer actions (explicit)
+     ((eq act 'push-now) (context-navigator-sidebar-push-now))
+     ((eq act 'clear-gptel) (context-navigator-sidebar-clear-gptel))
+     ;; Header toggles
      ((eq tgl 'push) (context-navigator-sidebar-toggle-push))
      ((eq tgl 'auto) (context-navigator-sidebar-toggle-auto-project))
      ((eq context-navigator-sidebar--mode 'groups)
@@ -856,7 +946,11 @@ Do not highlight header/separator lines."
   "Create a new group (groups mode)."
   (interactive)
   (if (eq context-navigator-sidebar--mode 'groups)
-      (ignore-errors (context-navigator-group-create))
+      (let ((slug (ignore-errors (context-navigator-group-create))))
+        ;; After successful creation, switch to items view immediately.
+        (when (and slug (stringp slug))
+          (setq context-navigator-sidebar--mode 'items)
+          (context-navigator-sidebar--schedule-render)))
     (message "Press h to open groups list first")))
 
 (defun context-navigator-sidebar-group-rename ()

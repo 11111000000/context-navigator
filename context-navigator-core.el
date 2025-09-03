@@ -567,10 +567,36 @@ Return new state. If KEY not found, return current state."
 
 ;;;###autoload
 (defun context-navigator-groups-open ()
-  "Publish groups list for current project/global and let sidebar render it."
+  "Publish groups list for current project/global and let sidebar render it.
+
+Fallback: when no last project root is recorded yet, try to detect the
+current buffer's project root on-the-fly so the groups from the active
+project are listed even if auto-project switching is off.
+
+Additionally, if the context directory is missing/empty and
+`context-navigator-create-default-group-file' is non-nil, initialize a
+default group on demand (create .context, default.el, and state.el)."
   (interactive)
-  (let* ((root (context-navigator--current-root))
+  (let* ((root (or (context-navigator--current-root)
+                   (ignore-errors (context-navigator-project-current-root (current-buffer)))))
          (groups (ignore-errors (context-navigator-persist-list-groups root))))
+    ;; Auto-initialize default group if nothing exists yet.
+    (when (and context-navigator-create-default-group-file
+               (or (null groups) (= (length groups) 0)))
+      (let* ((default-slug "default"))
+        ;; Ensure directory and default file
+        (ignore-errors (context-navigator-persist-save '() root default-slug))
+        ;; Ensure state has :current set and mapping contains default
+        (let* ((st (context-navigator--state-read root))
+               (alist (and (plist-member st :groups) (plist-get st :groups)))
+               (alist* (cons (cons default-slug "default")
+                             (and (listp alist)
+                                  (cl-remove-if (lambda (cell) (equal (car-safe cell) default-slug)) alist)))))
+          (setq st (plist-put (copy-sequence st) :current default-slug))
+          (when (plist-member st :groups)
+            (setq st (plist-put (copy-sequence st) :groups alist*)))
+          (context-navigator--state-write root st))))
+    (setq groups (ignore-errors (context-navigator-persist-list-groups root)))
     (setq groups (sort (or groups '()) #'context-navigator--groups-sortless))
     (context-navigator-events-publish :groups-list-updated root groups)
     groups))
@@ -603,9 +629,14 @@ Autosaves current group before switching. Prompts when SLUG is nil."
 ;;;###autoload
 (defun context-navigator-group-create (&optional display-name)
   "Create a new group with DISPLAY-NAME in current project/global.
-Группа должна появиться в списке как файл, поэтому сразу создаём пустой файл."
+Группа должна появиться в списке как файл, поэтому сразу создаём пустой файл.
+
+Корень проекта определяется как:
+- текущий сохранённый root в состоянии, либо
+- текущий проект буфера (fallback), если root ещё не зафиксирован."
   (interactive)
-  (let* ((root (context-navigator--current-root))
+  (let* ((root (or (context-navigator--current-root)
+                   (ignore-errors (context-navigator-project-current-root (current-buffer)))))
          (name (or display-name (read-string "New group name: ")))
          (name (string-trim name))
          (_ (when (string-empty-p name)
@@ -616,6 +647,11 @@ Autosaves current group before switching. Prompts when SLUG is nil."
     (make-directory (file-name-directory file) t)
     ;; Create empty payload file
     (ignore-errors (context-navigator-persist-save '() root slug))
+    ;; Update core state with the resolved root so header/ops reflect it.
+    (let* ((cur (context-navigator--state-get))
+           (new (context-navigator--state-copy cur)))
+      (setf (context-navigator-state-last-project-root new) root)
+      (context-navigator--set-state new))
     (context-navigator-groups-open)
     ;; If auto-push is on, reset gptel immediately to avoid any carry-over.
     (when context-navigator--push-to-gptel
