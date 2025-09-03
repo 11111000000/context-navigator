@@ -183,12 +183,44 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
                             (context-navigator-state-generation new))
     new))
 
+(defcustom context-navigator-global-key nil
+  "Global key sequence for opening the Context Navigator transient.
+Example: \"C-c n\". When nil (default), nothing is bound to keep defaults unobtrusive."
+  :type '(choice (const :tag "None" nil) (string :tag "Key sequence"))
+  :group 'context-navigator
+  :set (lambda (sym val)
+         (set-default sym val)
+         (when (fboundp 'context-navigator--update-global-keybinding)
+           (ignore-errors (context-navigator--update-global-keybinding)))))
+
+(defvar context-navigator--current-global-key nil
+  "Internally tracks the currently active global keybinding for the transient.")
+
+(defun context-navigator--update-global-keybinding ()
+  "Apply `context-navigator-global-key' in `context-navigator-mode-map'."
+  (when (keymapp context-navigator-mode-map)
+    ;; Remove old binding if present
+    (when context-navigator--current-global-key
+      (ignore-errors
+        (define-key context-navigator-mode-map
+                    (kbd context-navigator--current-global-key) nil)))
+    ;; Install new binding if configured
+    (if (and (stringp context-navigator-global-key)
+             (not (string-empty-p context-navigator-global-key)))
+        (progn
+          (define-key context-navigator-mode-map
+                      (kbd context-navigator-global-key) #'context-navigator-transient)
+          (setq context-navigator--current-global-key context-navigator-global-key))
+      (setq context-navigator--current-global-key nil))))
+
 (defvar context-navigator-mode-map
   (let ((m (make-sparse-keymap)))
-    ;; Transient entry point on C-c n
-    (define-key m (kbd "C-c n") #'context-navigator-transient)
+    ;; no default global bindings; see `context-navigator-global-key'
     m)
   "Keymap for `context-navigator-mode'.")
+
+;; Apply user-defined binding (if any) on load
+(ignore-errors (context-navigator--update-global-keybinding))
 
 (defvar context-navigator--event-tokens nil
   "Subscription tokens registered by core while the mode is enabled.")
