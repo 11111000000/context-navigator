@@ -22,11 +22,12 @@
          (context-navigator-render--gptel-keys (list (context-navigator-model-item-key it)))
          ;; Ensure icon provider exists but returns nil (simulate all-the-icons missing)
          (provided (fboundp 'context-navigator-icons-for-indicator)))
-    (flet ((context-navigator-icons-for-indicator (_state) nil))
-          (let* ((lines (context-navigator-render-build-lines (list it) "Hdr" nil 32))
-                 (line (nth 2 lines)))
-            (should (stringp line))
-            ;; Expect some bullet present as text fallback
-            (should (string-match-p "●" line))))))
+    (cl-letf (((symbol-function 'context-navigator-icons-for-indicator)
+               (lambda (_state) nil)))
+      (let* ((lines (context-navigator-render-build-lines (list it) "Hdr" nil 32))
+             (line (nth 2 lines)))
+        (should (stringp line))
+        ;; Expect some bullet present as text fallback
+        (should (string-match-p "●" line))))))
 (provide 'context-navigator-render-indicators-test)
 ;;; context-navigator-render-indicators-test.el ends here

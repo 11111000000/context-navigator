@@ -50,13 +50,7 @@ Files larger than this threshold are skipped."
    ["Actions"
     ("a" "Add (universal)" context-navigator-add-universal)]
    ["GPTel"
-    ("x"
-     (if (context-navigator-gptel-available-p)
-         "Toggle push→gptel"
-       (propertize "Toggle push→gptel (disabled)" 'face 'shadow))
-     (if (context-navigator-gptel-available-p)
-         context-navigator-toggle-push-to-gptel
-       #'ignore))
+    ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
     ("T" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
     ("P" "Push now" context-navigator-push-to-gptel-now)
     ("C" "Clear gptel" context-navigator-clear-gptel-now)]])

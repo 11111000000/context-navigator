@@ -22,8 +22,8 @@
 
 (defconst context-navigator-i18n--dict
   '((:push-now
-     (en . "Push gptel now")
-     (ru . "Отправить в gptel")
+     (en . "Push now")
+     (ru . "В gptel")
      (fr . "Pousser maintenant")
      (de . "Jetzt senden")
      (es . "Enviar ahora"))

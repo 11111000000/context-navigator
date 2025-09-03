@@ -31,13 +31,14 @@
   (let* ((it (context-navigator-item-create :type 'file :path "/tmp/c" :name "c" :enabled nil))
          (context-navigator-render-indicator-style 'icons)
          (context-navigator-render--gptel-keys (list (context-navigator-model-item-key it))))
-    (flet ((context-navigator-icons-for-indicator (_state) nil))
-          (let* ((lines (context-navigator-render-build-lines (list it) "Hdr" nil 40))
-                 (line (nth 2 lines)))
-            (should (stringp line))
-            ;; 'absent' state should prefer ○
-            (should (or (string-match-p "○" line)
-                        (string-match-p "●" line)))))))
+    (cl-letf (((symbol-function 'context-navigator-icons-for-indicator)
+               (lambda (_state) nil)))
+      (let* ((lines (context-navigator-render-build-lines (list it) "Hdr" nil 40))
+             (line (nth 2 lines)))
+        (should (stringp line))
+        ;; 'absent' state should prefer ○
+        (should (or (string-match-p "○" line)
+                    (string-match-p "●" line)))))))
 
 (provide 'context-navigator-render-style-test)
 ;;; context-navigator-render-style-test.el ends here

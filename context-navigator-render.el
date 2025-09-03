@@ -137,7 +137,7 @@ Tri-state indicator (when gptel keys list is provided):
                 (or (context-navigator-item-name item) "")
                 context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
-         (have-keys (listp context-navigator-render--gptel-keys))
+         (have-keys (consp context-navigator-render--gptel-keys))
          (present (and have-keys (member key context-navigator-render--gptel-keys)))
          (state-icon (and have-keys
                           (context-navigator-render--indicator present enabled)))

@@ -442,5 +442,17 @@ This is used ONLY to keep UI indicators up-to-date; it never imports from gptel.
   (setq context-navigator--gptel-advices nil)
   t)
 
+;; If gptel is installed/loaded after Context Navigator, ensure we register
+;; our lightweight advices to keep UI indicators up-to-date. Do not force-load
+;; gptel here — remain functional when gptel is absent.
+(with-eval-after-load 'gptel
+  (when (bound-and-true-p context-navigator-debug)
+    (message "[context-navigator/gptel] gptel loaded — registering change advices"))
+  (when (fboundp 'context-navigator-gptel-on-change-register)
+    (ignore-errors (context-navigator-gptel-on-change-register)))
+  ;; Notify listeners (sidebar/UI) that gptel state might have changed so they can refresh.
+  (when (fboundp 'context-navigator-events-publish)
+    (ignore-errors (context-navigator-events-publish :gptel-change :on-load))))
+
 (provide 'context-navigator-gptel-bridge)
 ;;; context-navigator-gptel-bridge.el ends here
