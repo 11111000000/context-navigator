@@ -95,6 +95,7 @@
 (defvar-local context-navigator-sidebar--openable-stamp 0.0)          ;; float-time of last compute
 (defvar-local context-navigator-sidebar--openable-timer nil)          ;; pending timer for recompute
 (defvar-local context-navigator-sidebar--buflist-fn nil)              ;; function added to buffer-list-update-hook
+(defvar-local context-navigator-sidebar--last-render-key nil)        ;; cached render key to skip redundant renders
 
 (defvar context-navigator-sidebar-window-params
   '((side . left) (slot . -1))
@@ -570,19 +571,44 @@ Returns the list of lines that were rendered."
 ;; Entry point
 
 (defun context-navigator-sidebar--render ()
-  "Render current view (items or groups) into the sidebar buffer."
+  "Render current view (items or groups) into the sidebar buffer.
+
+Uses a composite render key to skip full rendering when nothing relevant changed.
+Key components:
+ - model generation
+ - current view mode (items/groups)
+ - sidebar width (total)
+ - gptel keys hash
+ - cached openable count / soft-plus marker
+ - header string (display)
+When the key equals `context-navigator-sidebar--last-render-key' the function
+returns without rebuilding buffer contents."
   (let* ((state (context-navigator--state-get))
          (header (context-navigator-sidebar--header state))
          (win (get-buffer-window (current-buffer) 'visible))
          (total (or (and win (window-body-width win))
                     (and (boundp 'context-navigator-sidebar-width)
                          (symbol-value 'context-navigator-sidebar-width))
-                    33)))
-    (cond
-     ((eq context-navigator-sidebar--mode 'groups)
-      (context-navigator-sidebar--render-groups state header total))
-     (t
-      (context-navigator-sidebar--render-items state header total)))))
+                    33))
+         ;; Components for early-exit render key
+         (gen (or (and (context-navigator-state-p state)
+                       (context-navigator-state-generation state))
+                  0))
+         (mode context-navigator-sidebar--mode)
+         ;; Use sxhash-equal to produce a stable-ish fingerprint of gptel keys list
+         (gptel-hash (sxhash-equal context-navigator-sidebar--gptel-keys))
+         ;; Use cached openable count (may be nil) — normalize to integer and plus marker.
+         (openable (or context-navigator-sidebar--openable-count 0))
+         (plus (and context-navigator-sidebar--openable-plus t))
+         ;; Compose key
+         (key (list gen mode total gptel-hash openable plus header)))
+    (unless (equal key context-navigator-sidebar--last-render-key)
+      (setq context-navigator-sidebar--last-render-key key)
+      (cond
+       ((eq context-navigator-sidebar--mode 'groups)
+        (context-navigator-sidebar--render-groups state header total))
+       (t
+        (context-navigator-sidebar--render-items state header total))))))
 
 (defun context-navigator-sidebar--render-if-visible ()
   "Render sidebar if its buffer is visible."
