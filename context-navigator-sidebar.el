@@ -39,6 +39,22 @@
   :type '(choice (const auto) (const icons) (const text))
   :group 'context-navigator)
 
+(defcustom context-navigator-openable-count-ttl 0.3
+  "TTL (seconds) for cached openable buffers count in the sidebar footer."
+  :type 'number :group 'context-navigator)
+
+(defcustom context-navigator-openable-soft-cap 100
+  "Soft cap for counting openable buffers. Counting short-circuits at this value."
+  :type 'integer :group 'context-navigator)
+
+(defcustom context-navigator-openable-remote-mode 'lazy
+  "How to treat remote/TRAMP paths when counting openable buffers:
+- lazy   : do not call file-exists-p; consider a file openable when no live buffer exists
+- strict : verify file existence with file-exists-p (may be slow on TRAMP)
+- off    : ignore remote files when counting"
+  :type '(choice (const lazy) (const strict) (const off))
+  :group 'context-navigator)
+
 ;; Forward declarations to avoid load cycle; core provides these.
 (declare-function context-navigator--state-get "context-navigator-core")
 (declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
@@ -70,6 +86,15 @@
   "Keymap attached to group lines to support mouse clicks.")
 (defvar-local context-navigator-sidebar--load-progress nil) ;; cons (POS . TOTAL) | nil)
 (defvar-local context-navigator-sidebar--winselect-fn nil)  ;; function added to window-selection-change-functions
+(defvar-local context-navigator-sidebar--gptel-keys nil)    ;; cached stable keys from gptel (for indicators)
+(defvar-local context-navigator-sidebar--gptel-keys-hash nil) ;; reserved for future use
+(defvar-local context-navigator-sidebar--sorted-items nil)  ;; cached sorted items (list) for current generation
+(defvar-local context-navigator-sidebar--sorted-gen nil)    ;; generation number of the cached sorted items
+(defvar-local context-navigator-sidebar--openable-count nil)          ;; cached count (int) or nil
+(defvar-local context-navigator-sidebar--openable-plus nil)           ;; non-nil when soft-cap reached
+(defvar-local context-navigator-sidebar--openable-stamp 0.0)          ;; float-time of last compute
+(defvar-local context-navigator-sidebar--openable-timer nil)          ;; pending timer for recompute
+(defvar-local context-navigator-sidebar--buflist-fn nil)              ;; function added to buffer-list-update-hook
 
 (defvar context-navigator-sidebar-window-params
   '((side . left) (slot . -1))
@@ -194,42 +219,115 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
   (let ((toggles (context-navigator-sidebar--make-toggle-segments)))
     (context-navigator-sidebar--wrap-segments toggles total-width)))
 
+;; Openable count helpers (footer [O]) ---------------------------------------
+
+(defun context-navigator-sidebar--invalidate-openable ()
+  "Invalidate cached openable counters and cancel pending timers."
+  (setq context-navigator-sidebar--openable-count nil
+        context-navigator-sidebar--openable-plus nil
+        context-navigator-sidebar--openable-stamp 0.0)
+  (when (timerp context-navigator-sidebar--openable-timer)
+    (cancel-timer context-navigator-sidebar--openable-timer)
+    (setq context-navigator-sidebar--openable-timer nil)))
+
+(defun context-navigator-sidebar--openable--candidate-p (item)
+  "Return non-nil if ITEM can be opened in background (file-backed).
+Respects `context-navigator-openable-remote-mode' for remote paths and
+counts only enabled items."
+  (let ((enabled (and (context-navigator-item-enabled item) t)))
+    (when enabled
+      (pcase (context-navigator-item-type item)
+        ('buffer
+         (let* ((buf (context-navigator-item-buffer item))
+                (p (context-navigator-item-path item)))
+           (and (stringp p)
+                ;; already open: skip
+                (not (and buf (buffer-live-p buf)))
+                (let ((remote (file-remote-p p)))
+                  (cond
+                   ;; ignore remotes
+                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
+                   ;; lazy: do not hit file-exists-p on remote
+                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
+                    (not (get-file-buffer p)))
+                   ;; local or strict remote
+                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
+        ('selection
+         (let ((p (context-navigator-item-path item)))
+           (and (stringp p)
+                (let ((remote (file-remote-p p)))
+                  (cond
+                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
+                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
+                    (not (get-file-buffer p)))
+                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
+        ('file
+         (let ((p (context-navigator-item-path item)))
+           (and (stringp p)
+                (let ((remote (file-remote-p p)))
+                  (cond
+                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
+                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
+                    (not (get-file-buffer p)))
+                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
+        (_ nil)))))
+
+(defun context-navigator-sidebar--compute-openable (cap)
+  "Return cons (COUNT . PLUS) for openable items, short-circuiting at CAP.
+PLUS is non-nil when CAP was reached."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (n 0)
+         (limit (or cap most-positive-fixnum)))
+    (dolist (it (or items '()))
+      (when (context-navigator-sidebar--openable--candidate-p it)
+        (setq n (1+ n))
+        (when (>= n limit)
+          (cl-return))))
+    (cons n (and (numberp cap) (>= n (or cap 0))))))
+
+(defun context-navigator-sidebar--openable-count-refresh ()
+  "Recompute openable count synchronously with soft-cap; update cache and schedule UI refresh if changed."
+  (let* ((res (context-navigator-sidebar--compute-openable context-navigator-openable-soft-cap))
+         (n (car res))
+         (plus (cdr res))
+         (changed (not (equal context-navigator-sidebar--openable-count n))))
+    (setq context-navigator-sidebar--openable-count n
+          context-navigator-sidebar--openable-plus plus
+          context-navigator-sidebar--openable-stamp (float-time))
+    (when changed
+      (context-navigator-sidebar--schedule-render))
+    n))
+
+(defun context-navigator-sidebar--openable-count-get ()
+  "Return cons (COUNT . PLUS) from cache; schedule a debounced refresh when stale."
+  (let* ((now (float-time))
+         (ttl (or context-navigator-openable-count-ttl 0.3)))
+    (when (or (null context-navigator-sidebar--openable-count)
+              (> (- now context-navigator-sidebar--openable-stamp) (max 0 ttl)))
+      (context-navigator-events-debounce
+       :sidebar-openable 0.18
+       #'context-navigator-sidebar--openable-count-refresh))
+    (cons (or context-navigator-sidebar--openable-count 0)
+          (and context-navigator-sidebar--openable-plus
+               (> (or context-navigator-sidebar--openable-count 0) 0)))))
+
 
 (defun context-navigator-sidebar--footer-control-segments ()
   "Build footer control segments: toggles + [Push now], [Open buffers] and [Clear gptel].
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
-         (gptel-items (ignore-errors (context-navigator-gptel-pull)))
-         (has-gptel (and (listp gptel-items) (> (length gptel-items) 0)))
+         ;; use cached keys from gptel (do not pull during render)
+         (has-gptel (and (listp context-navigator-sidebar--gptel-keys)
+                         (> (length context-navigator-sidebar--gptel-keys) 0)))
          (style (or context-navigator-controls-style 'auto))
          (segs '()))
     ;; Toggles first (push → gptel, auto-project)
     (setq segs (append segs (context-navigator-sidebar--make-toggle-segments)))
-    ;; [Open buffers] — open file-backed buffers/selections/files in background
-    (let* ((st (ignore-errors (context-navigator--state-get)))
-           (items (and st (context-navigator-state-items st)))
-           (openable 0))
-      (dolist (it (or items '()))
-        (pcase (context-navigator-item-type it)
-          ('buffer
-           (let ((buf (context-navigator-item-buffer it))
-                 (p (context-navigator-item-path it)))
-             (when (and (stringp p) (file-exists-p p)
-                        (not (and buf (buffer-live-p buf)))
-                        (not (get-file-buffer p)))
-               (setq openable (1+ openable)))))
-          ('selection
-           (let ((p (context-navigator-item-path it)))
-             (when (and (stringp p) (file-exists-p p)
-                        (not (get-file-buffer p)))
-               (setq openable (1+ openable)))))
-          ('file
-           (let ((p (context-navigator-item-path it)))
-             (when (and (stringp p) (file-exists-p p)
-                        (not (get-file-buffer p)))
-               (setq openable (1+ openable)))))
-          (_ nil)))
+    ;; [Open buffers] — open file-backed buffers/selections/files in background (lazy/strict remote)
+    (cl-destructuring-bind (openable . plus)
+        (context-navigator-sidebar--openable-count-get)
       (let* ((label (pcase style
                       ((or 'icons 'auto) " [O]")
                       (_ " [Open buffers]")))
@@ -240,12 +338,14 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                              (list 'context-navigator-action 'open-buffers)
                              s)
         (if (> openable 0)
-            (let ((m (let ((km (make-sparse-keymap)))
-                       (define-key km [mouse-1] #'context-navigator-sidebar-open-all-buffers)
-                       km)))
+            (let* ((disp (if plus (format "Open %d+ context buffer(s) in background (o)" openable)
+                           (format "Open %d context buffer(s) in background (o)" openable)))
+                   (m (let ((km (make-sparse-keymap)))
+                        (define-key km [mouse-1] #'context-navigator-sidebar-open-all-buffers)
+                        km)))
               (add-text-properties beg (length s)
                                    (list 'mouse-face 'highlight
-                                         'help-echo (format "Open %d context buffer(s) in background (o)" openable)
+                                         'help-echo disp
                                          'keymap m)
                                    s))
           (add-text-properties beg (length s)
@@ -407,17 +507,25 @@ Returns the list of lines that were rendered."
 The result already includes header line (HL), separator (SEP), the \"..\" line (UP),
 and the item lines (REST...)."
   (let* ((items (context-navigator-state-items state))
+         ;; generation-aware cached sort: avoid re-sorting identical model generation
+         (gen (or (and (context-navigator-state-p state)
+                       (context-navigator-state-generation state))
+                  0))
          (sorted-items
-          (sort (copy-sequence (or items '()))
-                (lambda (a b)
-                  (let ((na (downcase (or (context-navigator-item-name a) "")))
-                        (nb (downcase (or (context-navigator-item-name b) ""))))
-                    (string-lessp na nb)))))
+          (if (and (listp context-navigator-sidebar--sorted-items)
+                   (integerp context-navigator-sidebar--sorted-gen)
+                   (= gen context-navigator-sidebar--sorted-gen))
+              context-navigator-sidebar--sorted-items
+            (let ((s (sort (copy-sequence (or items '()))
+                           (lambda (a b)
+                             (let ((na (downcase (or (context-navigator-item-name a) "")))
+                                   (nb (downcase (or (context-navigator-item-name b) ""))))
+                               (string-lessp na nb))))))
+              (setq context-navigator-sidebar--sorted-items s
+                    context-navigator-sidebar--sorted-gen gen)
+              s)))
          (left-width (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
-         (gptel-keys (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-                       (when (listp lst)
-                         (mapcar #'context-navigator-model-item-key lst))))
-         (base (let ((context-navigator-render--gptel-keys gptel-keys))
+         (base (let ((context-navigator-render--gptel-keys context-navigator-sidebar--gptel-keys))
                  (context-navigator-render-build-lines sorted-items header
                                                        #'context-navigator-icons-for-item
                                                        left-width)))
@@ -795,12 +903,16 @@ Guard against duplicate subscriptions."
   (unless context-navigator-sidebar--subs
     (push (context-navigator-events-subscribe
            :model-refreshed
-           (lambda (&rest _) (context-navigator-sidebar--schedule-render)))
+           (lambda (&rest _)
+             ;; Invalidate quick counters and re-render
+             (context-navigator-sidebar--invalidate-openable)
+             (context-navigator-sidebar--schedule-render)))
           context-navigator-sidebar--subs)
     (push (context-navigator-events-subscribe
            :context-load-start
            (lambda (&rest _)
              (setq context-navigator-sidebar--load-progress nil)
+             (context-navigator-sidebar--invalidate-openable)
              (context-navigator-sidebar--schedule-render)))
           context-navigator-sidebar--subs)
     (push (context-navigator-events-subscribe
@@ -813,6 +925,7 @@ Guard against duplicate subscriptions."
            :context-load-done
            (lambda (root ok-p)
              (setq context-navigator-sidebar--load-progress nil)
+             (context-navigator-sidebar--invalidate-openable)
              ;; Warn user if group file is unreadable/corrupted; optionally auto-open groups list.
              (unless ok-p
                (let* ((st (ignore-errors (context-navigator--state-get)))
@@ -832,14 +945,32 @@ Guard against duplicate subscriptions."
              (when (eq context-navigator-sidebar--mode 'groups)
                (context-navigator-sidebar--schedule-render))))
           context-navigator-sidebar--subs)
-    ;; gptel changes: update indicators without importing anything
+    ;; gptel changes: cache keys and schedule UI refresh (no pull during render)
     (push (context-navigator-events-subscribe
            :gptel-change
            (lambda (&rest _)
+             (let ((lst (ignore-errors (context-navigator-gptel-pull))))
+               (setq context-navigator-sidebar--gptel-keys
+                     (and (listp lst)
+                          (mapcar #'context-navigator-model-item-key lst))))
              (context-navigator-sidebar--schedule-render)))
           context-navigator-sidebar--subs)
     ;; register gptel advices (UI-only)
     (ignore-errors (context-navigator-gptel-on-change-register))
+    ;; initialize cached gptel keys once
+    (let ((lst (ignore-errors (context-navigator-gptel-pull))))
+      (setq context-navigator-sidebar--gptel-keys
+            (and (listp lst)
+                 (mapcar #'context-navigator-model-item-key lst))))
+    ;; buffer list updates: recalc quick openable counters
+    (setq context-navigator-sidebar--buflist-fn
+          (lambda ()
+            (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (context-navigator-sidebar--invalidate-openable)
+                  (context-navigator-sidebar--schedule-render))))))
+    (add-hook 'buffer-list-update-hook context-navigator-sidebar--buflist-fn)
     ;; Re-render when the sidebar window becomes selected
     (setq context-navigator-sidebar--winselect-fn
           (lambda (_frame)
@@ -849,6 +980,8 @@ Guard against duplicate subscriptions."
                 (with-selected-window win
                   (context-navigator-sidebar--schedule-render))))))
     (add-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
+    ;; Initial compute of quick counters
+    (context-navigator-sidebar--openable-count-refresh)
     ;; Гарантированная отписка при убийстве буфера
     (add-hook 'kill-buffer-hook #'context-navigator-sidebar--remove-subs nil t)))
 
@@ -857,6 +990,12 @@ Guard against duplicate subscriptions."
   (when context-navigator-sidebar--subs
     (mapc #'context-navigator-events-unsubscribe context-navigator-sidebar--subs)
     (setq context-navigator-sidebar--subs nil))
+  ;; Remove buffer-list hook if installed.
+  (when context-navigator-sidebar--buflist-fn
+    (remove-hook 'buffer-list-update-hook context-navigator-sidebar--buflist-fn)
+    (setq context-navigator-sidebar--buflist-fn nil))
+  ;; Cancel timers and drop cached counters.
+  (context-navigator-sidebar--invalidate-openable)
   ;; Remove focus render hook if installed.
   (when context-navigator-sidebar--winselect-fn
     (remove-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
