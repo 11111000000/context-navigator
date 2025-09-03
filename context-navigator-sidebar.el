@@ -847,6 +847,10 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "SPC") #'context-navigator-sidebar-preview)
     (define-key m (kbd "n")   #'context-navigator-sidebar-next-item)
     (define-key m (kbd "p")   #'context-navigator-sidebar-previous-item)
+    ;; Vim-like navigation keys
+    (define-key m (kbd "j")   #'context-navigator-sidebar-next-item)
+    (define-key m (kbd "k")   #'context-navigator-sidebar-previous-item)
+    (define-key m (kbd "l")   #'context-navigator-sidebar-activate)
     (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-enabled)
 
     ;; TAB navigation between interactive elements
