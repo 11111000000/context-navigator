@@ -141,6 +141,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                        context-navigator--push-to-gptel))
          (auto-on (and (boundp 'context-navigator--auto-project-switch)
                        context-navigator--auto-project-switch))
+         (gptel-available (ignore-errors (context-navigator-gptel-available-p)))
          (style (or context-navigator-controls-style 'auto))
          ;; label builders
          (lbl-push
@@ -153,15 +154,20 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
             (_ (format " [auto-proj: %s]" (if auto-on "on" "off"))))))
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
-                             (define-key km [mouse-1] #'context-navigator-sidebar-toggle-push)
+                             (when gptel-available
+                               (define-key km [mouse-1] #'context-navigator-sidebar-toggle-push))
                              km))
-                        (fg (if push-on "green4" "gray")))
+                        (fg (if (and push-on gptel-available) "green4" "gray")))
                    (add-text-properties 0 (length s)
                                         (list 'mouse-face 'highlight
-                                              'help-echo (context-navigator-i18n :toggle-push)
+                                              'help-echo (if gptel-available
+                                                             (context-navigator-i18n :toggle-push)
+                                                           "gptel not available")
                                               'keymap m
                                               'context-navigator-toggle 'push
-                                              'face (list :foreground fg))
+                                              'face (if gptel-available
+                                                        (list :foreground fg)
+                                                      'shadow))
                                         s)
                    s))
            (seg2 (let* ((s (copy-sequence lbl-auto))
