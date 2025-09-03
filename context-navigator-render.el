@@ -156,7 +156,8 @@ ICON-FN is a function (item -> string|nil) to decorate items.
 When LEFT-WIDTH is non-nil, align left column to that width."
   (let* ((title (or header "Context"))
          (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         (sep (make-string (max 8 (min 120 (length hl))) ?-)))
+         ;; Use textual/full-width separator (box-drawing) for header separation. Make it unobtrusive.
+         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
     (append (list hl sep)
             (mapcar (lambda (it)
                       (context-navigator-render--format-line it icon-fn left-width))
