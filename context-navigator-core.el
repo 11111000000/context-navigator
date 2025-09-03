@@ -751,7 +751,7 @@ Autosaves current group before switching. Prompts when SLUG is nil."
     ;; Always refresh groups list for UI
     (context-navigator-groups-open)
     (message "Deleted group: %s" slug)
-    t)))
+    t))
 
 ;;;###autoload
 (defun context-navigator-group-duplicate (&optional src-slug new-display)
