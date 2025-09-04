@@ -87,7 +87,7 @@ _Global (context-navigator-mode):_
 
 _Sidebar (context-navigator-sidebar-mode):_
 - `RET`/`SPC`  Visit/preview item or group
-- `t`      Toggle enabled/disabled
+- `t`      Toggle gptel membership
 - `d`      Delete item/group
 - `g`      Refresh
 - `h`      Toggle items/groups

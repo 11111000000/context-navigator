@@ -22,6 +22,8 @@
 
 (defvar context-navigator--gptel-advices nil
   "List of (SYMBOL . FN) advices installed by this module.")
+(defvar context-navigator--gptel-var-watchers nil
+  "List of (SYMBOL . FN) variable watchers installed by this module.")
 
 (defun context-navigator-gptel-available-p ()
   "Return non-nil when gptel context functions are available."
@@ -314,6 +316,25 @@ Robustness improvements:
                     (integerp b) (integerp e) (<= (min b e) (max b e)))
            (gptel-context--add-region buf b e)
            t))))
+    ('buffer
+     (let* ((p (context-navigator-item-path item))
+            (buf (or (context-navigator-item-buffer item)
+                     (and (stringp p) (file-exists-p p)
+                          (find-file-noselect p)))))
+       (cond
+        ;; Prefer region add for whole buffer so indicators match 'buffer' keys
+        ((and (context-navigator-gptel--can-add-region)
+              (bufferp buf) (buffer-live-p buf))
+         (with-current-buffer buf
+           (let ((b (point-min)) (e (point-max)))
+             (gptel-context--add-region buf b e)
+             t)))
+        ;; Fallback: add as file (indicators will reflect a file key)
+        ((and (context-navigator-gptel--can-add-file)
+              (stringp p) (file-readable-p p))
+         (gptel-context-add-file p)
+         t)
+        (t nil))))
     (_ nil)))
 
 (defun context-navigator-gptel--reset-to (items)
@@ -410,6 +431,81 @@ errors from different gptel versions."
         (context-navigator-events-publish :gptel-change :diff ops)
         (list :applied t :method 'diff :ops ops))))))
 
+(defun context-navigator-gptel-present-p (item)
+  "Return non-nil if ITEM is currently present in gptel context."
+  (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+         (keys (and (listp lst)
+                    (mapcar #'context-navigator-model-item-key lst)))
+         (key (context-navigator-model-item-key item)))
+    (and (member key keys) t)))
+
+(defun context-navigator-gptel-add-one (item)
+  "Add ITEM to gptel context (best-effort). Return t on success."
+  (unless (context-navigator-gptel-available-p)
+    (cl-return-from context-navigator-gptel-add-one nil))
+  (let ((ok (ignore-errors (context-navigator-gptel--add-item item))))
+    (when ok
+      (context-navigator-events-publish :gptel-change :add 1))
+    ok))
+
+(defun context-navigator-gptel-remove-one (item)
+  "Remove ITEM from gptel context (best-effort). Return t on success.
+Selections may not support precise removal; fallback to reset without the item."
+  (unless (context-navigator-gptel-available-p)
+    (cl-return-from context-navigator-gptel-remove-one nil))
+  (let* ((key (context-navigator-model-item-key item))
+         (fallback-reset
+          (lambda ()
+            (let* ((cur (ignore-errors (context-navigator-gptel-pull)))
+                   (keep (cl-remove-if (lambda (it)
+                                         (string= (context-navigator-model-item-key it) key))
+                                       (or cur '()))))
+              (ignore-errors (context-navigator-gptel--reset-to keep))
+              t))))
+    (pcase (context-navigator-item-type item)
+      ('selection
+       (funcall fallback-reset))
+      ('file
+       (if (context-navigator-gptel--can-remove)
+           (progn
+             (ignore-errors (gptel-context-remove (context-navigator-item-path item)))
+             (context-navigator-events-publish :gptel-change :remove 1)
+             t)
+         (funcall fallback-reset)))
+      ('buffer
+       (if (context-navigator-gptel--can-remove)
+           (let* ((buf (context-navigator-item-buffer item))
+                  (p (context-navigator-item-path item))
+                  (name (context-navigator-item-name item)))
+             (cond
+              ((and buf (buffer-live-p buf))
+               (ignore-errors (gptel-context-remove buf)))
+              ((and (stringp p))
+               (ignore-errors (gptel-context-remove p)))
+              ((and (stringp name))
+               (ignore-errors (gptel-context-remove name))))
+             (context-navigator-events-publish :gptel-change :remove 1)
+             t)
+         (funcall fallback-reset)))
+      (_ (funcall fallback-reset)))))
+
+(defun context-navigator-gptel-toggle-one (item)
+  "Toggle ITEM membership in gptel. Return :added, :removed or :noop."
+  (cond
+   ((context-navigator-gptel-present-p item)
+    (if (context-navigator-gptel-remove-one item) :removed :noop))
+   (t
+    (if (context-navigator-gptel-add-one item) :added :noop))))
+
+(defun context-navigator-gptel--add-var-watcher (sym)
+  "Install a variable watcher on SYM to publish :gptel-change. Return watcher fn or nil."
+  (when (and (boundp sym)
+             (fboundp 'add-variable-watcher))
+    (let ((fn (lambda (&rest _)
+                (context-navigator-events-publish :gptel-change sym))))
+      (add-variable-watcher sym fn)
+      fn)))
+
 (defun context-navigator-gptel--advise (sym)
   "Add an :after advice to SYM that publishes :gptel-change. Return advice fn or nil."
   (when (fboundp sym)
@@ -419,9 +515,11 @@ errors from different gptel versions."
       fn)))
 
 (defun context-navigator-gptel-on-change-register ()
-  "Install lightweight advices on gptel context mutations to publish :gptel-change.
-This is used ONLY to keep UI indicators up-to-date; it never imports from gptel."
+  "Install advices and variable watchers to publish :gptel-change.
+
+Used ONLY to keep UI indicators up-to-date; never imports from gptel."
   (let (added)
+    ;; Advices on common mutation functions
     (dolist (sym '(gptel-context-add
                    gptel-context-add-file
                    gptel-context--add-region
@@ -431,15 +529,30 @@ This is used ONLY to keep UI indicators up-to-date; it never imports from gptel.
         (when fn
           (push (cons sym fn) context-navigator--gptel-advices)
           (setq added t))))
+    ;; Variable watchers (Emacs 29+) for versions mutating variables directly
+    (when (fboundp 'add-variable-watcher)
+      (dolist (vsym '(gptel-context gptel-context--alist gptel--context))
+        (let ((fn (context-navigator-gptel--add-var-watcher vsym)))
+          (when fn
+            (push (cons vsym fn) context-navigator--gptel-var-watchers)
+            (setq added t)))))
     added))
 
 (defun context-navigator-gptel-on-change-unregister ()
-  "Remove previously installed advices for :gptel-change publishing."
+  "Remove previously installed advices and variable watchers for :gptel-change."
+  ;; Advices
   (dolist (cell context-navigator--gptel-advices)
     (condition-case _err
         (advice-remove (car cell) (cdr cell))
       (error nil)))
   (setq context-navigator--gptel-advices nil)
+  ;; Variable watchers
+  (when (fboundp 'remove-variable-watcher)
+    (dolist (cell context-navigator--gptel-var-watchers)
+      (condition-case _err
+          (remove-variable-watcher (car cell) (cdr cell))
+        (error nil))))
+  (setq context-navigator--gptel-var-watchers nil)
   t)
 
 ;; If gptel is installed/loaded after Context Navigator, ensure we register

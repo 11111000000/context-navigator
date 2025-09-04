@@ -55,6 +55,12 @@
   :type '(choice (const lazy) (const strict) (const off))
   :group 'context-navigator)
 
+(defcustom context-navigator-gptel-indicator-poll-interval 1.0
+  "Polling interval (seconds) to refresh gptel indicators while the sidebar is visible.
+
+Set to 0 or nil to disable polling (event-based refresh still works)."
+  :type 'number :group 'context-navigator)
+
 ;; Forward declarations to avoid load cycle; core provides these.
 (declare-function context-navigator--state-get "context-navigator-core")
 (declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
@@ -95,6 +101,7 @@
 (defvar-local context-navigator-sidebar--openable-stamp 0.0)          ;; float-time of last compute
 (defvar-local context-navigator-sidebar--openable-timer nil)          ;; pending timer for recompute
 (defvar-local context-navigator-sidebar--buflist-fn nil)              ;; function added to buffer-list-update-hook
+(defvar-local context-navigator-sidebar--gptel-poll-timer nil)        ;; polling timer for gptel indicators (or nil)
 (defvar-local context-navigator-sidebar--last-render-key nil)        ;; cached render key to skip redundant renders
 
 (defvar context-navigator-sidebar-window-params
@@ -908,33 +915,40 @@ Wraps to the bottom when no previous element is found before point."
 (defun context-navigator-sidebar-toggle-enabled ()
   "Toggle enabled/disabled for the item at point, apply to gptel.
 
-This updates the core model via `context-navigator-toggle-item' and then
-applies the desired items to gptel. After the operation we schedule a
-sidebar re-render so the visual indicator updates immediately."
+Deprecated for 't' binding: use `context-navigator-sidebar-toggle-gptel' to toggle gptel membership."
   (interactive)
   (when-let* ((item (context-navigator-sidebar--at-item)))
-    (let* ((key (context-navigator-model-item-key item))
-           (st (ignore-errors (context-navigator-toggle-item key))) ;; update model via core API
-           (idx (and (context-navigator-state-p st) (context-navigator-state-index st)))
-           (it* (and idx (gethash key idx)))
-           (enabled (and it* (context-navigator-item-enabled it*)))
-           (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
-      (when (and items (boundp 'context-navigator--push-to-gptel) context-navigator--push-to-gptel)
-        ;; Apply desired state to gptel (add/remove depending on enabled).
-        (ignore-errors (context-navigator-gptel-apply items)))
-      ;; Force the next render to apply text even if hash matched previously.
+    (let* ((key (context-navigator-model-item-key item)))
+      (message "Deprecated: toggling model only for %s" (or (context-navigator-item-name item) key))
+      (let* ((st (ignore-errors (context-navigator-toggle-item key))))
+        (ignore-errors st))
+      (context-navigator-sidebar--schedule-render)
+      (context-navigator-sidebar--render-if-visible)
+      (context-navigator-sidebar-next-item))))
+
+(defun context-navigator-sidebar-toggle-gptel ()
+  "Toggle gptel membership for the item at point (no mass apply).
+
+Order of operations:
+- change gptel context first (add/remove item)
+- then refresh lamps/indicators in the sidebar."
+  (interactive)
+  (when-let* ((item (context-navigator-sidebar--at-item)))
+    (let* ((res (ignore-errors (context-navigator-gptel-toggle-one item)))
+           (key (context-navigator-model-item-key item)))
+      ;; Force next render not to short-circuit
       (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
         (when (buffer-live-p buf)
           (with-current-buffer buf
             (setq-local context-navigator-render--last-hash nil))))
-      ;; Ensure the sidebar updates visually right away.
+      ;; Refresh indicators; :gptel-change will also trigger a refresh
       (context-navigator-sidebar--schedule-render)
       (context-navigator-sidebar--render-if-visible)
-      ;; Move to the next item after toggling
       (context-navigator-sidebar-next-item)
-      (message "Toggled: %s -> %s"
-               (or (context-navigator-item-name item) key)
-               (if enabled "enabled" "disabled")))))
+      (pcase res
+        (:added   (message "Added to gptel: %s" (or (context-navigator-item-name item) key)))
+        (:removed (message "Removed from gptel: %s" (or (context-navigator-item-name item) key)))
+        (_        (message "No change for: %s" (or (context-navigator-item-name item) key)))))))
 
 (defun context-navigator-sidebar-delete-from-model ()
   "Delete the item at point from the model permanently and apply to gptel."
@@ -964,98 +978,147 @@ sidebar re-render so the visual indicator updates immediately."
     (when (buffer-live-p buf)
       (kill-buffer buf))))
 
+(defun context-navigator-sidebar--subscribe-model-events ()
+  "Subscribe to generic model refresh events."
+  (push (context-navigator-events-subscribe
+         :model-refreshed
+         (lambda (&rest _)
+           (context-navigator-sidebar--invalidate-openable)
+           (let ((st (ignore-errors (context-navigator--state-get))))
+             (if (and (context-navigator-state-p st)
+                      (context-navigator-state-loading-p st))
+                 (context-navigator-sidebar--render-if-visible)
+               (context-navigator-sidebar--schedule-render)))))
+        context-navigator-sidebar--subs))
+
+(defun context-navigator-sidebar--subscribe-load-events ()
+  "Subscribe to context loading lifecycle events."
+  (push (context-navigator-events-subscribe
+         :context-load-start
+         (lambda (&rest _)
+           (setq context-navigator-sidebar--load-progress (cons 0 0))
+           (context-navigator-sidebar--invalidate-openable)
+           (context-navigator-sidebar--render-if-visible)))
+        context-navigator-sidebar--subs)
+  (push (context-navigator-events-subscribe
+         :context-load-step
+         (lambda (_root pos total)
+           (setq context-navigator-sidebar--load-progress (cons pos total))
+           (context-navigator-sidebar--schedule-render)))
+        context-navigator-sidebar--subs)
+  (push (context-navigator-events-subscribe
+         :context-load-done
+         (lambda (root ok-p)
+           (setq context-navigator-sidebar--load-progress nil)
+           (context-navigator-sidebar--invalidate-openable)
+           (unless ok-p
+             (let* ((st (ignore-errors (context-navigator--state-get)))
+                    (slug (and st (context-navigator-state-current-group-slug st)))
+                    (file (and slug (ignore-errors (context-navigator-persist-context-file root slug)))))
+               (when (and (stringp file) (file-exists-p file))
+                 (message "Context Navigator: group '%s' file looks unreadable. Press h to open groups, then d to delete." (or slug "<unknown>")))
+               (when context-navigator-auto-open-groups-on-error
+                 (setq context-navigator-sidebar--mode 'groups)
+                 (ignore-errors (context-navigator-groups-open)))))
+           (context-navigator-sidebar--schedule-render)))
+        context-navigator-sidebar--subs))
+
+(defun context-navigator-sidebar--subscribe-groups-events ()
+  "Subscribe to groups list updates."
+  (push (context-navigator-events-subscribe
+         :groups-list-updated
+         (lambda (_root groups)
+           (setq context-navigator-sidebar--groups groups)
+           (when (eq context-navigator-sidebar--mode 'groups)
+             (context-navigator-sidebar--schedule-render))))
+        context-navigator-sidebar--subs))
+
+(defun context-navigator-sidebar--subscribe-gptel-events ()
+  "Subscribe to gptel changes and keep cached keys in sync."
+  (push (context-navigator-events-subscribe
+         :gptel-change
+         (lambda (&rest _)
+           (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+                  (keys (and (listp lst)
+                             (mapcar #'context-navigator-model-item-key lst))))
+             (setq context-navigator-sidebar--gptel-keys keys
+                   context-navigator-sidebar--gptel-keys-hash (sxhash-equal keys)))
+           (context-navigator-sidebar--schedule-render)))
+        context-navigator-sidebar--subs))
+
+(defun context-navigator-sidebar--init-gptel-cache ()
+  "Initialize cached gptel keys once."
+  (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+         (keys (and (listp lst)
+                    (mapcar #'context-navigator-model-item-key lst))))
+    (setq context-navigator-sidebar--gptel-keys keys
+          context-navigator-sidebar--gptel-keys-hash (sxhash-equal keys))))
+
+(defun context-navigator-sidebar--install-buffer-list-hook ()
+  "Install buffer-list-update hook to recompute quick counters."
+  (setq context-navigator-sidebar--buflist-fn
+        (lambda ()
+          (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (context-navigator-sidebar--invalidate-openable)
+                (context-navigator-sidebar--schedule-render))))))
+  (add-hook 'buffer-list-update-hook context-navigator-sidebar--buflist-fn))
+
+(defun context-navigator-sidebar--install-window-select-hook ()
+  "Install window-selection-change hook to re-render on focus."
+  (setq context-navigator-sidebar--winselect-fn
+        (lambda (_frame)
+          (let ((win (selected-window)))
+            (when (and (window-live-p win)
+                       (eq (window-buffer win) (get-buffer context-navigator-sidebar--buffer-name)))
+              (with-selected-window win
+                (context-navigator-sidebar--schedule-render))))))
+  (add-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn))
+
+(defun context-navigator-sidebar--initial-compute-counters ()
+  "Compute quick counters once on install."
+  (context-navigator-sidebar--openable-count-refresh))
+
+(defun context-navigator-sidebar--start-gptel-poll-timer ()
+  "Start lightweight polling for gptel indicators while sidebar is visible."
+  (let ((int (or context-navigator-gptel-indicator-poll-interval 0)))
+    (when (> int 0)
+      (setq context-navigator-sidebar--gptel-poll-timer
+            (run-at-time 0 int
+                         (lambda ()
+                           (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+                             (when (buffer-live-p buf)
+                               (with-current-buffer buf
+                                 (when (get-buffer-window buf t)
+                                   (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+                                          (keys (and (listp lst)
+                                                     (mapcar #'context-navigator-model-item-key lst)))
+                                          (h (sxhash-equal keys)))
+                                     (unless (equal h context-navigator-sidebar--gptel-keys-hash)
+                                       (setq context-navigator-sidebar--gptel-keys keys
+                                             context-navigator-sidebar--gptel-keys-hash h)
+                                       (context-navigator-sidebar--schedule-render)))))))))))))
+
 (defun context-navigator-sidebar--install-subs ()
   "Subscribe to relevant events (buffer-local tokens).
 Guard against duplicate subscriptions."
   (unless context-navigator-sidebar--subs
-    (push (context-navigator-events-subscribe
-           :model-refreshed
-           (lambda (&rest _)
-             ;; Invalidate quick counters and re-render
-             (context-navigator-sidebar--invalidate-openable)
-             (let ((st (ignore-errors (context-navigator--state-get))))
-               (if (and (context-navigator-state-p st)
-                        (context-navigator-state-loading-p st))
-                   ;; When loading, render immediately so the preloader appears without delay.
-                   (context-navigator-sidebar--render-if-visible)
-                 (context-navigator-sidebar--schedule-render)))))
-          context-navigator-sidebar--subs)
-    (push (context-navigator-events-subscribe
-           :context-load-start
-           (lambda (&rest _)
-             (setq context-navigator-sidebar--load-progress (cons 0 0))
-             (context-navigator-sidebar--invalidate-openable)
-             ;; Render immediately to show preloader before any heavy work.
-             (context-navigator-sidebar--render-if-visible)))
-          context-navigator-sidebar--subs)
-    (push (context-navigator-events-subscribe
-           :context-load-step
-           (lambda (_root pos total)
-             (setq context-navigator-sidebar--load-progress (cons pos total))
-             (context-navigator-sidebar--schedule-render)))
-          context-navigator-sidebar--subs)
-    (push (context-navigator-events-subscribe
-           :context-load-done
-           (lambda (root ok-p)
-             (setq context-navigator-sidebar--load-progress nil)
-             (context-navigator-sidebar--invalidate-openable)
-             ;; Warn user if group file is unreadable/corrupted; optionally auto-open groups list.
-             (unless ok-p
-               (let* ((st (ignore-errors (context-navigator--state-get)))
-                      (slug (and st (context-navigator-state-current-group-slug st)))
-                      (file (and slug (ignore-errors (context-navigator-persist-context-file root slug)))))
-                 (when (and (stringp file) (file-exists-p file))
-                   (message "Context Navigator: group '%s' file looks unreadable. Press h to open groups, then d to delete." (or slug "<unknown>")))
-                 (when context-navigator-auto-open-groups-on-error
-                   (setq context-navigator-sidebar--mode 'groups)
-                   (ignore-errors (context-navigator-groups-open)))))
-             (context-navigator-sidebar--schedule-render)))
-          context-navigator-sidebar--subs)
-    (push (context-navigator-events-subscribe
-           :groups-list-updated
-           (lambda (_root groups)
-             (setq context-navigator-sidebar--groups groups)
-             (when (eq context-navigator-sidebar--mode 'groups)
-               (context-navigator-sidebar--schedule-render))))
-          context-navigator-sidebar--subs)
-    ;; gptel changes: cache keys and schedule UI refresh (no pull during render)
-    (push (context-navigator-events-subscribe
-           :gptel-change
-           (lambda (&rest _)
-             (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-               (setq context-navigator-sidebar--gptel-keys
-                     (and (listp lst)
-                          (mapcar #'context-navigator-model-item-key lst))))
-             (context-navigator-sidebar--schedule-render)))
-          context-navigator-sidebar--subs)
-    ;; register gptel advices (UI-only)
+    ;; Model and loading lifecycle
+    (context-navigator-sidebar--subscribe-model-events)
+    (context-navigator-sidebar--subscribe-load-events)
+    (context-navigator-sidebar--subscribe-groups-events)
+    ;; gptel events + advices + initial cache
+    (context-navigator-sidebar--subscribe-gptel-events)
     (ignore-errors (context-navigator-gptel-on-change-register))
-    ;; initialize cached gptel keys once
-    (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-      (setq context-navigator-sidebar--gptel-keys
-            (and (listp lst)
-                 (mapcar #'context-navigator-model-item-key lst))))
-    ;; buffer list updates: recalc quick openable counters
-    (setq context-navigator-sidebar--buflist-fn
-          (lambda ()
-            (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
-              (when (buffer-live-p buf)
-                (with-current-buffer buf
-                  (context-navigator-sidebar--invalidate-openable)
-                  (context-navigator-sidebar--schedule-render))))))
-    (add-hook 'buffer-list-update-hook context-navigator-sidebar--buflist-fn)
-    ;; Re-render when the sidebar window becomes selected
-    (setq context-navigator-sidebar--winselect-fn
-          (lambda (_frame)
-            (let ((win (selected-window)))
-              (when (and (window-live-p win)
-                         (eq (window-buffer win) (get-buffer context-navigator-sidebar--buffer-name)))
-                (with-selected-window win
-                  (context-navigator-sidebar--schedule-render))))))
-    (add-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
-    ;; Initial compute of quick counters
-    (context-navigator-sidebar--openable-count-refresh)
-    ;; Гарантированная отписка при убийстве буфера
+    (context-navigator-sidebar--init-gptel-cache)
+    ;; Hooks and initial compute
+    (context-navigator-sidebar--install-buffer-list-hook)
+    (context-navigator-sidebar--install-window-select-hook)
+    (context-navigator-sidebar--initial-compute-counters)
+    ;; Optional polling
+    (context-navigator-sidebar--start-gptel-poll-timer)
+    ;; Гарантированная отписка при убийстве буфера (локально)
     (add-hook 'kill-buffer-hook #'context-navigator-sidebar--remove-subs nil t)))
 
 (defun context-navigator-sidebar--remove-subs ()
@@ -1073,6 +1136,10 @@ Guard against duplicate subscriptions."
   (when context-navigator-sidebar--winselect-fn
     (remove-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)
     (setq context-navigator-sidebar--winselect-fn nil))
+  ;; Cancel gptel poll timer if running.
+  (when (timerp context-navigator-sidebar--gptel-poll-timer)
+    (cancel-timer context-navigator-sidebar--gptel-poll-timer)
+    (setq context-navigator-sidebar--gptel-poll-timer nil))
   ;; Also unregister gptel advices installed for UI updates.
   (ignore-errors (context-navigator-gptel-on-change-unregister)))
 
@@ -1099,7 +1166,7 @@ MAP is a keymap to search for COMMAND bindings."
                    (context-navigator-sidebar-previous-item . "previous item")
                    (context-navigator-sidebar-activate . "RET: visit item / open group")
                    (context-navigator-sidebar-preview . "preview item (other window)")
-                   (context-navigator-sidebar-toggle-enabled . "toggle enabled/disabled")
+                   (context-navigator-sidebar-toggle-gptel . "toggle gptel membership")
                    (context-navigator-sidebar-delete-dispatch . "delete (item or group)")
                    (context-navigator-sidebar-refresh-dispatch . "refresh (items or groups)")
                    (context-navigator-sidebar-go-up . "show groups list")
@@ -1131,7 +1198,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "j")   #'context-navigator-sidebar-next-item)
     (define-key m (kbd "k")   #'context-navigator-sidebar-previous-item)
     (define-key m (kbd "l")   #'context-navigator-sidebar-activate)
-    (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-enabled)
+    (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-gptel)
 
     ;; TAB navigation between interactive elements
     ;; Bind several TAB event representations to be robust across terminals/minor-modes.
@@ -1168,6 +1235,10 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "?")   #'context-navigator-sidebar-help)
     m)
   "Keymap for =context-navigator-sidebar-mode'.")
+
+;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
+(when (keymapp context-navigator-sidebar-mode-map)
+  (define-key context-navigator-sidebar-mode-map (kbd "t") #'context-navigator-sidebar-toggle-gptel))
 
 (defun context-navigator-sidebar--hl-line-range ()
   "Return region to highlight for the current line.
