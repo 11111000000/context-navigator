@@ -677,10 +677,10 @@ in another window (never replace the sidebar buffer). This avoids the
 situation where visiting a file replaces the sidebar buffer and makes it
 hard to restore the sidebar afterward."
   (when-let* ((item (context-navigator-sidebar--at-item)))
-    (let* ((win (selected-window))
-           (is-sidebar (and (window-live-p win)
-                            (window-parameter win 'window-side)
-                            (eq (window-buffer win) (current-buffer))))
+    (let* ((selected-win (selected-window))
+           (is-sidebar (and (window-live-p selected-win)
+                            (window-parameter selected-win 'context-navigator-sidebar)
+                            (eq (window-buffer selected-win) (current-buffer))))
            (open-in-other (or preview is-sidebar)))
       (pcase (context-navigator-item-type item)
         ('file
@@ -694,9 +694,14 @@ hard to restore the sidebar afterward."
                         (and (context-navigator-item-path item)
                              (find-file-noselect (context-navigator-item-path item))))))
            (when (buffer-live-p buf)
-             (if open-in-other
-                 (switch-to-buffer-other-window buf)
-               (switch-to-buffer buf)))))
+             (let ((buf-win (get-buffer-window buf 0)))
+               (if (and buf-win (not (window-parameter buf-win 'context-navigator-sidebar)))
+                   ;; Buffer is visible in a normal window: jump there.
+                   (select-window buf-win)
+                 ;; Otherwise open in other window if requested, else in current window.
+                 (if open-in-other
+                     (switch-to-buffer-other-window buf)
+                   (switch-to-buffer buf)))))))
         ('selection
          (let* ((f   (context-navigator-item-path item))
                 (buf (or (context-navigator-item-buffer item)
@@ -706,23 +711,23 @@ hard to restore the sidebar afterward."
                 (e   (context-navigator-item-end item))
                 (valid-pos (and (integerp b) (integerp e))))
            (cond
-            ;; If a live buffer exists: use its window if visible, otherwise open in other window.
+            ;; If a live buffer exists: prefer selecting its non-sidebar window.
             ((and (bufferp buf) (buffer-live-p buf))
-             (let ((win (get-buffer-window buf 0)))
-               (if win
-                   (select-window win)
+             (let ((buf-win (get-buffer-window buf 0)))
+               (if (and buf-win (not (window-parameter buf-win 'context-navigator-sidebar)))
+                   (select-window buf-win)
                  (if open-in-other
                      (switch-to-buffer-other-window buf)
                    (switch-to-buffer buf))))
              (when valid-pos
                (goto-char (min b e))
                (push-mark (max b e) t t)))
-            ;; Otherwise open the file in other window when appropriate and go to region.
+            ;; Otherwise open the file: prefer existing non-sidebar window if any.
             ((and (stringp f) (file-exists-p f))
-             (let ((win (and (get-file-buffer f)
-                             (get-buffer-window (get-file-buffer f) 0))))
-               (if win
-                   (select-window win)
+             (let* ((existing-buf (get-file-buffer f))
+                    (buf-win (and existing-buf (get-buffer-window existing-buf 0))))
+               (if (and buf-win (not (window-parameter buf-win 'context-navigator-sidebar)))
+                   (select-window buf-win)
                  (if open-in-other
                      (find-file-other-window f)
                    (find-file f))))
@@ -1283,6 +1288,8 @@ Do not highlight header/separator lines."
         (context-navigator-sidebar--install-subs)
         (context-navigator-sidebar--render)))
     (when (window-live-p win)
+      ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
+      (set-window-parameter win 'context-navigator-sidebar t)
       (select-window win))
     win))
 
