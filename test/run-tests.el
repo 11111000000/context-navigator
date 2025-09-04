@@ -38,6 +38,7 @@
 (require 'context-navigator-render-truncate-test)
 (require 'context-navigator-transient-tramp-test)
 (require 'context-navigator-sidebar-controls-test)
+(require 'context-navigator-groups-delete-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

@@ -806,8 +806,9 @@ Autosaves current group before switching. Prompts when SLUG is nil."
     new-slug))
 
 ;;;###autoload
-(defun context-navigator-group-delete (&optional slug)
-  "Delete group SLUG; if active or referenced, switch :current to \"default\"."
+(defun context-navigator-group-delete (&optional slug no-confirm)
+  "Delete group SLUG; if active or referenced, switch :current to \"default\".
+When NO-CONFIRM is non-nil or Emacs runs in batch mode (noninteractive), do not prompt."
   (interactive)
   (let* ((root (context-navigator--current-root))
          (cand (context-navigator--groups-candidates root))
@@ -815,39 +816,41 @@ Autosaves current group before switching. Prompts when SLUG is nil."
                    (cdr (assoc (completing-read "Delete group: " cand nil t) cand)))))
     (when (equal slug "default")
       (user-error "Cannot delete 'default'"))
-    (when (yes-or-no-p (format "Delete group '%s'? " slug))
-      ;; FS: delete file immediately — the single source of truth
-      (let ((file (context-navigator-persist-context-file root slug)))
-        (when (file-exists-p file)
-          (ignore-errors (delete-file file))))
-      ;; State: drop from :groups mapping and adjust :current
-      (let* ((st (context-navigator--state-read root))
-             (deleted-active (equal (plist-get st :current) slug))
-             (groups (and (plist-member st :groups) (plist-get st :groups)))
-             (groups* (and (listp groups)
-                           (cl-remove-if (lambda (cell) (equal (car-safe cell) slug))
-                                         groups))))
-        ;; Remove slug from mapping (if mapping present)
-        (when (plist-member st :groups)
-          (setq st (plist-put (copy-sequence st) :groups groups*)))
-        ;; If :current points at the deleted group, rewrite it to default
-        (when (equal (plist-get st :current) slug)
-          (setq st (plist-put (copy-sequence st) :current "default")))
-        ;; Ensure default group file exists if we point to it
-        (when (and (equal (plist-get st :current) "default")
-                   (boundp 'context-navigator-create-default-group-file)
-                   context-navigator-create-default-group-file)
-          (let ((df (ignore-errors (context-navigator-persist-context-file root "default"))))
-            (when (and (stringp df) (not (file-exists-p df)))
-              (ignore-errors (context-navigator-persist-save '() root "default")))))
-        (context-navigator--state-write root st)
-        ;; If the deleted group was active, immediately load default
-        (when deleted-active
-          (ignore-errors (context-navigator--load-group-for-root root "default")))))
-    ;; Always refresh groups list for UI
-    (context-navigator-groups-open)
-    (message "Deleted group: %s" slug)
-    t))
+    (let ((need-confirm (and (not noninteractive) (not no-confirm))))
+      (when (or (not need-confirm)
+                (yes-or-no-p (format "Delete group '%s'? " slug)))
+        ;; FS: delete file immediately — the single source of truth
+        (let ((file (context-navigator-persist-context-file root slug)))
+          (when (file-exists-p file)
+            (ignore-errors (delete-file file))))
+        ;; State: drop from :groups mapping and adjust :current
+        (let* ((st (context-navigator--state-read root))
+               (deleted-active (equal (plist-get st :current) slug))
+               (groups (and (plist-member st :groups) (plist-get st :groups)))
+               (groups* (and (listp groups)
+                             (cl-remove-if (lambda (cell) (equal (car-safe cell) slug))
+                                           groups))))
+          ;; Remove slug from mapping (if mapping present)
+          (when (plist-member st :groups)
+            (setq st (plist-put (copy-sequence st) :groups groups*)))
+          ;; If :current points at the deleted group, rewrite it to default
+          (when (equal (plist-get st :current) slug)
+            (setq st (plist-put (copy-sequence st) :current "default")))
+          ;; Ensure default group file exists if we point to it
+          (when (and (equal (plist-get st :current) "default")
+                     (boundp 'context-navigator-create-default-group-file)
+                     context-navigator-create-default-group-file)
+            (let ((df (ignore-errors (context-navigator-persist-context-file root "default"))))
+              (when (and (stringp df) (not (file-exists-p df)))
+                (ignore-errors (context-navigator-persist-save '() root "default")))))
+          (context-navigator--state-write root st)
+          ;; If the deleted group was active, immediately load default
+          (when deleted-active
+            (ignore-errors (context-navigator--load-group-for-root root "default")))))))
+  ;; Always refresh groups list for UI
+  (context-navigator-groups-open)
+  (message "Deleted group: %s" slug)
+  t)
 
 ;;;###autoload
 (defun context-navigator-group-duplicate (&optional src-slug new-display)
