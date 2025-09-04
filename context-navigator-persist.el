@@ -19,7 +19,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-events)
 
-(defconst context-navigator-persist--version 3)
+
 
 (defun context-navigator-persist--ensure-dir (dir)
   "Create DIR if missing, returning DIR."
@@ -136,7 +136,7 @@ legacy single-file path (context.el) for backward compatibility."
    ;; Already v3 map
    ((and (listp sexp)
          (plist-member sexp :version)
-         (eq (plist-get sexp :version) context-navigator-persist--version))
+         (eq (plist-get sexp :version) context-navigator-persist-version))
     sexp)
    ;; v2/v1 could be bare list of items; wrap them
    ((and (listp sexp)
@@ -158,7 +158,7 @@ Returns the file path or nil on error."
   (let* ((file (context-navigator-persist-context-file root group-slug))
          (dir (file-name-directory file))
          (payload
-          (list :version context-navigator-persist--version
+          (list :version context-navigator-persist-version
                 :generator "context-navigator/1.1.0"
                 :root (and root (expand-file-name root))
                 :items (delq nil (mapcar (lambda (it)

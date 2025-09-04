@@ -119,6 +119,9 @@ latest state at execution time; setting this to 0 disables debouncing
 Creates <root>/.context/default.el (or ~/.context/default.el in global mode)."
   :type 'boolean :group 'context-navigator)
 
+(defconst context-navigator-persist-version 3
+  "Persist format version used by Context Navigator (v3).")
+
 (cl-defstruct (context-navigator-state
                (:constructor context-navigator--state-make))
   "Global state (pure value).
