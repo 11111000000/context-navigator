@@ -104,57 +104,46 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-sidebar--gptel-poll-timer nil)        ;; polling timer for gptel indicators (or nil)
 (defvar-local context-navigator-sidebar--last-render-key nil)        ;; cached render key to skip redundant renders
 
+(defcustom context-navigator-sidebar-spinner-frames
+  '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  "Frames used by the sidebar loading spinner (list of single-frame strings)."
+  :type '(repeat string)
+  :group 'context-navigator)
+
+(defcustom context-navigator-sidebar-spinner-interval
+  0.1
+  "Spinner animation interval in seconds for the sidebar loading indicator."
+  :type 'number
+  :group 'context-navigator)
+
+(defvar-local context-navigator-sidebar--spinner-timer nil)          ;; loading spinner timer
+(defvar-local context-navigator-sidebar--spinner-index 0)
+
 (defvar context-navigator-sidebar-window-params
   '((side . left) (slot . -1))
   "Default parameters for the sidebar window.")
 
 (defun context-navigator-sidebar--header (state)
-  "Compute compact header title from STATE (without toggle segments).
+  "Compute compact header title from STATE.
 
-Title only:
-- [<project>: <group>]            when group is active
-- [<project>] Groups              when in groups mode
-- [~: <group>]                    when no project (global)
+Rules:
+- Items mode: [<project>: <group>] when group is active, otherwise [<project>]
+- Groups mode: [<project>] only
+- Global (no project): use ~ as project name → items: [~: <group>] / groups: [~]
 
 Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the footer."
-  (let* (;; Try to derive the project of the last visited (current) buffer.
-         ;; If the selected window is the sidebar, use `other-buffer' as a heuristic.
-         (buf (let ((sw (selected-window)))
-                (if (and (window-live-p sw)
-                         (window-parameter sw 'context-navigator-sidebar))
-                    (other-buffer (current-buffer) t)
-                  (window-buffer sw))))
-         (detected-root
-          (when (and (bufferp buf) (fboundp 'project-current))
-            (with-current-buffer buf
-              (let ((proj (project-current nil)))
-                (when proj
-                  (expand-file-name (project-root proj)))))))
-         ;; Prefer root detected from the last visited buffer; fallback to state.
-         (root (or detected-root (context-navigator-state-last-project-root state)))
-         (loading (or (context-navigator-state-loading-p state)
-                      context-navigator-sidebar--load-progress))
+  (let* ((root (context-navigator-state-last-project-root state))
          (group (context-navigator-state-current-group-slug state))
-         ;; Use project basename when available; otherwise use "~" to denote global.
          (proj-name (if root
                         (file-name-nondirectory (directory-file-name root))
-                      "~"))
-         (base (if group
-                   (format "[%s: %s]" proj-name group)
-                 (format "[%s]" proj-name)))
-         (extra
-          (when (eq context-navigator-sidebar--mode 'groups)
-            (concat " " (context-navigator-i18n :groups))))
-         (suffix
-          (cond
-           ((and loading context-navigator-sidebar--load-progress)
-            (format "  [%s %d/%d]"
-                    (context-navigator-i18n :loading)
-                    (car context-navigator-sidebar--load-progress)
-                    (cdr context-navigator-sidebar--load-progress)))
-           (loading (format "  [%s]" (context-navigator-i18n :loading)))
-           (t nil))))
-    (concat base (or extra "") (or suffix ""))))
+                      "~")))
+    (cond
+     ((eq context-navigator-sidebar--mode 'groups)
+      (format "[%s]" proj-name))
+     (t
+      (if group
+          (format "[%s: %s]" proj-name group)
+        (format "[%s]" proj-name))))))
 
 (defun context-navigator-sidebar--state-items ()
   "Get items from core state."
@@ -332,6 +321,28 @@ PLUS is non-nil when CAP was reached."
     (cons (or context-navigator-sidebar--openable-count 0)
           (and context-navigator-sidebar--openable-plus
                (> (or context-navigator-sidebar--openable-count 0) 0)))))
+
+;; Loading spinner helpers ----------------------------------------------------
+
+(defun context-navigator-sidebar--spinner-start ()
+  "Start or restart the lightweight loading spinner timer."
+  (when (timerp context-navigator-sidebar--spinner-timer)
+    (cancel-timer context-navigator-sidebar--spinner-timer))
+  (setq context-navigator-sidebar--spinner-index 0)
+  (let ((interval (or context-navigator-sidebar-spinner-interval 0.1)))
+    (setq context-navigator-sidebar--spinner-timer
+          (run-at-time 0 interval
+                       (lambda ()
+                         (setq context-navigator-sidebar--spinner-index
+                               (1+ (or context-navigator-sidebar--spinner-index 0)))
+                         (context-navigator-sidebar--schedule-render))))))
+
+(defun context-navigator-sidebar--spinner-stop ()
+  "Stop the loading spinner timer and reset index."
+  (when (timerp context-navigator-sidebar--spinner-timer)
+    (cancel-timer context-navigator-sidebar--spinner-timer))
+  (setq context-navigator-sidebar--spinner-timer nil)
+  (setq context-navigator-sidebar--spinner-index 0))
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
@@ -591,14 +602,29 @@ Returns the list of lines that were rendered."
 ;; Entry point
 
 (defun context-navigator-sidebar--render-loading (state header total-width)
-  "Render a lightweight loading/preloader view into the sidebar buffer."
+  "Render a lightweight loading/preloader view into the sidebar buffer (spinner only).
+
+The spinner is centered horizontally within TOTAL-WIDTH. An optional percentage
+is shown to the right of the spinner when load progress is available."
   (let* ((hl (propertize (format " %s" header) 'face 'mode-line-emphasis))
          (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow))
-         (msg (propertize (format " %s" (context-navigator-i18n :loading)) 'face 'italic))
-         (prog (when context-navigator-sidebar--load-progress
-                 (format " %d/%d" (car context-navigator-sidebar--load-progress) (cdr context-navigator-sidebar--load-progress))))
-         (line (concat msg (or prog "")))
-         (sline (propertize line 'face 'shadow))
+         (frames (or context-navigator-sidebar-spinner-frames
+                     '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
+         (len (length frames))
+         (idx (or context-navigator-sidebar--spinner-index 0))
+         (ch (if (> len 0) (nth (mod idx (max 1 len)) frames) ""))
+         (pct (when (and context-navigator-sidebar--load-progress
+                         (numberp (car context-navigator-sidebar--load-progress))
+                         (numberp (cdr context-navigator-sidebar--load-progress))
+                         (> (cdr context-navigator-sidebar--load-progress) 0))
+                (floor (* 100.0 (/ (float (car context-navigator-sidebar--load-progress))
+                                   (max 1 (cdr context-navigator-sidebar--load-progress)))))))
+         (spin (concat ch (when pct (format " %d%%" pct))))
+         ;; center spin line within total-width (respecting visual width)
+         (spin-w (max 0 (string-width spin)))
+         (left-pad (max 0 (floor (/ (max 0 (- total-width spin-w)) 2))))
+         (spin-line (concat (make-string left-pad ? ) spin))
+         (sline (propertize (concat " " spin-line) 'face 'shadow))
          (lines (list hl sep "" sline "")))
     (setq context-navigator-sidebar--last-lines lines
           context-navigator-sidebar--header header)
@@ -1015,12 +1041,14 @@ Order of operations:
          (lambda (&rest _)
            (setq context-navigator-sidebar--load-progress (cons 0 0))
            (context-navigator-sidebar--invalidate-openable)
+           (context-navigator-sidebar--spinner-start)
            (context-navigator-sidebar--render-if-visible)))
         context-navigator-sidebar--subs)
   (push (context-navigator-events-subscribe
          :context-load-step
          (lambda (_root pos total)
            (setq context-navigator-sidebar--load-progress (cons pos total))
+           (context-navigator-sidebar--spinner-start)
            (context-navigator-sidebar--schedule-render)))
         context-navigator-sidebar--subs)
   (push (context-navigator-events-subscribe
@@ -1028,6 +1056,7 @@ Order of operations:
          (lambda (root ok-p)
            (setq context-navigator-sidebar--load-progress nil)
            (context-navigator-sidebar--invalidate-openable)
+           (context-navigator-sidebar--spinner-stop)
            (unless ok-p
              (let* ((st (ignore-errors (context-navigator--state-get)))
                     (slug (and st (context-navigator-state-current-group-slug st)))
@@ -1149,6 +1178,7 @@ Guard against duplicate subscriptions."
     (setq context-navigator-sidebar--buflist-fn nil))
   ;; Cancel timers and drop cached counters.
   (context-navigator-sidebar--invalidate-openable)
+  (context-navigator-sidebar--spinner-stop)
   ;; Remove focus render hook if installed.
   (when context-navigator-sidebar--winselect-fn
     (remove-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn)

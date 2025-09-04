@@ -88,11 +88,11 @@ latest state at execution time; setting this to 0 disables debouncing
   "Autoload context when switching projects."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-push-to-gptel nil
+(defcustom context-navigator-default-push-to-gptel t
   "Default session state for pushing Navigator context to gptel."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-auto-project-switch nil
+(defcustom context-navigator-default-auto-project-switch t
   "Default session state for automatic project switching."
   :type 'boolean :group 'context-navigator)
 
