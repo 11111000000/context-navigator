@@ -25,6 +25,13 @@
 (defvar context-navigator--gptel-var-watchers nil
   "List of (SYMBOL . FN) variable watchers installed by this module.")
 
+(defmacro context-navigator--silence-messages (&rest body)
+  "Execute BODY while suppressing echo-area and *Messages* logging."
+  (declare (indent 0) (debug t))
+  `(let ((inhibit-message t)
+         (message-log-max nil))
+     ,@body))
+
 (defun context-navigator-gptel-available-p ()
   "Return non-nil when gptel context functions are available."
   (or (boundp 'gptel-context)
@@ -302,7 +309,7 @@ Robustness improvements:
      (when (context-navigator-gptel--can-add-file)
        (let ((p (context-navigator-item-path item)))
          (when (and (stringp p) (file-readable-p p))
-           (gptel-context-add-file p)
+           (context-navigator--silence-messages (gptel-context-add-file p))
            t))))
     ('selection
      (when (context-navigator-gptel--can-add-region)
@@ -314,7 +321,7 @@ Robustness improvements:
                             (find-file-noselect p)))))
          (when (and (bufferp buf) (buffer-live-p buf)
                     (integerp b) (integerp e) (<= (min b e) (max b e)))
-           (gptel-context--add-region buf b e)
+           (context-navigator--silence-messages (gptel-context--add-region buf b e))
            t))))
     ('buffer
      (let* ((p (context-navigator-item-path item))
@@ -327,12 +334,12 @@ Robustness improvements:
               (bufferp buf) (buffer-live-p buf))
          (with-current-buffer buf
            (let ((b (point-min)) (e (point-max)))
-             (gptel-context--add-region buf b e)
+             (context-navigator--silence-messages (gptel-context--add-region buf b e))
              t)))
         ;; Fallback: add as file (indicators will reflect a file key)
         ((and (context-navigator-gptel--can-add-file)
               (stringp p) (file-readable-p p))
-         (gptel-context-add-file p)
+         (context-navigator--silence-messages (gptel-context-add-file p))
          t)
         (t nil))))
     (_ nil)))
@@ -346,7 +353,7 @@ underlying gptel; it publishes a :gptel-change :reset event so listeners
 (e.g. the core sync) can react. We keep the call guarded and tolerate
 errors from different gptel versions."
   (when (context-navigator-gptel--can-remove-all)
-    (ignore-errors (gptel-context-remove-all)))
+    (ignore-errors (context-navigator--silence-messages (gptel-context-remove-all))))
   (let ((count 0))
     (dolist (it items)
       (when (context-navigator-item-enabled it)
@@ -355,81 +362,102 @@ errors from different gptel versions."
     (context-navigator-events-publish :gptel-change :reset count)
     (list :method 'reset :count count)))
 
+;; Internal helpers extracted from the original `context-navigator-gptel-apply'
+
+(defun context-navigator-gptel--selection-in-diff-p (rems upds)
+  "Return non-nil if selections are present in REMS or UPDS."
+  (or (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) rems)
+      (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) upds)))
+
+(defun context-navigator-gptel--needs-reset-p (rems upds)
+  "Return non-nil if we should fallback to reset for this diff."
+  (or (not (context-navigator-gptel--can-remove))
+      (not (context-navigator-gptel--can-add-file))
+      (context-navigator-gptel--selection-in-diff-p rems upds)))
+
+(defun context-navigator-gptel--remove-one (item)
+  "Best-effort removal of ITEM from gptel. Return t on success."
+  (when (context-navigator-gptel--can-remove)
+    (pcase (context-navigator-item-type item)
+      ('file
+       (ignore-errors
+         (context-navigator--silence-messages
+          (gptel-context-remove (context-navigator-item-path item))))
+       t)
+      ('buffer
+       (let ((buf  (context-navigator-item-buffer item))
+             (path (context-navigator-item-path item))
+             (name (context-navigator-item-name item)))
+         (cond
+          ((and buf (buffer-live-p buf))
+           (ignore-errors (context-navigator--silence-messages (gptel-context-remove buf))) t)
+          ((stringp path)
+           (ignore-errors (context-navigator--silence-messages (gptel-context-remove path))) t)
+          ((stringp name)
+           (ignore-errors (context-navigator--silence-messages (gptel-context-remove name))) t)
+          (t nil))))
+      (_ nil))))
+
+(defun context-navigator-gptel--remove-many (items)
+  "Remove multiple ITEMS, returning count of successful ops."
+  (let ((ops 0))
+    (dolist (it items)
+      (when (context-navigator-gptel--remove-one it)
+        (setq ops (1+ ops))))
+    ops))
+
+(defun context-navigator-gptel--update-one (item)
+  "Update ITEM by removing existing and re-adding when enabled.
+Return count of successful operations."
+  (let ((ops 0))
+    (pcase (context-navigator-item-type item)
+      ((or 'file 'buffer)
+       (when (context-navigator-gptel--remove-one item)
+         (setq ops (1+ ops)))))
+    (when (context-navigator-item-enabled item)
+      (when (context-navigator-gptel--add-item item)
+        (setq ops (1+ ops))))
+    ops))
+
+(defun context-navigator-gptel--update-many (items)
+  "Update multiple ITEMS; return total ops."
+  (let ((ops 0))
+    (dolist (it items)
+      (setq ops (+ ops (context-navigator-gptel--update-one it))))
+    ops))
+
+(defun context-navigator-gptel--add-enabled-many (items)
+  "Add enabled ITEMS; return count of successful adds."
+  (let ((ops 0))
+    (dolist (it items)
+      (when (and (context-navigator-item-enabled it)
+                 (context-navigator-gptel--add-item it))
+        (setq ops (1+ ops))))
+    ops))
+
+(defun context-navigator-gptel--apply-diff (adds rems upds)
+  "Apply fine-grained diff to gptel. Return a plist result."
+  (let* ((ops 0)
+         (ops (-add (context-navigator-gptel--remove-many rems)))
+         (ops (+ ops (context-navigator-gptel--update-many upds)))
+         (ops (+ ops (context-navigator-gptel--add-enabled-many adds))))
+    (context-navigator-events-publish :gptel-change :diff ops)
+    (list :applied t :method 'diff :ops ops)))
+
 (defun context-navigator-gptel-apply (desired-items)
   "Apply DESIRED-ITEMS to gptel. Returns a plist describing action.
 Когда точечные операции невозможны, выполняется сброс (reset)."
   (unless (context-navigator-gptel-available-p)
     (cl-return-from context-navigator-gptel-apply (list :applied nil :reason 'unavailable)))
   (let* ((current (context-navigator-gptel-pull))
-         (diff (context-navigator-model-diff current desired-items))
-         (adds (plist-get diff :add))
-         (rems (plist-get diff :remove))
-         (upds (plist-get diff :update)))
-    (cond
-     ;; Fall back to reset when core remove/add primitives are missing.
-     ((or (not (context-navigator-gptel--can-remove))
-          (not (context-navigator-gptel--can-add-file)))
-      (let ((r (context-navigator-gptel--reset-to desired-items)))
-        (append (list :applied t) r)))
-     ;; If selections are involved in removals/updates, conservative reset.
-     ((or (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) rems)
-          (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) upds))
-      (let ((r (context-navigator-gptel--reset-to desired-items)))
-        (append (list :applied t) r)))
-     (t
-      ;; Fine-grained diff: try to remove/update/add as needed.
-      (let ((ops 0))
-        ;; Removes: attempt to remove files and buffers when possible.
-        (dolist (old rems)
-          (pcase (context-navigator-item-type old)
-            ('file
-             (when (context-navigator-gptel--can-remove)
-               (ignore-errors
-                 (gptel-context-remove (context-navigator-item-path old)))))
-            ('buffer
-             (when (context-navigator-gptel--can-remove)
-               (ignore-errors
-                 ;; Try several reasonable identifiers for gptel to remove:
-                 ;; 1) the buffer object itself
-                 ;; 2) the persisted path
-                 ;; 3) the buffer name
-                 (let ((buf (context-navigator-item-buffer old))
-                       (p (context-navigator-item-path old))
-                       (name (context-navigator-item-name old)))
-                   (cond
-                    ((and buf (buffer-live-p buf))
-                     (ignore-errors (gptel-context-remove buf)))
-                    ((and (stringp p)) (ignore-errors (gptel-context-remove p)))
-                    ((and (stringp name)) (ignore-errors (gptel-context-remove name))))))))
-            (_ nil))
-          (setq ops (1+ ops)))
-        ;; Updates -> remove then add (add only when target is enabled)
-        (dolist (nu upds)
-          (pcase (context-navigator-item-type nu)
-            ('file
-             (when (context-navigator-gptel--can-remove)
-               (ignore-errors (gptel-context-remove (context-navigator-item-path nu)))))
-            ('buffer
-             (when (context-navigator-gptel--can-remove)
-               (ignore-errors
-                 (let ((buf (context-navigator-item-buffer nu))
-                       (p (context-navigator-item-path nu))
-                       (name (context-navigator-item-name nu)))
-                   (cond
-                    ((and buf (buffer-live-p buf)) (ignore-errors (gptel-context-remove buf)))
-                    ((and (stringp p)) (ignore-errors (gptel-context-remove p)))
-                    ((and (stringp name)) (ignore-errors (gptel-context-remove name))))))))
-            (_ nil))
-          (when (context-navigator-item-enabled nu)
-            (when (context-navigator-gptel--add-item nu)
-              (setq ops (1+ ops)))))
-        ;; Adds (only enabled items are added)
-        (dolist (nu adds)
-          (when (context-navigator-item-enabled nu)
-            (when (context-navigator-gptel--add-item nu)
-              (setq ops (1+ ops)))))
-        (context-navigator-events-publish :gptel-change :diff ops)
-        (list :applied t :method 'diff :ops ops))))))
+         (diff    (context-navigator-model-diff current desired-items))
+         (adds    (plist-get diff :add))
+         (rems    (plist-get diff :remove))
+         (upds    (plist-get diff :update)))
+    (if (context-navigator-gptel--needs-reset-p rems upds)
+        (let ((r (context-navigator-gptel--reset-to desired-items)))
+          (append (list :applied t) r))
+      (context-navigator-gptel--apply-diff adds rems upds))))
 
 (defun context-navigator-gptel-present-p (item)
   "Return non-nil if ITEM is currently present in gptel context."
@@ -468,7 +496,7 @@ Selections may not support precise removal; fallback to reset without the item."
       ('file
        (if (context-navigator-gptel--can-remove)
            (progn
-             (ignore-errors (gptel-context-remove (context-navigator-item-path item)))
+             (ignore-errors (context-navigator--silence-messages (gptel-context-remove (context-navigator-item-path item))))
              (context-navigator-events-publish :gptel-change :remove 1)
              t)
          (funcall fallback-reset)))
@@ -479,11 +507,11 @@ Selections may not support precise removal; fallback to reset without the item."
                   (name (context-navigator-item-name item)))
              (cond
               ((and buf (buffer-live-p buf))
-               (ignore-errors (gptel-context-remove buf)))
+               (ignore-errors (context-navigator--silence-messages (gptel-context-remove buf))))
               ((and (stringp p))
-               (ignore-errors (gptel-context-remove p)))
+               (ignore-errors (context-navigator--silence-messages (gptel-context-remove p))))
               ((and (stringp name))
-               (ignore-errors (gptel-context-remove name))))
+               (ignore-errors (context-navigator--silence-messages (gptel-context-remove name)))))
              (context-navigator-events-publish :gptel-change :remove 1)
              t)
          (funcall fallback-reset)))

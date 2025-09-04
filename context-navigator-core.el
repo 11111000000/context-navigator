@@ -122,6 +122,37 @@ Creates <root>/.context/default.el (or ~/.context/default.el in global mode)."
 (defconst context-navigator-persist-version 3
   "Persist format version used by Context Navigator (v3).")
 
+(defcustom context-navigator-protect-sidebar-windows t
+  "When non-nil, prevent global window-balancing operations from affecting the Context Navigator sidebar.
+
+When enabled the package will short-circuit common balancing commands (e.g. `balance-windows'
+and `balance-windows-area') when the sidebar is present so the sidebar window is not resized
+or removed. This is enabled by default."
+  :type 'boolean :group 'context-navigator)
+
+(defun context-navigator--sidebar-visible-p ()
+  "Return non-nil when the Context Navigator sidebar buffer is visible in any window."
+  (and (boundp 'context-navigator-sidebar--buffer-name)
+       (get-buffer-window context-navigator-sidebar--buffer-name t)))
+
+(defun context-navigator--protect-balance-windows (orig-fn &rest args)
+  "Advice wrapper around ORIG-FN that no-ops when sidebar is visible and protection is enabled."
+  (if (and context-navigator-protect-sidebar-windows
+           (context-navigator--sidebar-visible-p))
+      (progn
+        (when context-navigator-debug
+          (message "[context-navigator] Skipping window balancing while sidebar is visible"))
+        ;; No-op to avoid resizing/removing the sidebar window.
+        nil)
+    (apply orig-fn args)))
+
+;; Install lightweight advices for common balancing functions when available.
+(when (fboundp 'advice-add)
+  (ignore-errors
+    (advice-add 'balance-windows :around #'context-navigator--protect-balance-windows))
+  (ignore-errors
+    (advice-add 'balance-windows-area :around #'context-navigator--protect-balance-windows)))
+
 (cl-defstruct (context-navigator-state
                (:constructor context-navigator--state-make))
   "Global state (pure value).
@@ -302,7 +333,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
         nil)
     ;; Try a best-effort clear, then apply desired state.
     (when (fboundp 'gptel-context-remove-all)
-      (ignore-errors (gptel-context-remove-all)))
+      (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all))))
     (let* ((st (context-navigator--state-get))
            (items (and st (context-navigator-state-items st))))
       (ignore-errors (context-navigator-gptel-apply (or items '())))
@@ -364,7 +395,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
     ;; Reset gptel полностью перед загрузкой новой группы (если push включён), асинхронно.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
         (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator-events-publish :group-switch-start root slug)
     (context-navigator-persist-load-group-async
@@ -450,7 +481,7 @@ Behavior:
           (when context-navigator--push-to-gptel
             ;; Avoid blocking UI by performing a remove-all asynchronously.
             (if (fboundp 'gptel-context-remove-all)
-                (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+                (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
               (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
           (context-navigator--load-context-for-root root))
       ;; When autoload is disabled, do not touch current context/model.
@@ -481,7 +512,7 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
     (when context-navigator--push-to-gptel
       ;; Async clear to avoid blocking interactive manual load command.
       (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
         (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator--log "Manual load -> %s" (or root "~"))
     (context-navigator--load-context-for-root root)))
@@ -523,7 +554,7 @@ Removes all gptel context entries and resets state flags safely."
     ;; Run asynchronously so UI commands don't block.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
         (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator-set-items '())
     ;; Clear inhibit flags and notify done (operate on a fresh copy)
@@ -773,7 +804,7 @@ Autosaves current group before switching. Prompts when SLUG is nil."
     ;; Run asynchronously to avoid any hiccup in group creation UI.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
         (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     ;; Immediately switch to the newly created (empty) group.
     (ignore-errors (context-navigator--load-group-for-root root slug))

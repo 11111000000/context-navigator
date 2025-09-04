@@ -650,38 +650,39 @@ Optimization: if the core state indicates loading in progress we render a
 very small, cheap preloader view immediately (no icons, no sorting, no file
 checks) so project switching feels responsive while the data loads in the
 background."
-  (let* ((state (context-navigator--state-get))
-         (header (context-navigator-sidebar--header state))
-         (win (get-buffer-window (current-buffer) 'visible))
-         (total (or (and win (window-body-width win))
-                    (and (boundp 'context-navigator-sidebar-width)
-                         (symbol-value 'context-navigator-sidebar-width))
-                    33))
-         ;; Components for early-exit render key
-         (gen (or (and (context-navigator-state-p state)
-                       (context-navigator-state-generation state))
-                  0))
-         (mode context-navigator-sidebar--mode)
-         ;; Use sxhash-equal to produce a stable-ish fingerprint of gptel keys list
-         (gptel-hash (sxhash-equal context-navigator-sidebar--gptel-keys))
-         ;; Use cached openable count (may be nil) — normalize to integer and plus marker.
-         (openable (or context-navigator-sidebar--openable-count 0))
-         (plus (and context-navigator-sidebar--openable-plus t))
-         ;; Compose key
-         (key (list gen mode total gptel-hash openable plus header)))
-    (unless (equal key context-navigator-sidebar--last-render-key)
-      (setq context-navigator-sidebar--last-render-key key)
-      ;; Fast path: show minimal preloader when loading or when progress is reported by events.
-      (when (or (and (context-navigator-state-p state)
-                     (context-navigator-state-loading-p state))
-                context-navigator-sidebar--load-progress)
-        (context-navigator-sidebar--render-loading state header total)
-        (cl-return-from context-navigator-sidebar--render))
-      (cond
-       ((eq context-navigator-sidebar--mode 'groups)
-        (context-navigator-sidebar--render-groups state header total))
-       (t
-        (context-navigator-sidebar--render-items state header total))))))
+  (catch 'context-navigator-sidebar--render
+    (let* ((state (context-navigator--state-get))
+           (header (context-navigator-sidebar--header state))
+           (win (get-buffer-window (current-buffer) 'visible))
+           (total (or (and win (window-body-width win))
+                      (and (boundp 'context-navigator-sidebar-width)
+                           (symbol-value 'context-navigator-sidebar-width))
+                      33))
+           ;; Components for early-exit render key
+           (gen (or (and (context-navigator-state-p state)
+                         (context-navigator-state-generation state))
+                    0))
+           (mode context-navigator-sidebar--mode)
+           ;; Use sxhash-equal to produce a stable-ish fingerprint of gptel keys list
+           (gptel-hash (sxhash-equal context-navigator-sidebar--gptel-keys))
+           ;; Use cached openable count (may be nil) — normalize to integer and plus marker.
+           (openable (or context-navigator-sidebar--openable-count 0))
+           (plus (and context-navigator-sidebar--openable-plus t))
+           ;; Compose key
+           (key (list gen mode total gptel-hash openable plus header)))
+      (unless (equal key context-navigator-sidebar--last-render-key)
+        (setq context-navigator-sidebar--last-render-key key)
+        ;; Fast path: show minimal preloader when loading or when progress is reported by events.
+        (when (or (and (context-navigator-state-p state)
+                       (context-navigator-state-loading-p state))
+                  context-navigator-sidebar--load-progress)
+          (context-navigator-sidebar--render-loading state header total)
+          (throw 'context-navigator-sidebar--render nil))
+        (cond
+         ((eq context-navigator-sidebar--mode 'groups)
+          (context-navigator-sidebar--render-groups state header total))
+         (t
+          (context-navigator-sidebar--render-items state header total)))))))
 (defun context-navigator-sidebar--render-if-visible ()
   "Render sidebar if its buffer is visible."
   (when-let* ((buf (get-buffer context-navigator-sidebar--buffer-name))
