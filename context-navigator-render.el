@@ -137,7 +137,11 @@ Tri-state indicator (when gptel keys list is provided):
                 (or (context-navigator-item-name item) "")
                 context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
-         (have-keys (consp context-navigator-render--gptel-keys))
+         ;; Treat an empty list of gptel keys as a valid (empty) snapshot.
+         ;; Use `listp' so that both nil (empty list) and non-empty lists enable
+         ;; tri-state indicators; previously `consp' returned nil for empty list,
+         ;; which caused indicators to disappear after a clear.
+         (have-keys (and (listp context-navigator-render--gptel-keys) t))
          (present (and have-keys (member key context-navigator-render--gptel-keys)))
          (state-icon (and have-keys
                           (context-navigator-render--indicator present enabled)))

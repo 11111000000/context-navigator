@@ -69,6 +69,12 @@
      (fr . "souris-1: ouvrir le groupe")
      (de . "Maus-1: Gruppe öffnen")
      (es . "ratón-1: abrir grupo"))
+    (:open-buffers
+     (en . "Open buffers")
+     (ru . "Открыть буферы")
+     (fr . "Ouvrir les tampons")
+     (de . "Puffer öffnen")
+     (es . "Abrir búferes"))
     (:toggle-push
      (en . "Toggle push to gptel (x)")
      (ru . "Переключить отправку в gptel (x)")
