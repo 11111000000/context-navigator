@@ -345,6 +345,8 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (setf (context-navigator-state-inhibit-autosave new) t)
     (setf (context-navigator-state-loading-p new) t)
     (setf (context-navigator-state-current-group-slug new) slug)
+    ;; Зафиксировать корень проекта в состоянии, чтобы заголовок показывал имя проекта.
+    (setf (context-navigator-state-last-project-root new) root)
     (setf (context-navigator-state-load-token new) token)
     (context-navigator--set-state new)
     ;; Сообщаем о старте загрузки ДО любых I/O — прелоадер появится мгновенно.
@@ -687,6 +689,13 @@ default group on demand (create .context, default.el, and state.el)."
   (let* ((root (or (context-navigator--current-root)
                    (ignore-errors (context-navigator-project-current-root (current-buffer)))))
          (groups (ignore-errors (context-navigator-persist-list-groups root))))
+    ;; Обновим last-project-root в состоянии, чтобы заголовок показывал имя проекта,
+    ;; даже если авто-переключение проекта выключено и root определён налёту.
+    (let* ((cur (context-navigator--state-get)))
+      (when (not (equal (context-navigator-state-last-project-root cur) root))
+        (let ((new (context-navigator--state-copy cur)))
+          (setf (context-navigator-state-last-project-root new) root)
+          (context-navigator--set-state new))))
     ;; Auto-initialize default group if nothing exists yet.
     (when (and context-navigator-create-default-group-file
                (or (null groups) (= (length groups) 0)))

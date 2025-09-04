@@ -59,7 +59,7 @@ When style is 'off, return nil. When style is 'icons or 'auto with icon
 provider available, return icon glyph; otherwise return colored text bullet.
 
 The visual size and vertical alignment of text bullets are adjusted so the
-indicator sits centered and appears smaller (half-size) relative to item text."
+indicator sits centered and appears moderately large relative to item text."
   (let ((style (or context-navigator-render-indicator-style 'auto)))
     (cond
      ((eq style 'off) nil)
@@ -72,14 +72,14 @@ indicator sits centered and appears smaller (half-size) relative to item text."
           (let* ((raw (if present "●" "○"))
                  (color (if present "green4" "gray")))
             (propertize raw
-                        'face (list :foreground color :height 0.55)
-                        'display '(raise 0.12))))))
+                        'face (list :foreground color :height 0.75)
+                        'display '(raise 0.08))))))
      (t
       (let* ((raw (if present "●" "○"))
              (color (if present "green4" "gray")))
         (propertize raw
-                    'face (list :foreground color :height 0.55)
-                    'display '(raise 0.12)))))))
+                    'face (list :foreground color :height 0.75)
+                    'display '(raise 0.08)))))))
 
 (defun context-navigator-render--left-column (state-icon icon name)
   "Build left column string from STATE-ICON, ICON and NAME."
@@ -133,7 +133,8 @@ Binary indicator (when gptel keys list is provided):
                 (and (stringp icon) icon)
                 name))
          (right (context-navigator-render--right-column path))
-         (line (context-navigator-render--compose-line left right left-width)))
+         ;; Add a small left padding to each item line
+         (line (context-navigator-render--compose-line (concat " " left) right left-width)))
     (context-navigator-render--propertize-line line key item)))
 
 (defun context-navigator-render-build-lines (items header &optional icon-fn left-width)

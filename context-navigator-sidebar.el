@@ -113,23 +113,35 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 
 Title only:
 - [<project>: <group>]            when group is active
-- [<project>] Groups             when in groups mode
-- [context-navigator]            when no root
+- [<project>] Groups              when in groups mode
+- [~: <group>]                    when no project (global)
 
 Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the footer."
-  (let* ((root (context-navigator-state-last-project-root state))
+  (let* (;; Try to derive the project of the last visited (current) buffer.
+         ;; If the selected window is the sidebar, use `other-buffer' as a heuristic.
+         (buf (let ((sw (selected-window)))
+                (if (and (window-live-p sw)
+                         (window-parameter sw 'context-navigator-sidebar))
+                    (other-buffer (current-buffer) t)
+                  (window-buffer sw))))
+         (detected-root
+          (when (and (bufferp buf) (fboundp 'project-current))
+            (with-current-buffer buf
+              (let ((proj (project-current nil)))
+                (when proj
+                  (expand-file-name (project-root proj)))))))
+         ;; Prefer root detected from the last visited buffer; fallback to state.
+         (root (or detected-root (context-navigator-state-last-project-root state)))
          (loading (or (context-navigator-state-loading-p state)
                       context-navigator-sidebar--load-progress))
          (group (context-navigator-state-current-group-slug state))
-         ;; Use project basename (or a sensible default) instead of full path.
+         ;; Use project basename when available; otherwise use "~" to denote global.
          (proj-name (if root
                         (file-name-nondirectory (directory-file-name root))
-                      "context-navigator"))
-         (base (if proj-name
-                   (if group
-                       (format "[%s: %s]" proj-name group)
-                     (format "[%s]" proj-name))
-                 (context-navigator-i18n :global-context)))
+                      "~"))
+         (base (if group
+                   (format "[%s: %s]" proj-name group)
+                 (format "[%s]" proj-name)))
          (extra
           (when (eq context-navigator-sidebar--mode 'groups)
             (concat " " (context-navigator-i18n :groups))))
@@ -1164,33 +1176,102 @@ MAP is a keymap to search for COMMAND bindings."
    "\n"))
 
 (defun context-navigator-sidebar-help ()
-  "Show help for context-navigator sidebar."
+  "Show localized, column-formatted help for Context Navigator without truncation."
   (interactive)
   (with-help-window "*Context Navigator Help*"
-    (let ((pairs '((context-navigator-sidebar-next-item . "next item")
-                   (context-navigator-sidebar-previous-item . "previous item")
-                   (context-navigator-sidebar-activate . "RET: visit item / open group")
-                   (context-navigator-sidebar-preview . "preview item (other window)")
-                   (context-navigator-sidebar-toggle-gptel . "toggle gptel membership")
-                   (context-navigator-sidebar-delete-dispatch . "delete (item or group)")
-                   (context-navigator-sidebar-refresh-dispatch . "refresh (items or groups)")
-                   (context-navigator-sidebar-go-up . "show groups list")
-                   (context-navigator-sidebar-group-create . "add group")
-                   (context-navigator-sidebar-group-rename . "rename group")
-                   (context-navigator-sidebar-group-duplicate . "duplicate group")
-                   (context-navigator-sidebar-toggle-push . "toggle push → gptel")
-                   (context-navigator-sidebar-toggle-auto-project . "toggle auto-project switching")
-                   (context-navigator-sidebar-open-all-buffers . "open all context buffers (background)")
-                   (context-navigator-sidebar-push-now . "push now to gptel (when auto-push is off)")
-                   (context-navigator-sidebar-clear-gptel . "clear gptel context")
-                   (context-navigator-sidebar-quit . "quit sidebar")
-                   (context-navigator-sidebar-help . "show this help"))))
-      (princ "Context Navigator — keys:\n\n")
-      (princ (context-navigator-sidebar--format-bindings pairs context-navigator-sidebar-mode-map))
+    (let* ((map context-navigator-sidebar-mode-map)
+           ;; Command → i18n key for description
+           (pairs '((context-navigator-sidebar-next-item         . :help-next-item)
+                    (context-navigator-sidebar-previous-item     . :help-previous-item)
+                    (context-navigator-sidebar-activate          . :help-activate)
+                    (context-navigator-sidebar-preview           . :help-preview)
+                    (context-navigator-sidebar-toggle-gptel      . :help-toggle-gptel)
+                    (context-navigator-sidebar-delete-dispatch   . :help-delete)
+                    (context-navigator-sidebar-refresh-dispatch  . :help-refresh)
+                    (context-navigator-sidebar-go-up             . :help-go-up)
+                    (context-navigator-sidebar-group-create      . :help-group-create)
+                    (context-navigator-sidebar-group-rename      . :help-group-rename)
+                    (context-navigator-sidebar-group-duplicate   . :help-group-duplicate)
+                    (context-navigator-sidebar-toggle-push       . :help-toggle-push)
+                    (context-navigator-sidebar-toggle-auto-project . :help-toggle-auto)
+                    (context-navigator-sidebar-open-all-buffers  . :help-open-all)
+                    (context-navigator-sidebar-push-now          . :help-push-now)
+                    (context-navigator-sidebar-clear-gptel       . :help-clear-gptel)
+                    (context-navigator-sidebar-quit              . :help-quit)
+                    (context-navigator-sidebar-help              . :help-help)))
+           ;; Build (keys . desc) then padded line strings
+           (rows-raw
+            (mapcar
+             (lambda (cell)
+               (let* ((cmd  (car cell))
+                      (desc (context-navigator-i18n (cdr cell)))
+                      (keys (mapcar #'key-description (where-is-internal cmd map)))
+                      (ks   (if keys (string-join keys ", ") "<unbound>")))
+                 (cons ks desc)))
+             pairs))
+           (keyw (apply #'max 0 (mapcar (lambda (x) (string-width (car x))) rows-raw)))
+           (lines (mapcar (lambda (x) (format (format "%%-%ds %%s" (max 14 keyw)) (car x) (cdr x)))
+                          rows-raw))
+           ;; Detect/help the real window width for proper column calculation.
+           (ww (let* ((buf "*Context Navigator Help*")
+                      (win (or (get-buffer-window buf t)
+                               (get-buffer-window (current-buffer) t)))
+                      (maxw (apply #'max 80 (mapcar #'window-body-width (window-list)))))
+                 (or (and win (window-body-width win))
+                     maxw
+                     (frame-width)
+                     80)))
+           (spacing "  ")
+           ;; Try to place in 3/2/1 columns to fit without truncation.
+           (choose-cols
+            (lambda ()
+              (let ((n (length lines)))
+                (cl-loop for c in '(3 2 1) do
+                         (let* ((cols c)
+                                (rows (ceiling (/ (float n) (max 1 cols))))
+                                ;; compute column widths for this layout
+                                (colw
+                                 (cl-loop for ci from 0 below cols collect
+                                          (let ((w 0))
+                                            (cl-loop for ri from 0 below rows
+                                                     for idx = (+ ri (* ci rows))
+                                                     when (< idx n) do
+                                                     (setq w (max w (string-width (nth idx lines)))))
+                                            w)))
+                                (total (+ (apply #'+ colw) (* (string-width spacing) (1- cols)))))
+                           (when (<= total ww)
+                             (cl-return cols))))
+                1)))  ;; default 1
+           (cols (funcall choose-cols))
+           (rows (ceiling (/ (float (length lines)) (max 1 cols))))
+           ;; Recompute exact per-column widths for chosen layout
+           (colw
+            (cl-loop for ci from 0 below cols collect
+                     (let ((w 0))
+                       (cl-loop for ri from 0 below rows
+                                for idx = (+ ri (* ci rows))
+                                when (< idx (length lines)) do
+                                (setq w (max w (string-width (nth idx lines)))))
+                       w))))
+      ;; Title
+      (princ (context-navigator-i18n :help-title)) (princ "\n\n")
+      ;; Emit lines as rows×cols grid with padding; no truncation.
+      (dotimes (r rows)
+        (let ((acc ""))
+          (dotimes (c cols)
+            (let* ((idx (+ r (* c rows)))
+                   (s (or (nth idx lines) ""))
+                   (pad (if (< c (1- cols))
+                            (format (format "%%-%ds" (nth c colw)) s)
+                          s)))
+              (setq acc (if (string-empty-p acc) pad (concat acc spacing pad)))))
+          (princ acc) (princ "\n")))
       (princ "\n")
-      (princ "Global keys (context-navigator-mode):\n")
-      (princ "C-c n  transient: n panel, p project, a add, g groups, s save, l load, u unload, x push, T auto, P push-now, C clear\n")
-      (princ "\nGroups mode keys: RET open, a add, r rename, d delete, c copy, g refresh, h back, q quit\n"))))
+      ;; Global keys section (localized)
+      (princ (context-navigator-i18n :help-global-title)) (princ "\n")
+      (princ (context-navigator-i18n :help-global-summary)) (princ "\n\n")
+      ;; Groups mode summary (localized)
+      (princ (context-navigator-i18n :help-groups-summary)) (princ "\n"))))
 
 (defvar context-navigator-sidebar-mode-map
   (let ((m (make-sparse-keymap)))
