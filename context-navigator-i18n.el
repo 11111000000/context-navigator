@@ -87,6 +87,12 @@
      (fr . "Basculer le changement auto de projet (T)")
      (de . "Autom. Projektwechsel umschalten (T)")
      (es . "Alternar cambio automático de proyecto (T)"))
+    (:auto-proj
+     (en . "Auto-proj")
+     (ru . "Авто-дом")
+     (fr . "Auto-proj")
+     (de . "Auto-proj")
+     (es . "Auto-proj"))
     (:push-tip
      (en . "Push current items to gptel now (P)")
      (ru . "Отправить элементы в gptel сейчас (P)")

@@ -40,10 +40,9 @@
 (defvar-local context-navigator-render--last-hash nil)
 (defvar context-navigator-render--gptel-keys nil
   "Optional list of stable keys of items currently present in gptel.
-When non-nil, enables tri-state indicator in the sidebar:
-- green  ● : item enabled and present in gptel
-- gray   ○ : item disabled and absent in gptel
-- yellow ● : mismatch between model and gptel (present when disabled, or absent when enabled).")
+When non-nil, shows a binary indicator in the sidebar:
+- green  ● : item present in gptel
+- gray   ○ : item absent in gptel")
 
 (defun context-navigator-render--truncate (s n)
   "Return S truncated to N chars with ellipsis."
@@ -51,13 +50,13 @@ When non-nil, enables tri-state indicator in the sidebar:
       (concat (substring s 0 (- n 3)) "…")
     s))
 
-(defun context-navigator-render--indicator (present enabled)
-  "Return indicator string (or nil) for PRESENT/ENABLED, honoring style settings.
-When style is 'off, return nil. When style is 'icons or 'auto with icon
-provider available, return icon glyph. Otherwise return colored text bullet.
+(defun context-navigator-render--indicator (present)
+  "Return indicator string (or nil) based only on PRESENT in gptel.
+- present → green ●
+- absent  → gray  ○
 
-This function robustly falls back to a text bullet when an icon provider
-is present but returns nil for the requested state.
+When style is 'off, return nil. When style is 'icons or 'auto with icon
+provider available, return icon glyph; otherwise return colored text bullet.
 
 The visual size and vertical alignment of text bullets are adjusted so the
 indicator sits centered and appears smaller (half-size) relative to item text."
@@ -66,31 +65,18 @@ indicator sits centered and appears smaller (half-size) relative to item text."
      ((eq style 'off) nil)
      ((and (memq style '(icons auto))
            (fboundp 'context-navigator-icons-for-indicator))
-      ;; Try to get icon; if provider returns nil or non-string, fall back to text bullet.
-      (let ((icon (ignore-errors
-                    (context-navigator-icons-for-indicator
-                     (cond
-                      ((and present enabled) 'ok)
-                      ((not (eq present enabled)) 'mismatch)
-                      (t 'absent))))))
+      (let* ((state (if present 'ok 'absent))
+             (icon (ignore-errors (context-navigator-icons-for-indicator state))))
         (if (and (stringp icon) (> (length icon) 0))
             icon
-          ;; Fallback to a smaller text bullet, slightly raised to better vertically center.
-          (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
-                 (color (cond
-                         ((and present enabled) "green4")
-                         ((not (eq present enabled)) "goldenrod2")
-                         (t "gray"))))
+          (let* ((raw (if present "●" "○"))
+                 (color (if present "green4" "gray")))
             (propertize raw
                         'face (list :foreground color :height 0.55)
-                        ;; Small raise to visually center the glyph relative to surrounding text.
                         'display '(raise 0.12))))))
      (t
-      (let* ((raw (if (and (not present) (not enabled)) "○" "●"))
-             (color (cond
-                     ((and present enabled) "green4")
-                     ((not (eq present enabled)) "goldenrod2")
-                     (t "gray"))))
+      (let* ((raw (if present "●" "○"))
+             (color (if present "green4" "gray")))
         (propertize raw
                     'face (list :foreground color :height 0.55)
                     'display '(raise 0.12)))))))
@@ -127,24 +113,22 @@ indicator sits centered and appears smaller (half-size) relative to item text."
   "Format a single ITEM into a propertized line string, using ICON-FN if non-nil.
 When LEFT-WIDTH is non-nil, align the left column to that width.
 
-Tri-state indicator (when gptel keys list is provided):
-- green  ● : item enabled and present in gptel
-- gray   ○ : item disabled and absent in gptel
-- yellow ● : mismatch between model and gptel."
+Binary indicator (when gptel keys list is provided):
+- green  ● : item present in gptel
+- gray   ○ : item absent in gptel."
   (let* ((key (context-navigator-model-item-key item))
-         (enabled (and (context-navigator-item-enabled item) t))
          (name (context-navigator-render--truncate
                 (or (context-navigator-item-name item) "")
                 context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
          ;; Treat an empty list of gptel keys as a valid (empty) snapshot.
          ;; Use `listp' so that both nil (empty list) and non-empty lists enable
-         ;; tri-state indicators; previously `consp' returned nil for empty list,
+         ;; indicators; previously `consp' returned nil for empty list,
          ;; which caused indicators to disappear after a clear.
          (have-keys (and (listp context-navigator-render--gptel-keys) t))
          (present (and have-keys (member key context-navigator-render--gptel-keys)))
          (state-icon (and have-keys
-                          (context-navigator-render--indicator present enabled)))
+                          (context-navigator-render--indicator present)))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
          (left (context-navigator-render--left-column
                 state-icon

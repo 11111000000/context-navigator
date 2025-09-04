@@ -111,7 +111,8 @@ Title only:
 
 Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the footer."
   (let* ((root (context-navigator-state-last-project-root state))
-         (loading (context-navigator-state-loading-p state))
+         (loading (or (context-navigator-state-loading-p state)
+                      context-navigator-sidebar--load-progress))
          (group (context-navigator-state-current-group-slug state))
          ;; Use project basename (or a sensible default) instead of full path.
          (proj-name (if root
@@ -178,7 +179,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
          (lbl-auto
           (pcase style
             ((or 'icons 'auto) " [A]")
-            (_ (format " [auto-proj: %s]" (if auto-on "on" "off"))))))
+            (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off"))))))
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
                              (when gptel-available
@@ -331,7 +332,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
         (context-navigator-sidebar--openable-count-get)
       (let* ((label (pcase style
                       ((or 'icons 'auto) " [O]")
-                      (_ " [Open buffers]")))
+                      (_ (format " [%s]" (context-navigator-i18n :open-buffers)))))
              (s (copy-sequence label))
              (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
         ;; Mark as an action so RET handler can attempt it.
@@ -570,6 +571,21 @@ Returns the list of lines that were rendered."
 
 ;; Entry point
 
+(defun context-navigator-sidebar--render-loading (state header total-width)
+  "Render a lightweight loading/preloader view into the sidebar buffer."
+  (let* ((hl (propertize (format " %s" header) 'face 'mode-line-emphasis))
+         (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow))
+         (msg (propertize (format " %s" (context-navigator-i18n :loading)) 'face 'italic))
+         (prog (when context-navigator-sidebar--load-progress
+                 (format " %d/%d" (car context-navigator-sidebar--load-progress) (cdr context-navigator-sidebar--load-progress))))
+         (line (concat msg (or prog "")))
+         (sline (propertize line 'face 'shadow))
+         (lines (list hl sep "" sline "")))
+    (setq context-navigator-sidebar--last-lines lines
+          context-navigator-sidebar--header header)
+    (context-navigator-render-apply-to-buffer (current-buffer) lines)
+    lines))
+
 (defun context-navigator-sidebar--render ()
   "Render current view (items or groups) into the sidebar buffer.
 
@@ -581,8 +597,14 @@ Key components:
  - gptel keys hash
  - cached openable count / soft-plus marker
  - header string (display)
+
 When the key equals `context-navigator-sidebar--last-render-key' the function
-returns without rebuilding buffer contents."
+returns without rebuilding buffer contents.
+
+Optimization: if the core state indicates loading in progress we render a
+very small, cheap preloader view immediately (no icons, no sorting, no file
+checks) so project switching feels responsive while the data loads in the
+background."
   (let* ((state (context-navigator--state-get))
          (header (context-navigator-sidebar--header state))
          (win (get-buffer-window (current-buffer) 'visible))
@@ -604,12 +626,17 @@ returns without rebuilding buffer contents."
          (key (list gen mode total gptel-hash openable plus header)))
     (unless (equal key context-navigator-sidebar--last-render-key)
       (setq context-navigator-sidebar--last-render-key key)
+      ;; Fast path: show minimal preloader when loading or when progress is reported by events.
+      (when (or (and (context-navigator-state-p state)
+                     (context-navigator-state-loading-p state))
+                context-navigator-sidebar--load-progress)
+        (context-navigator-sidebar--render-loading state header total)
+        (cl-return-from context-navigator-sidebar--render))
       (cond
        ((eq context-navigator-sidebar--mode 'groups)
         (context-navigator-sidebar--render-groups state header total))
        (t
         (context-navigator-sidebar--render-items state header total))))))
-
 (defun context-navigator-sidebar--render-if-visible ()
   "Render sidebar if its buffer is visible."
   (when-let* ((buf (get-buffer context-navigator-sidebar--buffer-name))
@@ -624,7 +651,8 @@ returns without rebuilding buffer contents."
   (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil))))
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
   (context-navigator-events-debounce
    :sidebar-render 0.06
    #'context-navigator-sidebar--render-if-visible))
@@ -945,14 +973,20 @@ Guard against duplicate subscriptions."
            (lambda (&rest _)
              ;; Invalidate quick counters and re-render
              (context-navigator-sidebar--invalidate-openable)
-             (context-navigator-sidebar--schedule-render)))
+             (let ((st (ignore-errors (context-navigator--state-get))))
+               (if (and (context-navigator-state-p st)
+                        (context-navigator-state-loading-p st))
+                   ;; When loading, render immediately so the preloader appears without delay.
+                   (context-navigator-sidebar--render-if-visible)
+                 (context-navigator-sidebar--schedule-render)))))
           context-navigator-sidebar--subs)
     (push (context-navigator-events-subscribe
            :context-load-start
            (lambda (&rest _)
-             (setq context-navigator-sidebar--load-progress nil)
+             (setq context-navigator-sidebar--load-progress (cons 0 0))
              (context-navigator-sidebar--invalidate-openable)
-             (context-navigator-sidebar--schedule-render)))
+             ;; Render immediately to show preloader before any heavy work.
+             (context-navigator-sidebar--render-if-visible)))
           context-navigator-sidebar--subs)
     (push (context-navigator-events-subscribe
            :context-load-step

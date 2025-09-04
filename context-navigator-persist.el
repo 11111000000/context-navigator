@@ -189,43 +189,51 @@ Returns the file path or nil on error."
 (defun context-navigator-persist-load-async (root callback)
   "Asynchronously load context for ROOT (or global) and CALLBACK with items.
 Publishes :context-load-start ROOT. Batches are processed by timer to avoid jank.
-CALLBACK is called once with full list of items (enabled or not)."
+CALLBACK is called once with full list of items (enabled or not).
+
+Note: the actual file read and expensive parsing are deferred to an idle timer
+so the project-switch path can return quickly and UI can show the loading
+indicator without being blocked."
   (let* ((file (context-navigator-persist-context-file root))
+         (remote (and (stringp file) (file-remote-p file)))
          (batch (or (and (boundp 'context-navigator-context-load-batch-size)
                          (symbol-value 'context-navigator-context-load-batch-size))
                     64)))
     (context-navigator-events-publish :context-load-start root)
-    (if (not (file-readable-p file))
+    (if (or (null file) (and (not remote) (not (file-readable-p file))))
         ;; Nothing to load; still callback with empty list.
         (run-at-time 0 nil (lambda () (funcall callback nil)))
-      (let* ((raw (context-navigator-persist--read-one file))
-             (v3 (cond
-                  ((not raw) nil)
-                  (t (condition-case err
-                         (context-navigator-persist-migrate-if-needed raw)
-                       (error
-                        (when (bound-and-true-p context-navigator-debug)
-                          (message "[context-navigator/persist] migrate error: %S" err))
-                        nil)))))
-             (items-pl (and v3 (plist-get v3 :items)))
-             (total (length items-pl))
-             (acc (list))
-             (pos 0)
-             (step-fn nil))
-        (setq step-fn
-              (lambda ()
-                (let* ((chunk (cl-subseq items-pl pos (min total (+ pos batch)))))
-                  (setq pos (+ pos (length chunk)))
-                  (dolist (pl chunk)
-                    (let ((it (ignore-errors (context-navigator-persist--sexp->item pl root))))
-                      (when it (push it acc))))
-                  (if (< pos total)
-                      (progn
-                        (context-navigator-events-publish :context-load-step root pos total)
-                        (run-at-time 0.0 nil step-fn))
-                    (let ((items (nreverse acc)))
-                      (funcall callback items))))))
-        (run-at-time 0.0 nil step-fn)))))
+      ;; Defer the actual read/parse to the next idle slice so we don't block the caller or UI.
+      (run-with-idle-timer 0.01 nil
+                           (lambda ()
+                             (let* ((raw (context-navigator-persist--read-one file))
+                                    (v3 (cond
+                                         ((not raw) nil)
+                                         (t (condition-case err
+                                                (context-navigator-persist-migrate-if-needed raw)
+                                              (error
+                                               (when (bound-and-true-p context-navigator-debug)
+                                                 (message "[context-navigator/persist] migrate error: %S" err))
+                                               nil)))))
+                                    (items-pl (and v3 (plist-get v3 :items)))
+                                    (total (length items-pl))
+                                    (acc (list))
+                                    (pos 0)
+                                    (step-fn nil))
+                               (setq step-fn
+                                     (lambda ()
+                                       (let* ((chunk (cl-subseq items-pl pos (min total (+ pos batch)))))
+                                         (setq pos (+ pos (length chunk)))
+                                         (dolist (pl chunk)
+                                           (let ((it (ignore-errors (context-navigator-persist--sexp->item pl root))))
+                                             (when it (push it acc))))
+                                         (if (< pos total)
+                                             (progn
+                                               (context-navigator-events-publish :context-load-step root pos total)
+                                               (run-at-time 0.0 nil step-fn))
+                                           (let ((items (nreverse acc)))
+                                             (funcall callback items))))))
+                               (run-at-time 0.0 nil step-fn)))))))
 
 (defun context-navigator-persist-state-file (root)
   "Return absolute path to state.el for ROOT (or global)."
@@ -345,48 +353,56 @@ Each element is a plist: (:slug :display :path :mtime).
       (nreverse lst))))
 
 (defun context-navigator-persist-load-group-async (root slug callback)
-  "Asynchronously load group SLUG for ROOT (or global) and call CALLBACK with items list."
+  "Asynchronously load group SLUG for ROOT (or global) and call CALLBACK with items list.
+
+The actual file read/parsing is deferred to the next idle slice so the caller
+(e.g. project switch) can return quickly and the sidebar can render a
+preloader without being blocked."
   (let* ((file (context-navigator-persist-context-file root slug))
+         (remote (and (stringp file) (file-remote-p file)))
          (batch (or (and (boundp 'context-navigator-context-load-batch-size)
                          (symbol-value 'context-navigator-context-load-batch-size))
                     64)))
     (context-navigator-events-publish :context-load-start root)
-    (if (not (and (stringp file) (file-readable-p file)))
+    (if (or (null file) (and (not remote) (not (file-readable-p file))))
         (progn
           (when (bound-and-true-p context-navigator-debug)
             (message "[context-navigator/persist] group file missing/unreadable: %s" (abbreviate-file-name (or file ""))))
           (run-at-time 0 nil (lambda () (funcall callback nil))))
-      (let* ((raw (context-navigator-persist--read-one file))
-             (v3 (cond
-                  ((not raw)
-                   (when (bound-and-true-p context-navigator-debug)
-                     (message "[context-navigator/persist] empty or invalid form in %s" (abbreviate-file-name file)))
-                   nil)
-                  (t (condition-case err
-                         (context-navigator-persist-migrate-if-needed raw)
-                       (error
-                        (when (bound-and-true-p context-navigator-debug)
-                          (message "[context-navigator/persist] migrate error: %S (file=%s)" err (abbreviate-file-name file)))
-                        nil)))))
-             (items-pl (and v3 (plist-get v3 :items)))
-             (total (length items-pl))
-             (acc (list))
-             (pos 0)
-             (step-fn nil))
-        (setq step-fn
-              (lambda ()
-                (let* ((chunk (cl-subseq items-pl pos (min total (+ pos batch)))))
-                  (setq pos (+ pos (length chunk)))
-                  (dolist (pl chunk)
-                    (let ((it (ignore-errors (context-navigator-persist--sexp->item pl root))))
-                      (when it (push it acc))))
-                  (if (< pos total)
-                      (progn
-                        (context-navigator-events-publish :context-load-step root pos total)
-                        (run-at-time 0.0 nil step-fn))
-                    (let ((items (nreverse acc)))
-                      (funcall callback items))))))
-        (run-at-time 0.0 nil step-fn)))))
+      ;; Defer blocking read/parse to avoid jank on project switch
+      (run-with-idle-timer 0.01 nil
+                           (lambda ()
+                             (let* ((raw (context-navigator-persist--read-one file))
+                                    (v3 (cond
+                                         ((not raw)
+                                          (when (bound-and-true-p context-navigator-debug)
+                                            (message "[context-navigator/persist] empty or invalid form in %s" (abbreviate-file-name file)))
+                                          nil)
+                                         (t (condition-case err
+                                                (context-navigator-persist-migrate-if-needed raw)
+                                              (error
+                                               (when (bound-and-true-p context-navigator-debug)
+                                                 (message "[context-navigator/persist] migrate error: %S (file=%s)" err (abbreviate-file-name file)))
+                                               nil)))))
+                                    (items-pl (and v3 (plist-get v3 :items)))
+                                    (total (length items-pl))
+                                    (acc (list))
+                                    (pos 0)
+                                    (step-fn nil))
+                               (setq step-fn
+                                     (lambda ()
+                                       (let* ((chunk (cl-subseq items-pl pos (min total (+ pos batch)))))
+                                         (setq pos (+ pos (length chunk)))
+                                         (dolist (pl chunk)
+                                           (let ((it (ignore-errors (context-navigator-persist--sexp->item pl root))))
+                                             (when it (push it acc))))
+                                         (if (< pos total)
+                                             (progn
+                                               (context-navigator-events-publish :context-load-step root pos total)
+                                               (run-at-time 0.0 nil step-fn))
+                                           (let ((items (nreverse acc)))
+                                             (funcall callback items))))))
+                               (run-at-time 0.0 nil step-fn)))))))
 
 ;; Mark legacy single-file async loader as obsolete in favor of per-group loader.
 (make-obsolete 'context-navigator-persist-load-async

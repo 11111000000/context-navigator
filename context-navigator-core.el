@@ -334,13 +334,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
 
 (defun context-navigator--load-group-for-root (root slug)
   "Load group SLUG for ROOT (or global) asynchronously and apply to gptel."
-  ;; Persist only :current in state.el (без :groups).
-  (let* ((st (or (context-navigator-persist-state-load root) '())))
-    (setq st (if (plist-member st :version) (copy-sequence st)
-               (plist-put (copy-sequence st) :version 1)))
-    (setq st (plist-put st :current slug))
-    (ignore-errors (context-navigator-persist-state-save root st)))
-  ;; Update core state: set flags and current group; increment load-token to guard against races.
+  ;; Обновляем core-состояние раньше всего, чтобы UI сразу показал прелоадер.
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur))
          (token (1+ (or (context-navigator-state-load-token new) 0))))
@@ -350,25 +344,40 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (setf (context-navigator-state-current-group-slug new) slug)
     (setf (context-navigator-state-load-token new) token)
     (context-navigator--set-state new)
-    ;; Reset gptel fully before loading a new group to avoid mixing (only when push is on).
+    ;; Сообщаем о старте загрузки ДО любых I/O — прелоадер появится мгновенно.
+    (context-navigator-events-publish :context-load-start root)
+    ;; Persist :current в state.el — асинхронно и только если значение реально изменилось.
+    (run-at-time 0 nil
+                 (lambda ()
+                   (let* ((st (or (context-navigator-persist-state-load root) '()))
+                          (st1 (if (plist-member st :version) (copy-sequence st)
+                                 (plist-put (copy-sequence st) :version 1)))
+                          (cur (plist-get st1 :current)))
+                     (unless (equal cur slug)
+                       (setq st1 (plist-put st1 :current slug))
+                       (ignore-errors (context-navigator-persist-state-save root st1))))))
+    ;; Reset gptel полностью перед загрузкой новой группы (если push включён), асинхронно.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (ignore-errors (gptel-context-remove-all))
-        (ignore-errors (context-navigator-gptel-apply '()))))
+          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator-events-publish :group-switch-start root slug)
     (context-navigator-persist-load-group-async
      root slug
      (lambda (items)
-       ;; Ignore stale callbacks (race) by comparing tokens.
+       ;; Игнорируем устаревшие колбэки по токену.
        (let* ((st (context-navigator--state-get))
               (alive (and (context-navigator-state-p st)
                           (= (or (context-navigator-state-load-token st) 0)
                              token))))
          (when alive
            (when context-navigator--push-to-gptel
-             (ignore-errors (context-navigator-gptel-apply (or items '()))))
+             ;; Применение к gptel — на следующий тик, чтобы не блокировать UI.
+             (run-at-time 0 nil
+                          (lambda ()
+                            (ignore-errors (context-navigator-gptel-apply (or items '()))))))
            (context-navigator-set-items (or items '())))
-         ;; Clear inhibit flags and notify done.
+         ;; Снимаем флаги и уведомляем завершение.
          (let* ((cur2 (context-navigator--state-get))
                 (new2 (context-navigator--state-copy cur2)))
            (setf (context-navigator-state-inhibit-refresh new2) nil)
@@ -389,17 +398,19 @@ Behavior:
          (slug (or (plist-get st :current) "default"))
          (st* (if (plist-member st :version) (copy-sequence st)
                 (plist-put (copy-sequence st) :version 1))))
-    ;; Ensure :current exists
+    ;; Ensure :current exists (save async)
     (unless (plist-member st* :current)
       (setq st* (plist-put st* :current slug))
-      (ignore-errors (context-navigator-persist-state-save root st*)))
-    ;; If the current group file is missing/unreadable, fall back to default
+      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-persist-state-save root st*)))))
+    ;; If the current group file is missing/unreadable, fall back to default.
+    ;; Избегаем синхронного stat на TRAMP.
     (let* ((file (ignore-errors (context-navigator-persist-context-file root slug)))
-           (missing (or (null file) (not (file-readable-p file)))))
+           (remote (and (stringp file) (file-remote-p file)))
+           (missing (or (null file) (and (not remote) (not (file-readable-p file))))))
       (when missing
         (setq slug "default")
         (setq st* (plist-put (copy-sequence st*) :current slug))
-        (ignore-errors (context-navigator-persist-state-save root st*))))
+        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-persist-state-save root st*))))))
     ;; Ensure default group file exists when selected
     (when (and (string= slug "default")
                (boundp 'context-navigator-create-default-group-file)
@@ -432,9 +443,10 @@ Behavior:
           ;; Clear model and (optionally) gptel before loading context of the new project.
           (context-navigator-set-items '())
           (when context-navigator--push-to-gptel
+            ;; Avoid blocking UI by performing a remove-all asynchronously.
             (if (fboundp 'gptel-context-remove-all)
-                (ignore-errors (gptel-context-remove-all))
-              (ignore-errors (context-navigator-gptel-apply '()))))
+                (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+              (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
           (context-navigator--load-context-for-root root))
       ;; When autoload is disabled, do not touch current context/model.
       nil)))
@@ -462,9 +474,10 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
     ;; Fully unload previous context (model + gptel) before loading the new one.
     (context-navigator-set-items '())
     (when context-navigator--push-to-gptel
+      ;; Async clear to avoid blocking interactive manual load command.
       (if (fboundp 'gptel-context-remove-all)
-          (ignore-errors (gptel-context-remove-all))
-        (ignore-errors (context-navigator-gptel-apply '()))))
+          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator--log "Manual load -> %s" (or root "~"))
     (context-navigator--load-context-for-root root)))
 
@@ -502,10 +515,11 @@ Removes all gptel context entries and resets state flags safely."
       (setf (context-navigator-state-loading-p new) t)
       (context-navigator--set-state new))
     ;; Apply empty set to gptel (when push is on) and clear model.
+    ;; Run asynchronously so UI commands don't block.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (ignore-errors (gptel-context-remove-all))
-        (ignore-errors (context-navigator-gptel-apply '()))))
+          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     (context-navigator-set-items '())
     ;; Clear inhibit flags and notify done (operate on a fresh copy)
     (let* ((cur2 (context-navigator--state-get))
@@ -744,10 +758,11 @@ Autosaves current group before switching. Prompts when SLUG is nil."
       (context-navigator--set-state new))
     (context-navigator-groups-open)
     ;; If auto-push is on, reset gptel immediately to avoid any carry-over.
+    ;; Run asynchronously to avoid any hiccup in group creation UI.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
-          (ignore-errors (gptel-context-remove-all))
-        (ignore-errors (context-navigator-gptel-apply '()))))
+          (run-at-time 0 nil (lambda () (ignore-errors (gptel-context-remove-all))))
+        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
     ;; Immediately switch to the newly created (empty) group.
     (ignore-errors (context-navigator--load-group-for-root root slug))
     (message "Created group: %s (%s)" name slug)
