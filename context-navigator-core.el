@@ -250,6 +250,13 @@ If no sidebar windows are present, behave like `delete-other-windows'."
 ;; Apply user-defined binding (if any) on load
 (ignore-errors (context-navigator--update-global-keybinding))
 
+;; Keep keybinding in sync even when set via setq or let.
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher
+   'context-navigator-global-key
+   (lambda (_sym _newval _op _where)
+     (ignore-errors (context-navigator--update-global-keybinding)))))
+
 (defvar context-navigator--event-tokens nil
   "Subscription tokens registered by core while the mode is enabled.")
 
@@ -519,6 +526,8 @@ Sets up event wiring and keybindings."
   :keymap context-navigator-mode-map
   (if context-navigator-mode
       (progn
+        ;; Ensure global keybinding is applied when the mode is enabled
+        (ignore-errors (context-navigator--update-global-keybinding))
         ;; Install project hooks
         (ignore-errors (context-navigator-project-setup-hooks))
         ;; Subscribe to events
