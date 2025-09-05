@@ -437,10 +437,10 @@ Return count of successful operations."
 
 (defun context-navigator-gptel--apply-diff (adds rems upds)
   "Apply fine-grained diff to gptel. Return a plist result."
-  (let* ((ops 0)
-         (ops (-add (context-navigator-gptel--remove-many rems)))
-         (ops (+ ops (context-navigator-gptel--update-many upds)))
-         (ops (+ ops (context-navigator-gptel--add-enabled-many adds))))
+  (let ((ops 0))
+    (setq ops (+ ops (context-navigator-gptel--remove-many rems)))
+    (setq ops (+ ops (context-navigator-gptel--update-many upds)))
+    (setq ops (+ ops (context-navigator-gptel--add-enabled-many adds)))
     (context-navigator-events-publish :gptel-change :diff ops)
     (list :applied t :method 'diff :ops ops)))
 
