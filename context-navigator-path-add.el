@@ -52,6 +52,20 @@
   "Directory names to exclude in fallback recursion."
   :type '(repeat string) :group 'context-navigator-path-add)
 
+;; Masks/globs controls (v1)
+(defcustom context-navigator-mask-include-dotfiles nil
+  "When non-nil, include dotfiles even if pattern components do not start with a dot.
+Default behavior (nil) hides dotfiles unless the component explicitly begins with '.'."
+  :type 'boolean :group 'context-navigator-path-add)
+
+(defcustom context-navigator-mask-enable-remote nil
+  "Allow TRAMP mask expansion when non-nil (disabled by default due to performance)."
+  :type 'boolean :group 'context-navigator-path-add)
+
+(defcustom context-navigator-mask-globstar t
+  "Enable ** globstar matching (0+ intermediate directories)."
+  :type 'boolean :group 'context-navigator-path-add)
+
 ;; Reuse max file size if defined by transient module; declare to avoid require.
 (defvar context-navigator-max-file-size (* 2 1024 1024)
   "Maximum file size (bytes) to include when adding files (fallback default).")
@@ -278,7 +292,7 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
 
 (defun context-navigator-extract-pathlike-tokens (text)
   "Extract path-like tokens from TEXT. Return list of normalized strings."
-  (let ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_./\\\\:-]+\\)"))
+  (let ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_./\\\\:*?\\[\\]-]+\\)"))
     (let ((pos 0) (acc '()))
       (while (and (< pos (length text))
                   (string-match re text pos))
@@ -404,6 +418,25 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
            (items (and st (context-navigator-state-items st))))
       (ignore-errors (context-navigator-gptel-apply (or items '()))))))
 
+(defun context-navigator-path-add--append-files-as-items (files)
+  "Append FILES as enabled file items to the model in one batch. Return count added."
+  (let ((added 0)
+        (new-items nil))
+    (dolist (p files)
+      (when (and (stringp p) (file-exists-p p) (file-regular-p p))
+        (push (context-navigator-item-create
+               :type 'file
+               :name (file-name-nondirectory p)
+               :path (expand-file-name p)
+               :enabled t)
+              new-items)
+        (setq added (1+ added))))
+    (let* ((cur (and (boundp 'context-navigator--state) context-navigator--state))
+           (old (and (context-navigator-state-p cur) (context-navigator-state-items cur)))
+           (merged (append (or old '()) (nreverse new-items))))
+      (context-navigator-set-items merged))
+    added))
+
 (cl-defun context-navigator-add-files-from-names (tokens &optional _interactive)
   "Resolve TOKENS relative to current root and add resulting files to model.
 Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result."
@@ -440,17 +473,7 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
         (setq aborted t))
       (if aborted
           result
-        ;; Add files as items (side-effect isolated here)
-        (let ((added 0))
-          (dolist (p files)
-            (when (and (stringp p) (file-exists-p p) (file-regular-p p))
-              (let ((it (context-navigator-item-create
-                         :type 'file
-                         :name (file-name-nondirectory p)
-                         :path (expand-file-name p)
-                         :enabled t)))
-                (ignore-errors (context-navigator-add-item it))
-                (setq added (1+ added)))))
+        (let ((added (context-navigator-path-add--append-files-as-items files)))
           (context-navigator-path-add--maybe-apply-to-gptel)
           (message (context-navigator-i18n :added-files) added)
           (plist-put (copy-sequence res) :added added))))))
@@ -472,14 +495,347 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
 
 ;;;###autoload
 (defun context-navigator-add-from-minibuffer ()
-  "Read names/paths from minibuffer (multi-line allowed) and add resolved files."
+  "Read names/paths or a single mask (glob) from minibuffer and add files.
+
+Rules:
+- If input contains glob metacharacters (* ? [ ]) → mask mode
+- Only one mask is supported at a time
+- Mixing mask and explicit names is not allowed"
   (interactive)
-  (let* ((prompt (format "%s: " (context-navigator-i18n :add-from-minibuf)))
+  (let* ((prompt (format "%s: " (context-navigator-i18n :mask-minibuf-prompt)))
          (input (read-from-minibuffer prompt nil nil nil nil nil t))
-         (tokens (context-navigator-extract-pathlike-tokens (or input ""))))
-    (if (null tokens)
-        (message "%s" (context-navigator-i18n :unresolved-found))
-      (context-navigator-add-files-from-names tokens t))))
+         (tokens (context-navigator-extract-pathlike-tokens (or input "")))
+         (has-mask-in-input (context-navigator--input-has-mask-p (or input ""))))
+    (cond
+     ;; No tokens extracted:
+     ;; If raw input clearly contains mask metacharacters, treat the raw input as a mask.
+     ((and has-mask-in-input (null tokens))
+      (context-navigator-add-files-from-mask (string-trim (or input "")) t))
+     ;; No tokens and no mask — nothing to do
+     ((null tokens)
+      (message "%s" (context-navigator-i18n :unresolved-found)))
+     (t
+      (let* ((mask-tokens (cl-remove-if-not #'context-navigator--input-has-mask-p tokens))
+             (name-tokens (cl-remove-if #'context-navigator--input-has-mask-p tokens)))
+        (cond
+         ;; Mixed: names + mask
+         ((and has-mask-in-input
+               (> (length mask-tokens) 0)
+               (> (length name-tokens) 0))
+          (message "%s" (context-navigator-i18n :mask-mixed-input)))
+         ;; Too many masks at once
+         ((> (length mask-tokens) 1)
+          (message "%s" (context-navigator-i18n :mask-only-one)))
+         ;; Single mask token extracted
+         ((= (length mask-tokens) 1)
+          (let ((pattern (car mask-tokens)))
+            (context-navigator-add-files-from-mask pattern t)))
+         ;; Raw input has mask but tokenization didn't classify any token as a mask:
+         ;; fall back to treating the entire input as a single mask.
+         ((and has-mask-in-input (= (length mask-tokens) 0))
+          (context-navigator-add-files-from-mask (string-trim (or input "")) t))
+         ;; No mask → legacy behavior (list of names/paths)
+         (t
+          (context-navigator-add-files-from-names tokens t))))))))
+
+;; -----------------------------------------------------------------------------
+;; Mask/glob helpers (v1)
+
+(defun context-navigator--input-has-mask-p (s)
+  "Return non-nil when S contains glob mask metacharacters (* ? [ ])."
+  (and (stringp s) (string-match-p "[*?\\[]"
+                                   s)))
+
+(defun context-navigator--normalize-separators (s)
+  "Normalize Windows path separators to POSIX style."
+  (when (stringp s)
+    (setq s (replace-regexp-in-string "\\\\" "/" s))
+    s))
+
+(defun context-navigator--glob-static-prefix (pattern)
+  "Return directory prefix of PATTERN before first meta segment and the rest.
+Result is cons (DIR . REST) where DIR has no trailing slash (\"\" for none)."
+  (let* ((p (or pattern ""))
+         (p (string-remove-prefix "./" p))
+         (segs (split-string p "/" t))
+         (acc '())
+         (rest "")
+         (n (length segs))
+         (i 0))
+    (while (< i n)
+      (let ((seg (nth i segs)))
+        (if (or (string-match-p "[*?\\[]"
+                                seg)
+                (string= seg "**"))
+            (progn
+              (setq rest (string-join (cl-subseq segs i) "/"))
+              (setq i n)) ;; break
+          (push seg acc)
+          (setq i (1+ i)))))
+    (cons (string-join (nreverse acc) "/") rest)))
+
+(defun context-navigator--mask-base (pattern)
+  "Return plist describing mask base and scan-root.
+
+Keys:
+ :base       one of 'project | 'cwd | 'abs
+ :base-root  absolute path to project root / cwd / absolute root
+ :scan-root  absolute dir to start enumeration (static prefix)
+ :rel-pattern pattern relative to scan-root
+ :full-pattern absolute pattern string
+ :remote     non-nil when scan-root is TRAMP"
+  (let* ((raw (context-navigator--normalize-separators (or pattern "")))
+         (is-abs (or (file-name-absolute-p raw)
+                     (string-match-p "\\`[A-Za-z]:[\\/]" raw)
+                     (string-prefix-p "~" raw)))
+         (starts-dot (or (string-prefix-p "./" raw)
+                         (string-prefix-p "../" raw)))
+         (base-root
+          (cond
+           (starts-dot (expand-file-name default-directory))
+           (is-abs (expand-file-name raw))
+           (t (or (context-navigator-path-add--project-root)
+                  default-directory))))
+         ;; For abs starting with ~, normalize full pattern using expand-file-name
+         (full-pattern
+          (cond
+           (starts-dot (expand-file-name raw default-directory))
+           (is-abs (expand-file-name raw))
+           (t (expand-file-name raw (or (context-navigator-path-add--project-root)
+                                        default-directory)))))
+         ;; Determine base symbol
+         (base (cond
+                (starts-dot 'cwd)
+                (is-abs 'abs)
+                (t 'project)))
+         ;; Compute static prefix and scan-root
+         (rel-for-scan
+          (cond
+           (is-abs
+            ;; make it relative to absolute root dir (without drive specifics)
+            (let* ((dir (file-name-directory full-pattern))
+                   (file (file-name-nondirectory full-pattern))
+                   (_ dir) ;; keep quiet byte-compiler
+                   (abs-pattern (file-relative-name full-pattern "/")))
+              abs-pattern))
+           (t raw)))
+         (prefix+rest (context-navigator--glob-static-prefix rel-for-scan))
+         (prefix (car prefix+rest))
+         (rel-rest (cdr prefix+rest))
+         (scan-root
+          (cond
+           (is-abs
+            (if (string-empty-p prefix)
+                (file-name-directory full-pattern)
+              (expand-file-name prefix "/")))
+           (t
+            (let ((root (cond
+                         (starts-dot (expand-file-name default-directory))
+                         ((eq base 'project) (or (context-navigator-path-add--project-root)
+                                                 default-directory))
+                         (t base-root))))
+              (if (string-empty-p prefix)
+                  root
+                (expand-file-name prefix root))))))
+         (remote (file-remote-p scan-root)))
+    (list :base base
+          :base-root (directory-file-name (expand-file-name
+                                           (cond
+                                            ((eq base 'abs) (file-name-directory full-pattern))
+                                            (t base-root))))
+          :scan-root (directory-file-name (expand-file-name scan-root))
+          :rel-pattern (or rel-rest (file-name-nondirectory full-pattern))
+          :full-pattern full-pattern
+          :remote remote)))
+
+(defun context-navigator--glob-to-regexp (pattern &optional globstar)
+  "Translate glob PATTERN to an Emacs regexp matching full relative paths.
+
+Supported:
+- *  → any chars except /
+- ?  → exactly one char except /
+- [] → character classes including [:alnum:], [:space:], ranges, [!…] negation
+- ** when GLOBSTAR non-nil → 0+ directory components"
+  (let* ((globstar (if (null globstar) context-navigator-mask-globstar globstar))
+         (p (or (context-navigator--normalize-separators pattern) ""))
+         (segs (split-string p "/" t))
+         (rx-segs '())
+         (escape
+          (lambda (ch)
+            (if (string-match-p "[.^$+()|{}]" ch)
+                (concat "\\" ch)
+              ch))))
+    (cl-labels
+        ((tr-seg (seg)
+           (if (and globstar (string= seg "**"))
+               ;; 0+ directories (each at least one char not '/'), includes trailing slash
+               "\\(?:[^/]+/\\)*"
+             (let* ((i 0) (n (length seg)) (out ""))
+               (while (< i n)
+                 (let ((c (substring seg i (1+ i))))
+                   (cond
+                    ((string= c "*") (setq out (concat out "[^/]*")))
+                    ((string= c "?") (setq out (concat out "[^/]")))
+                    ((string= c "[")
+                     ;; copy until closing ], convert [! …] to [^ …]
+                     (let ((j (1+ i)) (buf "[") (neg nil))
+                       (when (and (< j n) (string= (substring seg j (1+ j)) "!"))
+                         (setq neg t) (setq j (1+ j)))
+                       (while (and (< j n) (not (string= (substring seg j (1+ j)) "]")))
+                         (setq buf (concat buf (substring seg j (1+ j))))
+                         (setq j (1+ j)))
+                       (when (< j n) (setq buf (concat buf "]")) (setq i j))
+                       (setq out (concat out (if neg (replace-regexp-in-string "^\\[" "[^" buf) buf)))))
+                    (t
+                     (setq out (concat out (funcall escape c))))))
+                 (setq i (1+ i)))
+               out))))
+      (let ((prev-trailing-slash nil))
+        (dolist (seg segs)
+          (let* ((tr (tr-seg seg))
+                 (trailing (and globstar (string= seg "**"))))
+            (when (and (not prev-trailing-slash) (> (length rx-segs) 0))
+              (push "/" rx-segs))
+            (push tr rx-segs)
+            (setq prev-trailing-slash trailing))))
+      (concat "\\`" (apply #'concat (nreverse rx-segs)) "\\'"))))
+
+(defun context-navigator--path-has-dot-component-p (rel)
+  "Return non-nil if REL has any component starting with a dot."
+  (or (string-prefix-p "." rel)
+      (string-match-p "/\\." rel)))
+
+(defun context-navigator--pattern-allows-dotfiles-p (pattern)
+  "Return non-nil if PATTERN explicitly allows matching dotfiles somewhere.
+
+Heuristic v1:
+- allow if any component begins with '.' (detect via \"^.\" or \"/.\")
+- or when global override `context-navigator-mask-include-dotfiles' is non-nil"
+  (or context-navigator-mask-include-dotfiles
+      (string-prefix-p "." pattern)
+      (string-match-p "/\\." pattern)))
+
+(defun context-navigator--collect-candidates (base-pl)
+  "Collect absolute file candidates for BASE-PL scan-root quickly."
+  (let* ((scan-root (plist-get base-pl :scan-root))
+         (base-root (plist-get base-pl :base-root))
+         (base (plist-get base-pl :base))
+         (remote (plist-get base-pl :remote))
+         (proj-root (and (eq base 'project) base-root))
+         (idx (and proj-root (not remote)
+                   (context-navigator-project-file-index proj-root)))
+         (in-scan-p
+          (lambda (p) (string-prefix-p
+                       (file-name-as-directory (expand-file-name scan-root))
+                       (expand-file-name p)))))
+    (cond
+     ;; Prefer project index (fast), then filter by scan-root prefix
+     ((and (listp idx) (> (length idx) 0))
+      (cl-remove-if-not in-scan-p idx))
+     ;; Fallback: recursive scan from scan-root with exclusions (dotdirs and custom)
+     (t
+      (ignore-errors (context-navigator-path-add--project-files-fallback scan-root))))))
+
+(defun context-navigator--filter-matches (files rx base-pl)
+  "Return subset of FILES whose relative path to SCAN-ROOT matches RX.
+Respects case sensitivity and dotfiles rule."
+  (let* ((scan-root (plist-get base-pl :scan-root))
+         (pattern (plist-get base-pl :rel-pattern))
+         (allow-dots (context-navigator--pattern-allows-dotfiles-p pattern))
+         (case-fold-search (context-navigator-path-add--case-fold-p)))
+    (cl-remove-if-not
+     (lambda (f)
+       (let* ((rel (file-relative-name (expand-file-name f)
+                                       (file-name-as-directory scan-root))))
+         (and (string-match-p rx rel)
+              (or allow-dots (not (context-navigator--path-has-dot-component-p rel))))))
+     files)))
+
+(defun context-navigator-path-add--preview-and-confirm (files stats)
+  "Show preview buffer for FILES and STATS, return non-nil to proceed."
+  (let* ((buf (get-buffer-create "*Context Navigator Add Preview*"))
+         (total (length files))
+         (too-big (plist-get stats :skipped-too-big))
+         (nonreg (plist-get stats :skipped-nonregular))
+         (remote (plist-get stats :remote))
+         (sum-bytes (cl-loop for f in files
+                             for s = (context-navigator-path-add--file-size f)
+                             when s sum s)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format (context-navigator-i18n :preview-title)
+                        total
+                        (let ((bytes sum-bytes))
+                          (cond
+                           ((null bytes) "?")
+                           ((< bytes 1024) (format "%d B" bytes))
+                           ((< bytes (* 1024 1024)) (format "%.1f KB" (/ bytes 1024.0)))
+                           ((< bytes (* 1024 1024 1024)) (format "%.1f MB" (/ bytes 1048576.0)))
+                           (t (format "%.1f GB" (/ bytes 1073741824.0)))))))
+        (insert "\n")
+        (when (> too-big 0)
+          (insert (format (context-navigator-i18n :preview-skipped-too-big)
+                          too-big
+                          (let ((bytes context-navigator-max-file-size))
+                            (cond
+                             ((null bytes) "?")
+                             ((< bytes 1024) (format "%d B" bytes))
+                             ((< bytes (* 1024 1024)) (format "%.1f KB" (/ bytes 1024.0)))
+                             ((< bytes (* 1024 1024 1024)) (format "%.1f MB" (/ bytes 1048576.0)))
+                             (t (format "%.1f GB" (/ bytes 1073741824.0)))))))
+          (insert "\n"))
+        (when (> nonreg 0)
+          (insert (format (context-navigator-i18n :preview-skipped-nonregular) nonreg))
+          (insert "\n"))
+        (when (> remote 0)
+          (insert (format (context-navigator-i18n :preview-remote) remote))
+          (insert "\n"))
+        (insert "\n")
+        (insert (context-navigator-i18n :preview-files))
+        (insert "\n")
+        (dolist (f files)
+          (insert (format "  %s\n" (abbreviate-file-name f))))
+        (goto-char (point-min))
+        (view-mode 1)))
+    (display-buffer buf '((display-buffer-pop-up-window)))
+    (unwind-protect
+        (yes-or-no-p (format (context-navigator-i18n :confirm-add) (length files)))
+      (when (buffer-live-p buf)
+        (kill-buffer buf)))))
+
+(cl-defun context-navigator-add-files-from-mask (pattern &optional _interactive)
+  "Resolve PATTERN (glob) to files and add them to the model with preview when needed."
+  (let* ((base (context-navigator--mask-base pattern)))
+    (when (and (plist-get base :remote)
+               (not context-navigator-mask-enable-remote))
+      (message (context-navigator-i18n :mask-remote-unsupported) pattern)
+      (cl-return-from context-navigator-add-files-from-mask nil))
+    (condition-case err
+        (let* ((rx (context-navigator--glob-to-regexp (plist-get base :rel-pattern)
+                                                      context-navigator-mask-globstar))
+               (cands (context-navigator--collect-candidates base))
+               (matches (context-navigator--filter-matches cands rx base))
+               (flt (context-navigator-path-add--apply-filters matches))
+               (files (plist-get flt :files)))
+          (cond
+           ((null files)
+            (message (context-navigator-i18n :mask-nothing-found) pattern)
+            nil)
+           (t
+            (let* ((too-many (> (length files) (or context-navigator-path-add-limit 50)))
+                   (go (if too-many
+                           (context-navigator-path-add--preview-and-confirm files flt)
+                         t)))
+              (if (not go)
+                  (message "%s" (context-navigator-i18n :aborted))
+                (let ((added (context-navigator-path-add--append-files-as-items files)))
+                  (context-navigator-path-add--maybe-apply-to-gptel)
+                  (message (context-navigator-i18n :added-files) added)
+                  (list :files files :added added)))))))
+      (error
+       (message (context-navigator-i18n :mask-parse-error) (or (nth 1 err) pattern))
+       nil))))
 
 (provide 'context-navigator-path-add)
 ;;; context-navigator-path-add.el ends here

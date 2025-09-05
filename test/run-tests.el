@@ -39,6 +39,9 @@
 (require 'context-navigator-transient-tramp-test)
 (require 'context-navigator-sidebar-controls-test)
 (require 'context-navigator-groups-delete-test)
+(require 'context-navigator-mask-tests)
+(require 'context-navigator-mask-posix-class-test)
+(require 'context-navigator-add-from-minibuffer-mask-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

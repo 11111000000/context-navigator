@@ -142,7 +142,7 @@ legacy single-file path (context.el) for backward compatibility."
    ((and (listp sexp)
          (or (plist-member sexp :items)
              (and sexp (listp (car sexp)))))
-    (list :version context-navigator-persist--version
+    (list :version context-navigator-persist-version
           :generator "context-navigator/migrated"
           :root nil
           :items (if (plist-member sexp :items)

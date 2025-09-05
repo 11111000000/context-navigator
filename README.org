@@ -23,7 +23,7 @@ Navigator works great with [gptel](https://github.com/karthink/gptel): it can pu
 into gptel, so your chat sessions are always grounded in context, yet you can return to your saved groups anytime.
 Note: Navigator never imports from gptel; it only pushes when you ask it to (or when the push toggle is enabled).
 
-Status: 1.1.0 — test-backed core, async per-group persistence, i18n, improved sidebar UX.
+Status: 1.1.3 — test-backed core, async per-group persistence, i18n, improved sidebar UX, glob masks in add-from-minibuffer (F).
 
 ** Requirements
 - Emacs 29.1+ (recommended 30.1+)
@@ -80,6 +80,21 @@ Work with your files, buffers, and selections. By default, Navigator does not af
 Toggle [→gptel: on] in the header/footer to push (one-way) when your model changes.
 Use [Push now], [Open buffers], and [Clear gptel] in the footer for manual control.
 Press ? in the sidebar for localized help.
+
+** Add files by mask (F)
+- Examples:
+  - *.el             — all .el files in the project root
+  - **/*.org         — all .org files across the project tree
+  - ./*.el           — all .el in the current buffer’s directory
+  - ./**/*.el        — all .el in all subdirectories from current directory
+  - test/test-*.el   — files under <project-root>/test/ starting with test-
+  - ~/src/**/*.c     — all .c under ~/src recursively
+  - ../*.md          — all .md in the parent directory
+
+Note:
+- Dotfiles are hidden by default; use a leading dot in a component to include them (e.g. .*.el).
+- TRAMP expansion is disabled by default for masks.
+- Either a single mask or a list of explicit names/paths is accepted — mixing is not allowed.
 
 ** Key bindings
 

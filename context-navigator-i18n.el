@@ -25,8 +25,29 @@
      (en . "Add files from text")
      (ru . "Добавить файлы из текста"))
     (:add-from-minibuf
-     (en . "Add files from minibuffer")
-     (ru . "Добавить файлы из minibuffer"))
+     (en . "Add files from minibuffer (mask)")
+     (ru . "Добавить файлы из minibuffer (маска)"))
+    (:mask-minibuf-prompt
+     (en . "File(s) or mask (glob)")
+     (ru . "Файл(ы) или маска (glob)"))
+    (:mask-nothing-found
+     (en . "Nothing matched by mask: %s")
+     (ru . "Ничего не найдено по маске: %s"))
+    (:mask-remote-unsupported
+     (en . "TRAMP mask expansion is disabled (pattern: %s)")
+     (ru . "Раскрытие масок по TRAMP отключено (pattern: %s)"))
+    (:mask-parse-error
+     (en . "Invalid mask: %s")
+     (ru . "Некорректная маска: %s"))
+    (:mask-mixed-input
+     (en . "Either mask or list of names. Split the operation.")
+     (ru . "Либо маска, либо список имён. Разделите операции."))
+    (:mask-only-one
+     (en . "Only one mask is supported at a time")
+     (ru . "Поддерживается только одна маска за раз"))
+    (:mask-dirs-only
+     (en . "Mask matched only directories — files not found.")
+     (ru . "Маска совпала только с каталогами — файлы не найдены."))
     (:resolve-start
      (en . "Resolving names...")
      (ru . "Идёт сопоставление..."))

@@ -66,8 +66,8 @@
 (defun context-navigator-version ()
   "Return version string for Context Navigator."
   (interactive)
-  (message "context-navigator — 1.1.0")
-  "1.1.0")
+  (message "context-navigator — 1.1.3")
+  "1.1.3")
 
 ;;;###autoload
 (defun context-navigator-start ()
