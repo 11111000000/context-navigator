@@ -1452,16 +1452,16 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
 
     ;; New global toggles/actions in sidebar
-    (define-key m (kbd "x")   #'context-navigator-sidebar-toggle-push)
+    (define-key m (kbd "G")   #'context-navigator-sidebar-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-sidebar-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-sidebar-push-now)
-    (define-key m (kbd "E")   #'context-navigator-sidebar-clear-group)
+    (define-key m (kbd "X")   #'context-navigator-sidebar-clear-group)
     (define-key m (kbd "C")   #'context-navigator-sidebar-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-sidebar-delete-dispatch)
     (define-key m (kbd "g")   #'context-navigator-sidebar-refresh-dispatch)
     ;; Additional action: open all context buffers in background
-    (define-key m (kbd "o")   #'context-navigator-sidebar-open-all-buffers)
+    (define-key m (kbd "O")   #'context-navigator-sidebar-open-all-buffers)
     ;; Groups-specific keys
     (define-key m (kbd "h")   #'context-navigator-sidebar-go-up)      ;; show groups from items
     (define-key m (kbd "a")   #'context-navigator-sidebar-group-create)

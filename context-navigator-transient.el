@@ -46,16 +46,14 @@ Files larger than this threshold are skipped."
     ("p" "Switch to current project" context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" "Groups list" context-navigator-sidebar-show-groups)
-    ("s" "Save context" context-navigator-context-save)
-    ("l" "Load context" context-navigator-context-load)
-    ("u" "Unload context" context-navigator-context-unload)]
+    ("X" "Unload context" context-navigator-context-unload)]
    ["Actions"
     ("a" "Add (universal)" context-navigator-add-universal)
     ("f" "Add files from minibuffer (mask)" context-navigator-add-from-minibuffer)
     ("t" "Add files from text" context-navigator-add-from-text)
     ("o" "Open buffers (background)" context-navigator-sidebar-open-all-buffers)]
    ["GPTel"
-    ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
+    ("G" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
     ("A" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
     ("P" "Push now" context-navigator-push-to-gptel-now)
     ("C" "Clear gptel" context-navigator-clear-gptel-now)]])
