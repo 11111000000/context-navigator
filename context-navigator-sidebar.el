@@ -1102,26 +1102,64 @@ Order of operations:
     (setq context-navigator-sidebar--gptel-keys keys
           context-navigator-sidebar--gptel-keys-hash (sxhash-equal keys))))
 
+(defun context-navigator-sidebar--close-hijacked-windows ()
+  "Close any windows previously marked as sidebar that now show a foreign buffer.
+
+This helper is safe to call multiple times and is intended to be invoked
+debounced from `buffer-list-update-hook' to avoid UI thrash."
+  (let ((our (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p our)
+      (dolist (w (window-list nil nil))
+        (when (and (window-live-p w)
+                   (window-parameter w 'context-navigator-sidebar)
+                   (not (eq (window-buffer w) our)))
+          (ignore-errors (delete-window w)))))))
+
 (defun context-navigator-sidebar--install-buffer-list-hook ()
-  "Install buffer-list-update hook to recompute quick counters."
+  "Install buffer-list-update hook to recompute quick counters and detect hijacked sidebar windows."
   (setq context-navigator-sidebar--buflist-fn
         (lambda ()
           (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
             (when (buffer-live-p buf)
               (with-current-buffer buf
                 (context-navigator-sidebar--invalidate-openable)
-                (context-navigator-sidebar--schedule-render))))))
+                (context-navigator-sidebar--schedule-render))))
+          ;; Debounced scan for windows that were marked as sidebar but now show a foreign buffer.
+          (context-navigator-events-debounce
+           :sidebar-hijack-check 0.08
+           (lambda ()
+             (let ((our (get-buffer context-navigator-sidebar--buffer-name)))
+               (when (buffer-live-p our)
+                 (dolist (w (window-list nil nil))
+                   (when (and (window-live-p w)
+                              (window-parameter w 'context-navigator-sidebar)
+                              (not (eq (window-buffer w) our)))
+                     (ignore-errors (delete-window w))))))))))
   (add-hook 'buffer-list-update-hook context-navigator-sidebar--buflist-fn))
 
 (defun context-navigator-sidebar--install-window-select-hook ()
-  "Install window-selection-change hook to re-render on focus."
+  "Install window-selection-change hook to re-render on focus and auto-close hijacked sidebar windows.
+
+When the selected window is marked with the 'context-navigator-sidebar window
+parameter but does not display the sidebar buffer, it is considered hijacked
+and will be closed to avoid leaving a stale side window around. When the
+selected window is the real sidebar (shows our buffer), we schedule a light
+render."
   (setq context-navigator-sidebar--winselect-fn
         (lambda (_frame)
           (let ((win (selected-window)))
             (when (and (window-live-p win)
-                       (eq (window-buffer win) (get-buffer context-navigator-sidebar--buffer-name)))
-              (with-selected-window win
-                (context-navigator-sidebar--schedule-render))))))
+                       (window-parameter win 'context-navigator-sidebar))
+              (let* ((our (get-buffer context-navigator-sidebar--buffer-name))
+                     (cur (and (window-live-p win) (window-buffer win))))
+                (if (not (eq cur our))
+                    ;; Foreign buffer shown in a window that we previously marked
+                    ;; as sidebar — close it to avoid dangling side windows.
+                    (when (window-live-p win)
+                      (delete-window win))
+                  ;; Sidebar window actually shows our buffer — gentle refresh.
+                  (with-selected-window win
+                    (context-navigator-sidebar--schedule-render))))))))
   (add-hook 'window-selection-change-functions context-navigator-sidebar--winselect-fn))
 
 (defun context-navigator-sidebar--initial-compute-counters ()
@@ -1402,7 +1440,10 @@ Do not highlight header/separator lines."
         (context-navigator-sidebar--render)))
     (when (window-live-p win)
       ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
-      (set-window-parameter win 'context-navigator-sidebar t)
+      ;; If the buffer is shown in multiple windows (rare), mark them all.
+      (dolist (w (get-buffer-window-list buf nil t))
+        (when (window-live-p w)
+          (set-window-parameter w 'context-navigator-sidebar t)))
       (select-window win))
     win))
 
