@@ -21,12 +21,13 @@ you define explicit context groups:
 
 Navigator works great with [gptel](https://github.com/karthink/gptel): it can push enabled items (one-way)
 into gptel, so your chat sessions are always grounded in context, yet you can return to your saved groups anytime.
+Note: Navigator never imports from gptel; it only pushes when you ask it to (or when the push toggle is enabled).
 
-Status: 1.0.0 — test-backed core, evolving UI. See “Roadmap”.
+Status: 1.1.0 — test-backed core, async per-group persistence, i18n, improved sidebar UX.
 
 ** Requirements
 - Emacs 29.1+ (recommended 30.1+)
-- [transient](https://github.com/magit/transient) 0.3.0+ (required for menu)
+- [transient](https://github.com/magit/transient) 0.3.0+ (for the menu)
 - [gptel](https://github.com/karthink/gptel) 0.8.0+ (optional)
 - Optional: project.el or projectile (for project detection)
 - Optional: [all-the-icons](https://github.com/domtronn/all-the-icons.el) (for sidebar icons)
@@ -67,6 +68,7 @@ Not on MELPA yet. Use straight.el/git or local checkout.
 *** Notes
 - If you don’t want a global binding, leave `context-navigator-global-key` as `nil` (the default).
 - To invoke the menu without a keybinding, use `M-x context-navigator-transient`.
+- If you enable icons, install fonts with `M-x all-the-icons-install-fonts` (one-time).
 
 ** Quick Start
 - Enable mode: `M-x context-navigator-mode` or `(context-navigator-mode 1)`
@@ -74,90 +76,217 @@ Not on MELPA yet. Use straight.el/git or local checkout.
 - Or: `M-x context-navigator-transient` then `n`
 - Or: `M-x context-navigator-start` opens the sidebar
 
-Work with your files, buffers, and selections. By default, Navigator does **not** affect gptel.
-Toggle [→gptel: on] in the sidebar footer to push (one-way) when your model changes.
-Use [Push now] and [Clear gptel] for manual control.
+Work with your files, buffers, and selections. By default, Navigator does not affect gptel.
+Toggle [→gptel: on] in the header/footer to push (one-way) when your model changes.
+Use [Push now], [Open buffers], and [Clear gptel] in the footer for manual control.
+Press ? in the sidebar for localized help.
 
 ** Key bindings
 
 _Global (context-navigator-mode):_
-- `C-c n`   Open transient menu (`context-navigator-transient`)  
-  - In menu: `n` sidebar; `a` add; `g` groups; `s` save; `l` load; `u` unload; `x` push→gptel; `T` auto-project; `P` push now; `C` clear gptel
-- `M-x context-navigator-switch-to-current-buffer-project`  Force project switch
+- C-c n   Open transient menu (`context-navigator-transient`)
+  - In menu:
+    - n  toggle sidebar
+    - p  switch Navigator to current buffer’s project
+    - a  Add (universal) — current region/file/buffer or Dired selection
+    - g  groups list
+    - s  save context
+    - l  load context
+    - u  unload context
+    - x  toggle push→gptel
+    - T  toggle auto-project
+    - P  push now
+    - C  clear gptel
 
 _Sidebar (context-navigator-sidebar-mode):_
-- `RET`/`SPC`  Visit/preview item or group
-- `t`      Toggle gptel membership
-- `d`      Delete item/group
-- `g`      Refresh
-- `h`      Toggle items/groups
-- `a`      Add group
-- `r`      Rename group
-- `c`      Duplicate group
-- `x`      Toggle push→gptel
-- `T`      Toggle auto-project
-- `P`      Push now
-- `C`      Clear gptel
-- `TAB`/`S-TAB`  Jump between elements
-- `q`      Quit sidebar
-- `?`      Help
+- RET / l        Visit/activate item or open group
+- SPC            Preview item (other window)
+- n / p / j / k  Next/previous item (or group line)
+- t              Toggle gptel membership for item at point
+- d              Delete item (items view) or group (groups view)
+- g              Refresh (items or groups, depending on view)
+- h              Toggle items/groups (go “up”)
+- a / r / c      Add / Rename / Duplicate group (groups view)
+- x / T          Toggle push→gptel / auto-project
+- P / C          Push now / Clear gptel
+- o              Open all context buffers in background
+- TAB / S-TAB    Jump between interactive elements (items, groups, toggles, actions)
+- q              Quit sidebar
+- ?              Help
 
-** Recommended Configuration
-- Use the `context-navigator-global-key` variable to set your preferred global key.  
-  Example:  
-  #+begin_src emacs-lisp
-  (setq context-navigator-global-key "C-c n")
-  #+end_src
-
-- If you use another package that binds `C-c n`, change it to another binding of your choice (e.g. `C-c C-n`).
+_Remapped defaults (quality-of-life):_
+- delete-other-windows closes sidebar windows first to preserve your layout.
+- Optional: window balancing is protected while sidebar is visible (see config).
 
 ** Typical Workflows
 
-- _Project-centric groups_: Research, bug fixes, refactoring; switches context in one command.
-- _Auto-project switching_: When enabled, follows you across projects.
-- _Task tracking_: Mirror tickets as groups, toggle enabled files.
-- _LLM sessions_: Add buffer regions, whole buffers, or Dired marked files/dirs (see “Add (universal)” in menu).
-- _Manual vs auto gptel update_: Use footer toggles/push-now for one-way control.
+- Project-centric groups: research, bug fixes, refactoring; switches context in one command.
+- Auto-project switching: follows you across projects and even Dired buffers in a project.
+- Task tracking: mirror tickets as groups, toggle enabled files.
+- LLM sessions: add buffer regions, whole buffers, or Dired marked files/dirs (see “Add (universal)”).
+- Manual vs auto gptel update: header/footer toggles + push/clear when you want it.
 
 ** Features
 
-- **Groups and Items**
+- Groups and Items
   - Context groups per project (or globally)
   - Add files, buffers, regions/selections
   - Enable/disable items per group
-- **Sidebar UI**
+  - Default group auto-initialization on first use (configurable)
+- Sidebar UI
   - Optional icons (all-the-icons)
+  - Header toggles (push→gptel, auto-project)
+  - Footer actions: [Open buffers], [Push now], [Clear gptel]
+  - Openable buffers counter with soft-cap; remote-aware counting modes
   - Mouse/TAB navigation friendly
-  - Footer: push toggle, auto-project toggle, manual push/clear
-- **GPTel integration**
+  - Localized help screen
+- GPTel integration
   - One-way “push” (never imports from gptel)
   - On push: reset gptel and add all enabled items
-- **Persistence**
-  - Per-project and global: never leaks data outside project
-  - Async load/save, batching, auto-load on project change
-- **Universal Add**
-  - Dired: recursive, with preview/confirmation, skips non-regular and big files
-  - File/region/buffer: auto-detected via context
+  - Binary membership indicators (present/absent) next to items
+- Persistence
+  - v3 per-group s-exp files: <project>/.context/<group>.el (or ~/.context/<group>.el)
+  - state.el tracks the current group and group display names
+  - Async load with batching and loading spinner + progress
+- Universal Add
+  - Dired: recursive when directories included, with preview & confirmation
+  - Skips non-regular files and files above size limit (configurable)
+  - File/region/buffer: auto-detected from context
+- Project switching
+  - Uses project.el or projectile (optional)
+  - Auto-switch throttle (configurable)
+  - Includes Dired buffers inside projects
 
-** Configuration reference (defcustom)
+** Fancy UI example (icons, indicators, paths, compact controls)
+
+#+begin_src emacs-lisp
+;; You need all-the-icons installed for icon styles:
+;; M-x all-the-icons-install-fonts (once)
+(use-package context-navigator
+  ;; :straight (context-navigator
+  ;;            :type git
+  ;;            :host github
+  ;;            :repo "11111000000/context-navigator")
+
+  ;; Use :custom instead of setq — values are applied via customize-set-variable.
+  :custom
+  ;; Basics
+  (context-navigator-global-key "C-c n")           ;; recommended global key for the transient
+  (context-navigator-autoload t)                   ;; load pieces on first use
+  (context-navigator-autosave t)                   ;; auto-save contexts
+  (context-navigator-sidebar-width 36)             ;; sidebar width in columns
+
+  ;; Sidebar look & feel
+  (context-navigator-controls-style 'icons)        ;; compact header/footer controls
+  (context-navigator-highlight-active-group t)     ;; highlight current group
+  (context-navigator-auto-open-groups-on-error t)  ;; open groups list if a load error occurs
+  (context-navigator-gptel-indicator-poll-interval 0.8) ;; keep gptel indicators fresh
+
+  ;; Render options
+  (context-navigator-render-indicator-style 'icons) ;; tiny lamps via all-the-icons
+  (context-navigator-render-show-path t)            ;; show right-aligned paths
+  (context-navigator-render-truncate-name 64)       ;; truncate long item names
+
+  ;; Icons provider
+  (context-navigator-enable-icons t)               ;; turn on icons in the sidebar
+  (context-navigator-icons-disable-on-remote t)    ;; be gentle on TRAMP connections
+
+  ;; Footer “open buffers” counter
+  (context-navigator-openable-count-ttl 0.3)       ;; cache TTL for counting openable buffers
+  (context-navigator-openable-soft-cap 100)        ;; soft cap when opening many buffers
+  (context-navigator-openable-remote-mode 'lazy)   ;; 'off | 'lazy | 'strict for remote projects
+
+  ;; Project switching and persistence
+  (context-navigator-context-switch-interval 0.7)  ;; throttle auto-project switching
+  (context-navigator-create-default-group-file t)  ;; create a default group file automatically
+
+  ;; Universal add (Dired recursion) size limit
+  (context-navigator-max-file-size (* 2 1024 1024)) ;; skip files larger than 2MB
+
+  ;; Internationalization
+  (context-navigator-language 'auto)               ;; en/ru/fr/de/es or auto-from-locale
+
+  ;; Protect your layout when the sidebar is open
+  (context-navigator-protect-sidebar-windows t)
+
+  :config
+  ;; Enable the global minor mode after customizing.
+  (context-navigator-mode 1)
+
+  ;; Tip: If you enabled icons, install fonts once:
+  ;; M-x all-the-icons-install-fonts
+  )
+#+end_src
+
+Tip: With controls-style=icons and indicator-style=icons, the header/footer are compact and items show tiny lamps indicating membership in gptel (green/gray). TAB navigates between toggles, actions, items, and groups.
+
+** Recommended Configuration
+- Set a global key you like (optional; default: none):
+  #+begin_src emacs-lisp
+  (setq context-navigator-global-key "C-c n")
+  #+end_src
+- If another package already binds your chosen key, pick a different one (e.g. "C-c C-n").
+- Enable icons for the sidebar (optional) and install fonts once:
+  #+begin_src emacs-lisp
+  (setq context-navigator-enable-icons t)
+  ;; M-x all-the-icons-install-fonts
+  #+end_src
+
+** Configuration reference (selected defcustoms)
+
+Core:
+- context-navigator-global-key (nil | string)
 - context-navigator-autoload (t)
 - context-navigator-autosave (t)
+- context-navigator-autosave-debounce (0.5)
 - context-navigator-sidebar-width (integer)
-- context-navigator-global-key (nil by default; example: "C-c n")
-- ... [See code for full list; the variable docstrings are clear.]
+- context-navigator-context-switch-interval (0.7)
+- context-navigator-create-default-group-file (t)
+- context-navigator-protect-sidebar-windows (t)
+
+Sidebar:
+- context-navigator-controls-style ('auto | 'icons | 'text)
+- context-navigator-auto-open-groups-on-error (t)
+- context-navigator-highlight-active-group (t)
+- context-navigator-gptel-indicator-poll-interval (1.0)
+- context-navigator-openable-count-ttl (0.3)
+- context-navigator-openable-soft-cap (100)
+- context-navigator-openable-remote-mode ('lazy | 'strict | 'off)
+
+Render:
+- context-navigator-render-indicator-style ('auto | 'icons | 'text | 'off)
+- context-navigator-render-show-path (nil)
+- context-navigator-render-truncate-name (64)
+
+Icons:
+- context-navigator-enable-icons (t)
+- context-navigator-icons-disable-on-remote (t)
+
+Transient / Add:
+- context-navigator-max-file-size (bytes; default 2MB)
+
+i18n:
+- context-navigator-language ('auto | 'en | 'ru | 'fr | 'de | 'es)
+
+Persistence (format constants):
+- context-navigator-persist-version (3)
+
+See variable docstrings for full details.
 
 ** Troubleshooting
 
-- *No menu or keys?*  
-  Check that `context-navigator-mode` is enabled, and that you set `context-navigator-global-key` if you want a global key.
-- *Wrong key?*  
-  Change `context-navigator-global-key` to your preferred binding.
-- *Sidebar not showing?*  
-  Try `M-x context-navigator-start`.
-- *Icons not showing?*  
-  Install `all-the-icons` and run `M-x all-the-icons-install-fonts`.
-- *Still lost?*  
-  Use `?` in the sidebar for help.
+- No menu or keys?
+  Ensure `context-navigator-mode` is enabled, and set `context-navigator-global-key` if you want a global key.
+- Wrong key / conflicts?
+  Change `context-navigator-global-key` to another binding, e.g. "C-c C-n".
+- Sidebar not showing?
+  Try `M-x context-navigator-start` or `M-x context-navigator-sidebar-open`.
+- Icons not showing?
+  Install `all-the-icons` and run `M-x all-the-icons-install-fonts` (then restart Emacs).
+- gptel missing?
+  Navigator works fine without it. Push actions will be no-ops with a helpful message.
+- Loading errors?
+  If a group file is unreadable, the sidebar can auto-open the groups list. Press h to show groups.
 
 ** License
 MIT — see LICENSE.
@@ -165,3 +294,4 @@ MIT — see LICENSE.
 ** Acknowledgements
 - gptel for the AI interface
 - Emacs community for project.el, all-the-icons, and inspiration
+
