@@ -71,6 +71,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-toggle-item "context-navigator-core" (key &optional enabled))
 (declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
 (declare-function context-navigator-context-clear-current-group "context-navigator-core" ())
+(declare-function context-navigator-context-unload "context-navigator-core" ())
 ;; group commands (core)
 (declare-function context-navigator-groups-open "context-navigator-core" ())
 (declare-function context-navigator-group-switch "context-navigator-core" (&optional slug))
@@ -1455,13 +1456,17 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "G")   #'context-navigator-sidebar-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-sidebar-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-sidebar-push-now)
-    (define-key m (kbd "X")   #'context-navigator-sidebar-clear-group)
+    ;; Align with transient: X → unload context
+    (define-key m (kbd "X")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-sidebar-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-sidebar-delete-dispatch)
     (define-key m (kbd "g")   #'context-navigator-sidebar-refresh-dispatch)
     ;; Additional action: open all context buffers in background
     (define-key m (kbd "O")   #'context-navigator-sidebar-open-all-buffers)
+    (define-key m (kbd "o")   #'context-navigator-sidebar-open-all-buffers)
+    ;; Clear group (explicit shortcut matching UI hint)
+    (define-key m (kbd "E")   #'context-navigator-sidebar-clear-group)
     ;; Groups-specific keys
     (define-key m (kbd "h")   #'context-navigator-sidebar-go-up)      ;; show groups from items
     (define-key m (kbd "a")   #'context-navigator-sidebar-group-create)

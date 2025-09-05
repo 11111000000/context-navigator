@@ -38,25 +38,26 @@
 Files larger than this threshold are skipped."
   :type 'integer :group 'context-navigator-add)
 
-;;;###autoload (autoload 'context-navigator-transient "context-navigator-transient")
+;;;###autoload
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
   [["Panel/Project"
-    ("n" "Toggle sidebar" context-navigator-sidebar-toggle)
-    ("p" "Switch to current project" context-navigator-switch-to-current-buffer-project)]
+    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-sidebar-toggle)
+    ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
-    ("g" "Groups list" context-navigator-sidebar-show-groups)
-    ("X" "Unload context" context-navigator-context-unload)]
+    ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-sidebar-show-groups)
+    ("X" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]
    ["Actions"
-    ("a" "Add (universal)" context-navigator-add-universal)
-    ("f" "Add files from minibuffer (mask)" context-navigator-add-from-minibuffer)
-    ("t" "Add files from text" context-navigator-add-from-text)
-    ("o" "Open buffers (background)" context-navigator-sidebar-open-all-buffers)]
+    ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
+    ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
+    ("t" (lambda () (context-navigator-i18n :add-from-text)) context-navigator-add-from-text)
+    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-sidebar-open-all-buffers)]
    ["GPTel"
-    ("G" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
-    ("A" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
-    ("P" "Push now" context-navigator-push-to-gptel-now)
-    ("C" "Clear gptel" context-navigator-clear-gptel-now)]])
+    ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
+    ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
+    ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
+    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)]])
+
 
 (defun context-navigator-transient--maybe-apply-to-gptel ()
   "Apply current model to gptel when push is ON."
@@ -230,17 +231,12 @@ TRAMP/remote: show a warning and confirm before proceeding."
             ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
             (context-navigator-transient--add-files files))))))
 
-   ;; Selection in current buffer -> selection item (inactive mark supported)
-   ((or (use-region-p)
-        (let* ((m (mark t))
-               (pos (and m (if (markerp m) (marker-position m) m))))
-          (and pos (/= (point) pos))))
+   ;; Active region -> selection item
+   ((use-region-p)
     (let* ((b   (current-buffer))
            (p   (buffer-file-name b))
-           (m   (mark t))
-           (pos (and m (if (markerp m) (marker-position m) m)))
-           (beg (if (use-region-p) (region-beginning) (min (point) (or pos (point)))))
-           (end (if (use-region-p) (region-end) (max (point) (or pos (point)))))
+           (beg (region-beginning))
+           (end (region-end))
            (nm (if p
                    (format "%s:%s-%s" (file-name-nondirectory p) beg end)
                  (format "%s:%s-%s" (buffer-name b) beg end)))

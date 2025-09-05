@@ -23,10 +23,95 @@
 (defconst context-navigator-i18n--dict
   '((:add-from-text
      (en . "Add files from text")
-     (ru . "Добавить файлы из текста"))
+     (ru . "Добавить файлы из текста")
+     (fr . "Ajouter des fichiers depuis le texte")
+     (de . "Dateien aus Text hinzufügen")
+     (es . "Añadir archivos desde el texto"))
     (:add-from-minibuf
      (en . "Add files from minibuffer (mask)")
-     (ru . "Добавить файлы из minibuffer (маска)"))
+     (ru . "Добавить файлы из minibuffer (маска)")
+     (fr . "Ajouter des fichiers depuis le minibuffer (masque)")
+     (de . "Dateien aus dem Minibuffer hinzufügen (Maske)")
+     (es . "Añadir archivos desde minibuffer (máscara)"))
+    ;; Transient menu: sections and items
+    (:tr-panel
+     (en . "Panel/Project")
+     (ru . "Панель/Проект")
+     (fr . "Panneau/Projet")
+     (de . "Panel/Projekt")
+     (es . "Panel/Proyecto"))
+    (:tr-context
+     (en . "Context/Groups")
+     (ru . "Контекст/Группы")
+     (fr . "Contexte/Groupes")
+     (de . "Kontext/Gruppen")
+     (es . "Contexto/Grupos"))
+    (:tr-actions
+     (en . "Actions")
+     (ru . "Действия")
+     (fr . "Actions")
+     (de . "Aktionen")
+     (es . "Acciones"))
+    (:tr-gptel
+     (en . "GPTel")
+     (ru . "GPTel")
+     (fr . "GPTel")
+     (de . "GPTel")
+     (es . "GPTel"))
+    (:tr-toggle-sidebar
+     (en . "Toggle sidebar")
+     (ru . "Переключить боковую панель")
+     (fr . "Basculer le panneau latéral")
+     (de . "Seitenleiste umschalten")
+     (es . "Alternar barra lateral"))
+    (:tr-switch-project
+     (en . "Switch to current project")
+     (ru . "Переключиться на текущий проект")
+     (fr . "Basculer vers le projet courant")
+     (de . "Zum aktuellen Projekt wechseln")
+     (es . "Cambiar al proyecto actual"))
+    (:tr-groups-list
+     (en . "Groups list")
+     (ru . "Список групп")
+     (fr . "Liste des groupes")
+     (de . "Gruppenliste")
+     (es . "Lista de grupos"))
+    (:tr-unload
+     (en . "Unload context")
+     (ru . "Выгрузить контекст")
+     (fr . "Décharger le contexte")
+     (de . "Kontext entladen")
+     (es . "Descargar contexto"))
+    (:tr-add-universal
+     (en . "Add (universal)")
+     (ru . "Добавить (универсально)")
+     (fr . "Ajouter (universel)")
+     (de . "Hinzufügen (universell)")
+     (es . "Añadir (universal)"))
+    (:tr-open-buffers
+     (en . "Open buffers (background)")
+     (ru . "Открыть буферы (в фоне)")
+     (fr . "Ouvrir les tampons (arrière-plan)")
+     (de . "Puffer öffnen (Hintergrund)")
+     (es . "Abrir búferes (segundo plano)"))
+    (:tr-toggle-push
+     (en . "Toggle push→gptel")
+     (ru . "Переключить отправку→gptel")
+     (fr . "Basculer l’envoi→gptel")
+     (de . "Push→gptel umschalten")
+     (es . "Alternar envío→gptel"))
+    (:tr-toggle-auto
+     (en . "Toggle auto-project")
+     (ru . "Переключить авто-проект")
+     (fr . "Basculer auto-projet")
+     (de . "Auto-Projekt umschalten")
+     (es . "Alternar auto-proyecto"))
+    (:tr-push-now
+     (en . "Push now")
+     (ru . "Отправить сейчас")
+     (fr . "Envoyer maintenant")
+     (de . "Jetzt senden")
+     (es . "Enviar ahora"))
     (:mask-minibuf-prompt
      (en . "File(s) or mask (glob)")
      (ru . "Файл(ы) или маска (glob)"))
