@@ -103,7 +103,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-sidebar--buflist-fn nil)              ;; function added to buffer-list-update-hook
 (defvar-local context-navigator-sidebar--gptel-poll-timer nil)        ;; polling timer for gptel indicators (or nil)
 (defvar-local context-navigator-sidebar--last-render-key nil)        ;; cached render key to skip redundant renders
-(defvar-local context-navigator-sidebar--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view(defvar-local context-navigator-sidebar--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view
+(defvar-local context-navigator-sidebar--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view
+(defvar-local context-navigator-sidebar--last-mode nil)              ;; last rendered mode: 'items or 'groups
 
 (defcustom context-navigator-sidebar-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -511,13 +512,14 @@ Returns the list of lines that were rendered."
           context-navigator-sidebar--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
     ;; Keep point where user navigated with n/p; only auto-focus when:
-    ;; - point is not on a group line (e.g., first enter to groups view), or
-    ;; - the active group actually changed since last render.
+    ;; - entering the groups view (first render in this mode), or
+    ;; - the active group changed since last render.
+    ;; Do not steal point when user moves to footer/help with TAB/Shift-TAB.
     (let* ((active (and (context-navigator-state-p state)
                         (context-navigator-state-current-group-slug state)))
            (here (point))
            (on-group (get-text-property here 'context-navigator-group-slug))
-           (need-focus (or (not on-group)
+           (need-focus (or (not (eq context-navigator-sidebar--last-mode 'groups))
                            (not (equal context-navigator-sidebar--last-active-group active)))))
       (when need-focus
         (let (pos)
@@ -535,7 +537,8 @@ Returns the list of lines that were rendered."
           (when pos
             (goto-char pos)
             (beginning-of-line))))
-      (setq context-navigator-sidebar--last-active-group active))
+      (setq context-navigator-sidebar--last-active-group active
+            context-navigator-sidebar--last-mode 'groups))
     lines))
 
 (defun context-navigator-sidebar--items-header-toggle-lines (total-width)
@@ -1401,7 +1404,21 @@ MAP is a keymap to search for COMMAND bindings."
 
 ;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
 (when (keymapp context-navigator-sidebar-mode-map)
-  (define-key context-navigator-sidebar-mode-map (kbd "t") #'context-navigator-sidebar-toggle-gptel))
+  ;; Keep legacy binding in sync
+  (define-key context-navigator-sidebar-mode-map (kbd "t") #'context-navigator-sidebar-toggle-gptel)
+  ;; Make TAB robust across reloads/terminals/minor-modes
+  (define-key context-navigator-sidebar-mode-map (kbd "TAB")       #'context-navigator-sidebar-tab-next)
+  (define-key context-navigator-sidebar-mode-map (kbd "<tab>")     #'context-navigator-sidebar-tab-next)
+  (define-key context-navigator-sidebar-mode-map [tab]             #'context-navigator-sidebar-tab-next)
+  (define-key context-navigator-sidebar-mode-map (kbd "C-i")       #'context-navigator-sidebar-tab-next)
+  (define-key context-navigator-sidebar-mode-map (kbd "<backtab>") #'context-navigator-sidebar-tab-previous)
+  (define-key context-navigator-sidebar-mode-map [backtab]         #'context-navigator-sidebar-tab-previous)
+  (define-key context-navigator-sidebar-mode-map (kbd "S-<tab>")   #'context-navigator-sidebar-tab-previous)
+  ;; Ensure remaps also apply after reload
+  (define-key context-navigator-sidebar-mode-map
+    [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
+  (define-key context-navigator-sidebar-mode-map
+    [remap delete-other-windows]   #'context-navigator-delete-other-windows))
 
 (defun context-navigator-sidebar--hl-line-range ()
   "Return region to highlight for the current line.

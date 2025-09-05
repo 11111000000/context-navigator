@@ -151,25 +151,41 @@ When LEFT-WIDTH is non-nil, align left column to that width."
                     items))))
 
 (defun context-navigator-render-apply-to-buffer (buffer lines)
-  "Replace BUFFER text with LINES when different, preserving point and window start best-effort."
+  "Replace BUFFER text with LINES when different, preserving point/column and window start best-effort.
+
+This function now:
+- preserves the exact column within the restored line
+- restores the point for the window showing BUFFER (window-point), not only the buffer's point
+so that re-renders triggered by timers do not cause the cursor to jump to BOL or to the top."
   (with-current-buffer buffer
     (let* ((inhibit-read-only t)
-           (old-point (point))
-           (old-line (line-number-at-pos))
            (win (get-buffer-window buffer 'visible))
-           (old-start (and win (window-start win)))
-           (new-text (concat (mapconcat #'identity lines "\n") "\n"))
-           (new-hash (sxhash-equal new-text))
-           (changed (not (equal context-navigator-render--last-hash new-hash))))
+           ;; Capture point/line/column relative to the window that shows the buffer
+           (old-point (if (window-live-p win) (window-point win) (point)))
+           (old-line  (save-excursion (goto-char old-point) (line-number-at-pos)))
+           (old-col   (save-excursion (goto-char old-point) (current-column)))
+           (old-start (and (window-live-p win) (window-start win)))
+           (new-text  (concat (mapconcat #'identity lines "\n") "\n"))
+           (new-hash  (sxhash-equal new-text))
+           (changed   (not (equal context-navigator-render--last-hash new-hash))))
       (when changed
         (erase-buffer)
         (insert new-text)
         (setq context-navigator-render--last-hash new-hash)
-        (goto-char (point-min))
-        ;; Restore position: prefer same line number
-        (forward-line (1- (max 1 old-line)))
-        (when (and win old-start)
-          (set-window-start win old-start t))))))
+        ;; Compute target position from saved line/column
+        (let ((target
+               (save-excursion
+                 (goto-char (point-min))
+                 (forward-line (1- (max 1 old-line)))
+                 (move-to-column (max 0 old-col))
+                 (point))))
+          ;; Restore buffer point (for the selected window) and the sidebar window's point
+          (goto-char target)
+          (when (window-live-p win)
+            (set-window-point win target))
+          ;; Restore window-start for smooth scrolling restoration
+          (when (and (window-live-p win) old-start)
+            (set-window-start win old-start t)))))))
 
 (provide 'context-navigator-render)
 ;;; context-navigator-render.el ends here
