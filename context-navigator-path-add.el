@@ -252,17 +252,29 @@
 Rules:
 - reject URLs
 - accept absolute paths (POSIX/Windows/UNC)
-- for tokens with a directory separator: require the last component to have an extension
-- for tokens without a directory separator: require an extension
-Everything else (e.g. 'app/', 'SETTINGS/OBJECTS', plain words) is rejected."
+- tokens with a directory separator are accepted when the last component is non-empty (no need for an extension)
+- tokens without a directory separator are accepted when they either have an extension
+  or match common extensionless filenames (Makefile, README, LICENSE, Dockerfile, etc.)
+Everything else (e.g. trailing slash directories like 'app/', plain words) is rejected."
   (and (stringp s)
        (not (string-empty-p s))
        (not (context-navigator-path-add--looks-like-url-p s))
-       (or (context-navigator-path-add--absolute-p s)
-           (and (context-navigator-path-add--has-dirsep-p s)
-                (context-navigator-path-add--has-extension-p s))
-           (and (not (context-navigator-path-add--has-dirsep-p s))
-                (context-navigator-path-add--has-extension-p s)))))
+       (let ((bn (file-name-nondirectory s)))
+         (or
+          ;; Absolute paths
+          (context-navigator-path-add--absolute-p s)
+          ;; Relative/with dir separators: accept when basename is non-empty and not . or ..
+          (and (context-navigator-path-add--has-dirsep-p s)
+               (stringp bn)
+               (not (string-empty-p bn))
+               (not (member bn '("." ".."))))
+          ;; Bare basenames: require extension OR well-known extensionless names
+          (and (not (context-navigator-path-add--has-dirsep-p s))
+               (or (context-navigator-path-add--has-extension-p s)
+                   (let* ((bnu (downcase bn)))
+                     (member bnu '("makefile" "readme" "license" "copying"
+                                   "dockerfile" "vagrantfile" "gemfile" "rakefile"
+                                   "procfile" "brewfile")))))))))
 
 (defun context-navigator-extract-pathlike-tokens (text)
   "Extract path-like tokens from TEXT. Return list of normalized strings."
