@@ -679,8 +679,12 @@ background."
            ;; Use cached openable count (may be nil) — normalize to integer and plus marker.
            (openable (or context-navigator-sidebar--openable-count 0))
            (plus (and context-navigator-sidebar--openable-plus t))
-           ;; Compose key
-           (key (list gen mode total gptel-hash openable plus header)))
+           (push-on (and (boundp 'context-navigator--push-to-gptel)
+                         context-navigator--push-to-gptel))
+           (auto-on (and (boundp 'context-navigator--auto-project-switch)
+                         context-navigator--auto-project-switch))
+           ;; Compose key (include session flags so toggles force a refresh)
+           (key (list gen mode total gptel-hash openable plus header push-on auto-on)))
       (unless (equal key context-navigator-sidebar--last-render-key)
         (setq context-navigator-sidebar--last-render-key key)
         ;; Fast path: show minimal preloader when loading or when progress is reported by events.
@@ -1512,22 +1516,39 @@ Do not highlight header/separator lines."
 
 ;; Sidebar wrappers for global toggles/actions
 (defun context-navigator-sidebar-toggle-push ()
-  "Toggle push-to-gptel session flag and refresh header."
+  "Toggle push-to-gptel session flag and refresh header immediately."
   (interactive)
   (ignore-errors (context-navigator-toggle-push-to-gptel))
-  (context-navigator-sidebar--schedule-render))
+  ;; Force immediate redraw for visible sidebar
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
+  (context-navigator-sidebar--render-if-visible))
 
 (defun context-navigator-sidebar-toggle-auto-project ()
-  "Toggle auto-project-switch session flag and refresh header."
+  "Toggle auto-project-switch session flag and refresh header immediately."
   (interactive)
   (ignore-errors (context-navigator-toggle-auto-project-switch))
-  (context-navigator-sidebar--schedule-render))
+  ;; Force immediate redraw for visible sidebar
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
+  (context-navigator-sidebar--render-if-visible))
 
 (defun context-navigator-sidebar-push-now ()
-  "Manually push current items to gptel (reset + add)."
+  "Manually push current items to gptel (reset + add) and redraw immediately."
   (interactive)
   (ignore-errors (context-navigator-push-to-gptel-now))
-  (context-navigator-sidebar--schedule-render))
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
+  (context-navigator-sidebar--render-if-visible))
 
 (defun context-navigator-sidebar-open-all-buffers ()
   "Open all file/buffer/selection items from current model in background (no window selection).
@@ -1566,10 +1587,15 @@ Buffers are opened in background; we do not change window focus."
     (message "Opened %d context buffer(s) in background" count)))
 
 (defun context-navigator-sidebar-clear-gptel ()
-  "Manually clear gptel context without touching the model."
+  "Manually clear gptel context without touching the model; redraw immediately."
   (interactive)
   (ignore-errors (context-navigator-clear-gptel-now))
-  (context-navigator-sidebar--schedule-render))
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
+  (context-navigator-sidebar--render-if-visible))
 
 ;;; Dispatchers and commands
 
