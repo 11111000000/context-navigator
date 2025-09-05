@@ -63,9 +63,10 @@ Dired buffer inside a project also triggers project context loading when
 auto-project switching is enabled."
   (with-current-buffer buffer
     (and
-     ;; Trigger on file-backed buffers, gptel buffers, and also Dired buffers.
+     ;; Trigger on file-backed buffers, gptel buffers (or modes derived from it),
+     ;; and also Dired buffers.
      (or buffer-file-name
-         (eq major-mode 'gptel-mode)
+         (derived-mode-p 'gptel-mode)
          (derived-mode-p 'dired-mode)))))
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)

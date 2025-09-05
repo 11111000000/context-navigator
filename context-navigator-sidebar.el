@@ -289,11 +289,12 @@ PLUS is non-nil when CAP was reached."
          (items (and st (context-navigator-state-items st)))
          (n 0)
          (limit (or cap most-positive-fixnum)))
-    (dolist (it (or items '()))
-      (when (context-navigator-sidebar--openable--candidate-p it)
-        (setq n (1+ n))
-        (when (>= n limit)
-          (cl-return))))
+    (catch 'done
+      (dolist (it (or items '()))
+        (when (context-navigator-sidebar--openable--candidate-p it)
+          (setq n (1+ n))
+          (when (>= n limit)
+            (throw 'done t)))))
     (cons n (and (numberp cap) (>= n (or cap 0))))))
 
 (defun context-navigator-sidebar--openable-count-refresh ()
