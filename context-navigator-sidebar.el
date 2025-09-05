@@ -103,6 +103,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-sidebar--buflist-fn nil)              ;; function added to buffer-list-update-hook
 (defvar-local context-navigator-sidebar--gptel-poll-timer nil)        ;; polling timer for gptel indicators (or nil)
 (defvar-local context-navigator-sidebar--last-render-key nil)        ;; cached render key to skip redundant renders
+(defvar-local context-navigator-sidebar--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view(defvar-local context-navigator-sidebar--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view
 
 (defcustom context-navigator-sidebar-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -509,31 +510,37 @@ Returns the list of lines that were rendered."
     (setq context-navigator-sidebar--last-lines lines
           context-navigator-sidebar--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
-    ;; Focus current group line (cursor on group name) when available.
+    ;; Keep point where user navigated with n/p; only auto-focus when:
+    ;; - point is not on a group line (e.g., first enter to groups view), or
+    ;; - the active group actually changed since last render.
     (let* ((active (and (context-navigator-state-p state)
                         (context-navigator-state-current-group-slug state)))
-           (pos nil))
-      (when (and (stringp active) (not (string-empty-p active)))
-        (let ((p (point-min)) (found nil))
-          (while (and (not found)
-                      (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
-            (when (equal (get-text-property p 'context-navigator-group-slug) active)
-              (setq found p))
-            (setq p (1+ p)))
-          (setq pos found)))
-      (unless pos
-        (setq pos (text-property-not-all (point-min) (point-max)
-                                         'context-navigator-group-slug nil)))
-      (when pos
-        (goto-char pos)
-        (beginning-of-line)))
+           (here (point))
+           (on-group (get-text-property here 'context-navigator-group-slug))
+           (need-focus (or (not on-group)
+                           (not (equal context-navigator-sidebar--last-active-group active)))))
+      (when need-focus
+        (let (pos)
+          (when (and (stringp active) (not (string-empty-p active)))
+            (let ((p (point-min)) (found nil))
+              (while (and (not found)
+                          (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
+                (when (equal (get-text-property p 'context-navigator-group-slug) active)
+                  (setq found p))
+                (setq p (1+ p)))
+              (setq pos found)))
+          (unless pos
+            (setq pos (text-property-not-all (point-min) (point-max)
+                                             'context-navigator-group-slug nil)))
+          (when pos
+            (goto-char pos)
+            (beginning-of-line))))
+      (setq context-navigator-sidebar--last-active-group active))
     lines))
-
 
 (defun context-navigator-sidebar--items-header-toggle-lines (total-width)
   "Return header toggle lines for items view wrapped to TOTAL-WIDTH."
   (context-navigator-sidebar--header-toggle-lines total-width))
-
 
 (defun context-navigator-sidebar--items-base-lines (state header total-width)
   "Return a list: (hl sep up rest...) for items view base lines.
