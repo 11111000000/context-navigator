@@ -22,15 +22,35 @@
 (defun context-navigator-project--now () (float-time))
 
 (defun context-navigator-project-current-root (&optional buffer)
-  "Return absolute project root for BUFFER (or current) or nil."
+  "Return absolute project root for BUFFER (or current) or nil.
+
+This attempts several strategies for robustness:
+- Prefer `project-current' / `project-root' in the buffer itself.
+- Fallback: if that fails, try detecting the project using the buffer's
+  `default-directory' (useful for special buffers like gptel that are not
+  file-backed but inherit a directory from their originating project).
+- Finally, try projectile fallbacks with the same approaches."
   (let* ((buf (or buffer (current-buffer)))
+         ;; buffer's default-directory may be the best hint for non-file buffers
+         (buf-dir (when (bufferp buf) (with-current-buffer buf default-directory)))
          (root
           (or
+           ;; 1) Prefer project.el detection in the buffer context
            (when (fboundp 'project-current)
              (let ((proj (with-current-buffer buf (project-current nil))))
                (when proj (expand-file-name (project-root proj)))))
+           ;; 2) Fallback: try project.el by treating buf-dir as default-directory
+           (when (and (fboundp 'project-current) buf-dir)
+             (let ((default-directory buf-dir))
+               (when-let ((proj (project-current nil)))
+                 (expand-file-name (project-root proj)))))
+           ;; 3) projectile in buffer context (if available)
            (when (fboundp 'projectile-project-root)
              (with-current-buffer buf
+               (ignore-errors (projectile-project-root))))
+           ;; 4) projectile fallback using buf-dir
+           (when (and (fboundp 'projectile-project-root) buf-dir)
+             (let ((default-directory buf-dir))
                (ignore-errors (projectile-project-root)))))))
     (when (and (stringp root) (not (string-empty-p root)))
       (directory-file-name (expand-file-name root)))))
