@@ -444,7 +444,7 @@ Return count of successful operations."
     (context-navigator-events-publish :gptel-change :diff ops)
     (list :applied t :method 'diff :ops ops)))
 
-(defun context-navigator-gptel-apply (desired-items)
+(cl-defun context-navigator-gptel-apply (desired-items)
   "Apply DESIRED-ITEMS to gptel. Returns a plist describing action.
 Когда точечные операции невозможны, выполняется сброс (reset)."
   (unless (context-navigator-gptel-available-p)
@@ -467,7 +467,7 @@ Return count of successful operations."
          (key (context-navigator-model-item-key item)))
     (and (member key keys) t)))
 
-(defun context-navigator-gptel-add-one (item)
+(cl-defun context-navigator-gptel-add-one (item)
   "Add ITEM to gptel context (best-effort). Return t on success."
   (unless (context-navigator-gptel-available-p)
     (cl-return-from context-navigator-gptel-add-one nil))
@@ -476,7 +476,7 @@ Return count of successful operations."
       (context-navigator-events-publish :gptel-change :add 1))
     ok))
 
-(defun context-navigator-gptel-remove-one (item)
+(cl-defun context-navigator-gptel-remove-one (item)
   "Remove ITEM from gptel context (best-effort). Return t on success.
 Selections may not support precise removal; fallback to reset without the item."
   (unless (context-navigator-gptel-available-p)

@@ -21,7 +21,34 @@
   :group 'context-navigator-i18n)
 
 (defconst context-navigator-i18n--dict
-  '((:push-now
+  '((:add-from-text
+     (en . "Add files from text")
+     (ru . "Добавить файлы из текста"))
+    (:add-from-minibuf
+     (en . "Add files from minibuffer")
+     (ru . "Добавить файлы из minibuffer"))
+    (:resolve-start
+     (en . "Resolving names...")
+     (ru . "Идёт сопоставление..."))
+    (:resolve-summary
+     (en . "Resolved %d file(s); skipped: too big=%d, non-regular=%d")
+     (ru . "Найдено %d файл(ов); пропущено: слишком большие=%d, нерегулярные=%d"))
+    (:ambiguous-found
+     (en . "Ambiguities detected:")
+     (ru . "Обнаружены неоднозначности:"))
+    (:unresolved-found
+     (en . "Unresolved:")
+     (ru . "Не удалось разрешить:"))
+    (:too-many
+     (en . "Too many files (%d), max %d — operation cancelled")
+     (ru . "Слишком много файлов (%d), максимум %d — операция отменена"))
+    (:remote-warning
+     (en . "Remote file(s) will be added: %d. Proceed? ")
+     (ru . "Будут добавлены удалённые файлы: %d. Продолжить? "))
+    (:added-files-limited
+     (en . "Added %d file(s) (limited)")
+     (ru . "Добавлено %d файл(ов) (с ограничением)"))
+    (:push-now
      (en . "push now")
      (ru . "в gptel")
      (fr . "pousser maintenant")

@@ -26,6 +26,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
+(require 'context-navigator-path-add)
 
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
@@ -48,7 +49,9 @@ Files larger than this threshold are skipped."
     ("l" "Load context" context-navigator-context-load)
     ("u" "Unload context" context-navigator-context-unload)]
    ["Actions"
-    ("a" "Add (universal)" context-navigator-add-universal)]
+    ("a" "Add (universal)" context-navigator-add-universal)
+    ("f" "Add files from text" context-navigator-add-from-text)
+    ("F" "Add files from minibuffer" context-navigator-add-from-minibuffer)]
    ["GPTel"
     ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
     ("T" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
@@ -204,12 +207,12 @@ TRAMP/remote: show a warning and confirm before proceeding."
           (if has-dir
               (progn
                 ;; При наличии директорий — предупреждаем о TRAMP и показываем предпросмотр c подтверждением
-                (when (and (> remote 0)
-                           (not (yes-or-no-p (format (context-navigator-i18n :warn-remote-selected) remote))))
-                  (cl-return-from context-navigator-add-universal (message "%s" (context-navigator-i18n :aborted))))
-                (if (context-navigator-transient--preview-and-confirm files stats)
-                    (context-navigator-transient--add-files files)
-                  (message "%s" (context-navigator-i18n :aborted))))
+                (if (and (> remote 0)
+                         (not (yes-or-no-p (format (context-navigator-i18n :warn-remote-selected) remote))))
+                    (message "%s" (context-navigator-i18n :aborted))
+                  (if (context-navigator-transient--preview-and-confirm files stats)
+                      (context-navigator-transient--add-files files)
+                    (message "%s" (context-navigator-i18n :aborted)))))
             ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
             (context-navigator-transient--add-files files))))))
 
