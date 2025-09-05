@@ -27,6 +27,7 @@
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
 (require 'context-navigator-path-add)
+(require 'context-navigator-sidebar)
 
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
@@ -51,7 +52,8 @@ Files larger than this threshold are skipped."
    ["Actions"
     ("a" "Add (universal)" context-navigator-add-universal)
     ("f" "Add files from minibuffer (mask)" context-navigator-add-from-minibuffer)
-    ("t" "Add files from text" context-navigator-add-from-text)]
+    ("t" "Add files from text" context-navigator-add-from-text)
+    ("o" "Open buffers (background)" context-navigator-sidebar-open-all-buffers)]
    ["GPTel"
     ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
     ("T" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
@@ -65,6 +67,18 @@ Files larger than this threshold are skipped."
     (let* ((st (context-navigator--state-get))
            (items (and st (context-navigator-state-items st))))
       (ignore-errors (context-navigator-gptel-apply (or items '()))))))
+
+(defun context-navigator-transient--apply-items-batched (items)
+  "Background-apply ITEMS to gptel via core batch when push is ON."
+  (when (and (boundp 'context-navigator--push-to-gptel)
+             context-navigator--push-to-gptel
+             (listp items))
+    (let* ((st (context-navigator--state-get))
+           (token (and st (context-navigator-state-load-token st))))
+      (ignore-errors
+        ;; Применяем сразу, даже без видимого окна gptel.
+        (let ((context-navigator-gptel-require-visible-window nil))
+          (context-navigator--gptel-defer-or-start items token))))))
 
 (defun context-navigator-transient--regular-file-p (path)
   "Return non-nil if PATH is a regular file."
@@ -169,16 +183,18 @@ Files larger than this threshold are skipped."
 
 (defun context-navigator-transient--add-files (files)
   "Add FILES (list of paths) as enabled items."
-  (dolist (p files)
-    (when (and (stringp p) (file-exists-p p) (not (file-directory-p p)))
-      (let* ((it (context-navigator-item-create
-                  :type 'file
-                  :name (file-name-nondirectory p)
-                  :path (expand-file-name p)
-                  :enabled t)))
-        (ignore-errors (context-navigator-add-item it)))))
-  (context-navigator-transient--maybe-apply-to-gptel)
-  (message (context-navigator-i18n :added-files) (length files)))
+  (let ((new-items '()))
+    (dolist (p files)
+      (when (and (stringp p) (file-exists-p p) (not (file-directory-p p)))
+        (let* ((it (context-navigator-item-create
+                    :type 'file
+                    :name (file-name-nondirectory p)
+                    :path (expand-file-name p)
+                    :enabled t)))
+          (ignore-errors (context-navigator-add-item it))
+          (push it new-items))))
+    (context-navigator-transient--apply-items-batched (nreverse new-items))
+    (message (context-navigator-i18n :added-files) (length files))))
 
 ;;;###autoload
 (defun context-navigator-add-universal ()
@@ -238,7 +254,7 @@ TRAMP/remote: show a warning and confirm before proceeding."
       (ignore-errors
         (set-marker (mark-marker) nil (current-buffer))
         (setq mark-active nil))
-      (context-navigator-transient--maybe-apply-to-gptel)
+      (context-navigator-transient--apply-items-batched (list it))
       (message "%s" (context-navigator-i18n :added-selection))))
    ;; File-backed buffer -> file
    ((buffer-file-name (current-buffer))
@@ -254,7 +270,7 @@ TRAMP/remote: show a warning and confirm before proceeding."
            (it (context-navigator-item-create
                 :type 'buffer :name (buffer-name b) :buffer b :enabled t)))
       (ignore-errors (context-navigator-add-item it))
-      (context-navigator-transient--maybe-apply-to-gptel)
+      (context-navigator-transient--apply-items-batched (list it))
       (message "%s" (context-navigator-i18n :added-buffer))))))
 
 

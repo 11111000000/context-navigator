@@ -411,12 +411,18 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
 ;; -----------------------------------------------------------------------------
 ;; Add to model + UX
 
-(defun context-navigator-path-add--maybe-apply-to-gptel ()
+(defun context-navigator-path-add--maybe-apply-to-gptel (&optional only-items)
+  "Apply to gptel when push is ON.
+If ONLY-ITEMS is provided (list of items), add them in background batches.
+Otherwise, apply a full diff for the current model."
   (when (and (boundp 'context-navigator--push-to-gptel)
              context-navigator--push-to-gptel)
     (let* ((st (context-navigator--state-get))
-           (items (and st (context-navigator-state-items st))))
-      (ignore-errors (context-navigator-gptel-apply (or items '()))))))
+           (token (and st (context-navigator-state-load-token st))))
+      (if (and only-items (listp only-items))
+          (ignore-errors (context-navigator--gptel-defer-or-start only-items token))
+        (let ((items (and st (context-navigator-state-items st))))
+          (ignore-errors (context-navigator-gptel-apply (or items '()))))))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
   "Append FILES as enabled file items to the model in one batch. Return count added."
@@ -473,8 +479,14 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
         (setq aborted t))
       (if aborted
           result
-        (let ((added (context-navigator-path-add--append-files-as-items files)))
-          (context-navigator-path-add--maybe-apply-to-gptel)
+        (let* ((st-before (context-navigator--state-get))
+               (items-before (and st-before (context-navigator-state-items st-before)))
+               (added (context-navigator-path-add--append-files-as-items files))
+               (st-after (context-navigator--state-get))
+               (items-after (and st-after (context-navigator-state-items st-after)))
+               (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
+               (adds (plist-get diff :add)))
+          (context-navigator-path-add--maybe-apply-to-gptel adds)
           (message (context-navigator-i18n :added-files) added)
           (plist-put (copy-sequence res) :added added))))))
 
@@ -829,8 +841,14 @@ Respects case sensitivity and dotfiles rule."
                          t)))
               (if (not go)
                   (message "%s" (context-navigator-i18n :aborted))
-                (let ((added (context-navigator-path-add--append-files-as-items files)))
-                  (context-navigator-path-add--maybe-apply-to-gptel)
+                (let* ((st-before (context-navigator--state-get))
+                       (items-before (and st-before (context-navigator-state-items st-before)))
+                       (added (context-navigator-path-add--append-files-as-items files))
+                       (st-after (context-navigator--state-get))
+                       (items-after (and st-after (context-navigator-state-items st-after)))
+                       (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
+                       (adds (plist-get diff :add)))
+                  (context-navigator-path-add--maybe-apply-to-gptel adds)
                   (message (context-navigator-i18n :added-files) added)
                   (list :files files :added added)))))))
       (error

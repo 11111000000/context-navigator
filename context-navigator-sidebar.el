@@ -121,10 +121,17 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 
 (defvar-local context-navigator-sidebar--spinner-timer nil)          ;; loading spinner timer
 (defvar-local context-navigator-sidebar--spinner-index 0)
+(defvar-local context-navigator-sidebar--spinner-last-time 0.0)      ;; last tick timestamp (float-time)
+(defvar-local context-navigator-sidebar--spinner-degraded nil)       ;; when non-nil, render static indicator
 
 (defvar context-navigator-sidebar-window-params
   '((side . left) (slot . -1))
   "Default parameters for the sidebar window.")
+
+(defcustom context-navigator-sidebar-spinner-degrade-threshold
+  0.25
+  "If spinner timer slips by more than this (seconds), degrade to a static indicator until load completes."
+  :type 'number :group 'context-navigator)
 
 (defun context-navigator-sidebar--header (state)
   "Compute compact header title from STATE.
@@ -329,16 +336,30 @@ PLUS is non-nil when CAP was reached."
 ;; Loading spinner helpers ----------------------------------------------------
 
 (defun context-navigator-sidebar--spinner-start ()
-  "Start or restart the lightweight loading spinner timer."
+  "Start or restart the lightweight loading spinner timer.
+Degrades to a static indicator when timer slippage exceeds threshold."
   (when (timerp context-navigator-sidebar--spinner-timer)
     (cancel-timer context-navigator-sidebar--spinner-timer))
   (setq context-navigator-sidebar--spinner-index 0)
+  (setq context-navigator-sidebar--spinner-last-time (float-time))
+  (setq context-navigator-sidebar--spinner-degraded nil)
   (let ((interval (or context-navigator-sidebar-spinner-interval 0.1)))
     (setq context-navigator-sidebar--spinner-timer
           (run-at-time 0 interval
                        (lambda ()
-                         (setq context-navigator-sidebar--spinner-index
-                               (1+ (or context-navigator-sidebar--spinner-index 0)))
+                         (let* ((now (float-time))
+                                (dt (- now (or context-navigator-sidebar--spinner-last-time now)))
+                                (thr (or context-navigator-sidebar-spinner-degrade-threshold 0.25)))
+                           (setq context-navigator-sidebar--spinner-last-time now)
+                           (when (> dt (+ interval thr))
+                             ;; таймер подтормаживает — больше не дёргаем анимацию
+                             (setq context-navigator-sidebar--spinner-degraded t)
+                             (when (timerp context-navigator-sidebar--spinner-timer)
+                               (cancel-timer context-navigator-sidebar--spinner-timer))
+                             (setq context-navigator-sidebar--spinner-timer nil)))
+                         (when (not context-navigator-sidebar--spinner-degraded)
+                           (setq context-navigator-sidebar--spinner-index
+                                 (1+ (or context-navigator-sidebar--spinner-index 0))))
                          (context-navigator-sidebar--schedule-render))))))
 
 (defun context-navigator-sidebar--spinner-stop ()
@@ -346,7 +367,9 @@ PLUS is non-nil when CAP was reached."
   (when (timerp context-navigator-sidebar--spinner-timer)
     (cancel-timer context-navigator-sidebar--spinner-timer))
   (setq context-navigator-sidebar--spinner-timer nil)
-  (setq context-navigator-sidebar--spinner-index 0))
+  (setq context-navigator-sidebar--spinner-index 0)
+  (setq context-navigator-sidebar--spinner-last-time 0.0)
+  (setq context-navigator-sidebar--spinner-degraded nil))
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
@@ -642,28 +665,38 @@ Returns the list of lines that were rendered."
 ;; Entry point
 
 (defun context-navigator-sidebar--render-loading (state header total-width)
-  "Render a lightweight loading/preloader view into the sidebar buffer (spinner only).
+  "Render a lightweight loading/preloader view into the sidebar buffer.
 
-The spinner is centered horizontally within TOTAL-WIDTH. An optional percentage
-is shown to the right of the spinner when load progress is available."
+When spinner degrades or we have no meaningful progress yet, show a static
+\"Loading…\" text (localized) with optional percentage."
   (let* ((hl (propertize (format " %s" header) 'face 'mode-line-emphasis))
          (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow))
-         (frames (or context-navigator-sidebar-spinner-frames
-                     '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
-         (len (length frames))
-         (idx (or context-navigator-sidebar--spinner-index 0))
-         (ch (if (> len 0) (nth (mod idx (max 1 len)) frames) ""))
          (pct (when (and context-navigator-sidebar--load-progress
                          (numberp (car context-navigator-sidebar--load-progress))
                          (numberp (cdr context-navigator-sidebar--load-progress))
                          (> (cdr context-navigator-sidebar--load-progress) 0))
                 (floor (* 100.0 (/ (float (car context-navigator-sidebar--load-progress))
                                    (max 1 (cdr context-navigator-sidebar--load-progress)))))))
-         (spin (concat ch (when pct (format " %d%%" pct))))
-         ;; center spin line within total-width (respecting visual width)
-         (spin-w (max 0 (string-width spin)))
+         (use-spinner (and (not context-navigator-sidebar--spinner-degraded)
+                           (timerp context-navigator-sidebar--spinner-timer)
+                           pct)) ;; крутим только когда пошли step-события
+         (frames (or context-navigator-sidebar-spinner-frames
+                     '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
+         (len (length frames))
+         (idx (or context-navigator-sidebar--spinner-index 0))
+         (ch (if (and use-spinner (> len 0))
+                 (nth (mod idx (max 1 len)) frames)
+               "")) ;; без шагов или при деградации — без анимации
+         (label (if pct
+                    (format "%s%s %d%%"
+                            (if use-spinner ch "")
+                            (if use-spinner "" "") ;; визуально без лишних пробелов
+                            pct)
+                  (context-navigator-i18n :loading)))
+         ;; центрируем строку
+         (spin-w (max 0 (string-width label)))
          (left-pad (max 0 (floor (/ (max 0 (- total-width spin-w)) 2))))
-         (spin-line (concat (make-string left-pad ? ) spin))
+         (spin-line (concat (make-string left-pad ? ) label))
          (sline (propertize (concat " " spin-line) 'face 'shadow))
          (lines (list hl sep "" sline "")))
     (setq context-navigator-sidebar--last-lines lines
@@ -1086,13 +1119,15 @@ Order of operations:
          (lambda (&rest _)
            (setq context-navigator-sidebar--load-progress (cons 0 0))
            (context-navigator-sidebar--invalidate-openable)
-           (context-navigator-sidebar--spinner-start)
+           ;; На старте не крутим спиннер — показываем статический индикатор.
+           (context-navigator-sidebar--spinner-stop)
            (context-navigator-sidebar--render-if-visible)))
         context-navigator-sidebar--subs)
   (push (context-navigator-events-subscribe
          :context-load-step
          (lambda (_root pos total)
            (setq context-navigator-sidebar--load-progress (cons pos total))
+           ;; Крутим спиннер только после появления шагов (процентов).
            (context-navigator-sidebar--spinner-start)
            (context-navigator-sidebar--schedule-render)))
         context-navigator-sidebar--subs)

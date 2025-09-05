@@ -71,6 +71,22 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Batch size for async context loading."
   :type 'integer :group 'context-navigator)
 
+(defcustom context-navigator-gptel-apply-batch-size 20
+  "How many items to push to gptel per tick when applying in the background."
+  :type 'integer :group 'context-navigator)
+
+(defcustom context-navigator-gptel-apply-batch-interval 0.05
+  "Delay between gptel apply batches (seconds)."
+  :type 'number :group 'context-navigator)
+
+(defcustom context-navigator-gptel-require-visible-window t
+  "When non-nil, defer applying to gptel until a gptel window is visible on the current frame."
+  :type 'boolean :group 'context-navigator)
+
+(defcustom context-navigator-gptel-visible-poll-interval 0.5
+  "Polling interval (seconds) to check for a visible gptel window when deferring apply."
+  :type 'number :group 'context-navigator)
+
 (defcustom context-navigator-autosave t
   "Autosave context file on model refresh (when not inhibited)."
   :type 'boolean :group 'context-navigator)
@@ -294,6 +310,13 @@ If no sidebar windows are present, behave like `delete-other-windows'."
 (defvar context-navigator--event-tokens nil
   "Subscription tokens registered by core while the mode is enabled.")
 
+;; gptel background apply scheduler (batched)
+(defvar context-navigator--gptel-batch-timer nil)
+(defvar context-navigator--gptel-batch-queue nil)
+(defvar context-navigator--gptel-batch-total 0)
+(defvar context-navigator--gptel-batch-token 0)
+(defvar context-navigator--gptel-visible-poll-timer nil)
+
 (defvar context-navigator--suppress-apply-until nil
   "If non-nil, a time (float-time) until which applying to gptel is suppressed.")
 
@@ -367,7 +390,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
 (make-obsolete 'context-navigator--on-gptel-change nil "0.3.0")
 
 (defun context-navigator--load-group-for-root (root slug)
-  "Load group SLUG for ROOT (or global) asynchronously and apply to gptel."
+  "Load group SLUG for ROOT (or global) asynchronously and apply to gptel (batched)."
   ;; Обновляем core-состояние раньше всего, чтобы UI сразу показал прелоадер.
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur))
@@ -392,6 +415,8 @@ Graceful when gptel is absent: show an informative message and do nothing."
                      (unless (equal cur slug)
                        (setq st1 (plist-put st1 :current slug))
                        (ignore-errors (context-navigator-persist-state-save root st1))))))
+    ;; Отменяем любые предыдущие фоновые очереди для gptel.
+    (context-navigator--gptel-cancel-batch)
     ;; Reset gptel полностью перед загрузкой новой группы (если push включён), асинхронно.
     (when context-navigator--push-to-gptel
       (if (fboundp 'gptel-context-remove-all)
@@ -408,10 +433,14 @@ Graceful when gptel is absent: show an informative message and do nothing."
                              token))))
          (when alive
            (when context-navigator--push-to-gptel
-             ;; Применение к gptel — на следующий тик, чтобы не блокировать UI.
+             ;; Применяем к gptel порциями в фоне. Игнорируем требование видимости окна,
+             ;; чтобы автопуш работал без нажатия Push.
              (run-at-time 0 nil
                           (lambda ()
-                            (ignore-errors (context-navigator-gptel-apply (or items '()))))))
+                            (let ((context-navigator-gptel-require-visible-window nil))
+                              (ignore-errors
+                                (context-navigator--gptel-defer-or-start (or items '()) token))))))
+           ;; Модель и UI отрисовываем сразу — это даёт мгновенную отзывчивость.
            (context-navigator-set-items (or items '())))
          ;; Снимаем флаги и уведомляем завершение.
          (let* ((cur2 (context-navigator--state-get))
@@ -455,6 +484,86 @@ Behavior:
         (when (and (stringp f) (not (file-exists-p f)))
           (ignore-errors (context-navigator-persist-save '() root slug)))))
     (context-navigator--load-group-for-root root slug)))
+
+(defun context-navigator--gptel-visible-p ()
+  "Return non-nil if a gptel buffer is visible in any window on the selected frame."
+  (catch 'yes
+    (dolist (w (window-list nil 'no-mini))
+      (when (window-live-p w)
+        (with-current-buffer (window-buffer w)
+          (when (derived-mode-p 'gptel-mode)
+            (throw 'yes t)))))
+    nil))
+
+(defun context-navigator--gptel-cancel-batch ()
+  "Cancel any pending batched apply to gptel."
+  (when (timerp context-navigator--gptel-batch-timer)
+    (cancel-timer context-navigator--gptel-batch-timer))
+  (setq context-navigator--gptel-batch-timer nil
+        context-navigator--gptel-batch-queue nil
+        context-navigator--gptel-batch-total 0
+        context-navigator--gptel-batch-token 0)
+  (when (timerp context-navigator--gptel-visible-poll-timer)
+    (cancel-timer context-navigator--gptel-visible-poll-timer))
+  (setq context-navigator--gptel-visible-poll-timer nil)
+  t)
+
+(defun context-navigator--gptel-start-batch (items token)
+  "Start batched add of ITEMS to gptel, bound to LOAD TOKEN.
+Assumes gptel has been cleared beforehand."
+  (context-navigator--gptel-cancel-batch)
+  (setq context-navigator--gptel-batch-queue (copy-sequence (or items '())))
+  (setq context-navigator--gptel-batch-total (length context-navigator--gptel-batch-queue))
+  (setq context-navigator--gptel-batch-token token)
+  (let ((kick (lambda ()
+                (let* ((st (context-navigator--state-get)))
+                  (unless (and (context-navigator-state-p st)
+                               (= (or (context-navigator-state-load-token st) 0)
+                                  context-navigator--gptel-batch-token))
+                    ;; token mismatch → cancel
+                    (context-navigator--gptel-cancel-batch))
+                  (when context-navigator--gptel-batch-queue
+                    (let ((n (max 1 (or context-navigator-gptel-apply-batch-size 20)))
+                          (ops 0))
+                      (dotimes (_i n)
+                        (when-let ((it (car context-navigator--gptel-batch-queue)))
+                          (setq context-navigator--gptel-batch-queue (cdr context-navigator--gptel-batch-queue))
+                          (when (context-navigator-item-enabled it)
+                            (ignore-errors (context-navigator-gptel-add-one it)))
+                          (setq ops (1+ ops))))
+                      (when (null context-navigator--gptel-batch-queue)
+                        ;; done
+                        (context-navigator-events-publish :gptel-change :batch-done context-navigator--gptel-batch-total)
+                        (context-navigator--gptel-cancel-batch))))))))
+    (setq context-navigator--gptel-batch-timer
+          (run-at-time 0 (or context-navigator-gptel-apply-batch-interval 0.05) kick))))
+
+(defun context-navigator--gptel-defer-or-start (items token)
+  "Defer batched apply until gptel window is visible when required.
+Otherwise start immediately."
+  (if (and context-navigator-gptel-require-visible-window
+           (not (context-navigator--gptel-visible-p)))
+      ;; defer and poll
+      (progn
+        (context-navigator--gptel-cancel-batch)
+        (setq context-navigator--gptel-batch-queue (copy-sequence (or items '())))
+        (setq context-navigator--gptel-batch-total (length context-navigator--gptel-batch-queue))
+        (setq context-navigator--gptel-batch-token token)
+        (let ((poll (lambda ()
+                      (let ((st (context-navigator--state-get)))
+                        (if (not (and (context-navigator-state-p st)
+                                      (= (or (context-navigator-state-load-token st) 0)
+                                         context-navigator--gptel-batch-token)))
+                            (context-navigator--gptel-cancel-batch)
+                          (when (context-navigator--gptel-visible-p)
+                            (when (timerp context-navigator--gptel-visible-poll-timer)
+                              (cancel-timer context-navigator--gptel-visible-poll-timer))
+                            (setq context-navigator--gptel-visible-poll-timer nil)
+                            (context-navigator--gptel-start-batch context-navigator--gptel-batch-queue token)))))))
+          (setq context-navigator--gptel-visible-poll-timer
+                (run-at-time 0 (or context-navigator-gptel-visible-poll-interval 0.5) poll))))
+    ;; start now
+    (context-navigator--gptel-start-batch items token)))
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
