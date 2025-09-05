@@ -56,7 +56,7 @@ Files larger than this threshold are skipped."
     ("o" "Open buffers (background)" context-navigator-sidebar-open-all-buffers)]
    ["GPTel"
     ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
-    ("T" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
+    ("A" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
     ("P" "Push now" context-navigator-push-to-gptel-now)
     ("C" "Clear gptel" context-navigator-clear-gptel-now)]])
 

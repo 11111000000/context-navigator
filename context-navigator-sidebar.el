@@ -1453,7 +1453,7 @@ MAP is a keymap to search for COMMAND bindings."
 
     ;; New global toggles/actions in sidebar
     (define-key m (kbd "x")   #'context-navigator-sidebar-toggle-push)
-    (define-key m (kbd "T")   #'context-navigator-sidebar-toggle-auto-project)
+    (define-key m (kbd "A")   #'context-navigator-sidebar-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-sidebar-push-now)
     (define-key m (kbd "E")   #'context-navigator-sidebar-clear-group)
     (define-key m (kbd "C")   #'context-navigator-sidebar-clear-gptel)
