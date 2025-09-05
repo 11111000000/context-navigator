@@ -5,7 +5,7 @@
 ;; Maintainer: Peter Kosov <11111000000@email.com>
 ;; URL: https://github.com/11111000000/context-navigator
 ;; Keywords: convenience, tools
-;; Version: 1.1.0
+;; Version: 1.1.3
 ;; Package-Requires: ((emacs "29.1") (transient "0.3.0"))
 
 ;;; Commentary:
