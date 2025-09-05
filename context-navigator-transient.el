@@ -50,8 +50,8 @@ Files larger than this threshold are skipped."
     ("u" "Unload context" context-navigator-context-unload)]
    ["Actions"
     ("a" "Add (universal)" context-navigator-add-universal)
-    ("f" "Add files from text" context-navigator-add-from-text)
-    ("F" "Add files from minibuffer (mask)" context-navigator-add-from-minibuffer)]
+    ("f" "Add files from minibuffer (mask)" context-navigator-add-from-minibuffer)
+    ("F" "Add files from text" context-navigator-add-from-text)]
    ["GPTel"
     ("x" "Toggle push→gptel" context-navigator-toggle-push-to-gptel)
     ("T" "Toggle auto-project" context-navigator-toggle-auto-project-switch)
