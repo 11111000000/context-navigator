@@ -414,15 +414,19 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
 (defun context-navigator-path-add--maybe-apply-to-gptel (&optional only-items)
   "Apply to gptel when push is ON.
 If ONLY-ITEMS is provided (list of items), add them in background batches.
-Otherwise, apply a full diff for the current model."
+Otherwise, apply a full diff for the current model.
+
+Change: do not require a visible gptel window during add-from-text/minibuffer flows,
+so auto-push works even when gptel buffer is hidden."
   (when (and (boundp 'context-navigator--push-to-gptel)
              context-navigator--push-to-gptel)
     (let* ((st (context-navigator--state-get))
            (token (and st (context-navigator-state-load-token st))))
-      (if (and only-items (listp only-items))
-          (ignore-errors (context-navigator--gptel-defer-or-start only-items token))
-        (let ((items (and st (context-navigator-state-items st))))
-          (ignore-errors (context-navigator-gptel-apply (or items '()))))))))
+      (let ((context-navigator-gptel-require-visible-window nil))
+        (if (and only-items (listp only-items))
+            (ignore-errors (context-navigator--gptel-defer-or-start only-items token))
+          (let ((items (and st (context-navigator-state-items st))))
+            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
   "Append FILES as enabled file items to the model in one batch. Return count added."

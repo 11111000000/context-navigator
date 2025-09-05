@@ -79,7 +79,7 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Delay between gptel apply batches (seconds)."
   :type 'number :group 'context-navigator)
 
-(defcustom context-navigator-gptel-require-visible-window t
+(defcustom context-navigator-gptel-require-visible-window nil
   "When non-nil, defer applying to gptel until a gptel window is visible on the current frame."
   :type 'boolean :group 'context-navigator)
 
