@@ -533,6 +533,24 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
       (message "No active group — open groups list to select one"))))
 
 ;;;###autoload
+(defun context-navigator-context-clear-current-group ()
+  "Clear all items in the active group and persist an empty context.
+Also clears gptel context when push→gptel is enabled."
+  (interactive)
+  (let* ((st (context-navigator--state-get))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (slug (and st (context-navigator-state-current-group-slug st))))
+    (if (and (stringp slug) (not (string-empty-p slug)))
+        (progn
+          (context-navigator-set-items '())
+          (ignore-errors (context-navigator-persist-save '() root slug))
+          (when (and (boundp 'context-navigator--push-to-gptel)
+                     context-navigator--push-to-gptel)
+            (ignore-errors (context-navigator-clear-gptel-now)))
+          (message "Cleared current group's context (%s)" slug))
+      (message "No active group — open groups list to select one"))))
+
+;;;###autoload
 (defun context-navigator-context-unload ()
   "Unload/clear context and switch to global (nil root).
 Removes all gptel context entries and resets state flags safely."

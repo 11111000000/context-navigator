@@ -75,6 +75,12 @@
      (fr . "pousser maintenant")
      (de . "jetzt senden")
      (es . "enviar ahora"))
+    (:clear-group
+     (en . "clear group")
+     (ru . "очистить группу"))
+    (:clear-group-tip
+     (en . "Clear current group's items (E)")
+     (ru . "Очистить элементы текущей группы (E)"))
     (:clear-gptel
      (en . "clear gptel")
      (ru . "очистить gptel")
@@ -414,6 +420,12 @@
      (fr . "envoyer maintenant vers gptel (si l’envoi auto est désactivé)")
      (de . "jetzt an gptel senden (wenn Auto-Push aus ist)")
      (es . "enviar ahora a gptel (si el envío auto está desactivado)"))
+    (:help-clear-group
+     (en . "clear current group")
+     (ru . "очистить текущую группу")
+     (fr . "effacer le groupe courant")
+     (de . "aktuelle Gruppe leeren")
+     (es . "vaciar el grupo actual"))
     (:help-clear-gptel
      (en . "clear gptel context")
      (ru . "очистить контекст gptel")

@@ -70,6 +70,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-state-current-group-slug "context-navigator-core" (state))
 (declare-function context-navigator-toggle-item "context-navigator-core" (key &optional enabled))
 (declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
+(declare-function context-navigator-context-clear-current-group "context-navigator-core" ())
 ;; group commands (core)
 (declare-function context-navigator-groups-open "context-navigator-core" ())
 (declare-function context-navigator-group-switch "context-navigator-core" (&optional slug))
@@ -349,7 +350,7 @@ PLUS is non-nil when CAP was reached."
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
-  "Build footer control segments: toggles + [Push now], [Open buffers] and [Clear gptel].
+  "Build footer control segments: toggles + [Open buffers], [Push now], [Clear group] and [Clear gptel].
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
@@ -357,6 +358,11 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
          (has-gptel (and (listp context-navigator-sidebar--gptel-keys)
                          (> (length context-navigator-sidebar--gptel-keys) 0)))
          (style (or context-navigator-controls-style 'auto))
+         ;; current items presence for [Clear group]
+         (have-items
+          (let* ((st (ignore-errors (context-navigator--state-get)))
+                 (items (and st (context-navigator-state-items st))))
+            (and (listp items) (> (length items) 0))))
          (segs '()))
     ;; Toggles first (push → gptel, auto-project)
     (setq segs (append segs (context-navigator-sidebar--make-toggle-segments)))
@@ -411,9 +417,32 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                      'keymap m)
                                s)))
       (push s segs))
-    ;; [Clear gptel] — always shown; inactive (shadowed) when no entries available.
+    ;; [Clear group] — clears current group's items; inactive when no items present.
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [✖]")
+                    (_ (concat " [" (context-navigator-i18n :clear-group) "]"))))
+           (s (copy-sequence label))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+      (add-text-properties beg (length s)
+                           (list 'context-navigator-action 'clear-group)
+                           s)
+      (if have-items
+          (let ((m (let ((km (make-sparse-keymap)))
+                     (define-key km [mouse-1] #'context-navigator-sidebar-clear-group)
+                     km)))
+            (add-text-properties beg (length s)
+                                 (list 'mouse-face 'highlight
+                                       'help-echo (context-navigator-i18n :clear-group-tip)
+                                       'keymap m)
+                                 s))
+        (add-text-properties beg (length s)
+                             (list 'face 'shadow
+                                   'help-echo (context-navigator-i18n :clear-group-tip))
+                             s))
+      (push s segs))
+    ;; [Clear gptel] — inactive (shadowed) when no entries available. Use a distinct icon in icons-style.
+    (let* ((label (pcase style
+                    ((or 'icons 'auto) " [∅]")
                     (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
            (s (copy-sequence label))
            (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
@@ -1280,6 +1309,7 @@ MAP is a keymap to search for COMMAND bindings."
                     (context-navigator-sidebar-toggle-auto-project . :help-toggle-auto)
                     (context-navigator-sidebar-open-all-buffers  . :help-open-all)
                     (context-navigator-sidebar-push-now          . :help-push-now)
+                    (context-navigator-sidebar-clear-group       . :help-clear-group)
                     (context-navigator-sidebar-clear-gptel       . :help-clear-gptel)
                     (context-navigator-sidebar-quit              . :help-quit)
                     (context-navigator-sidebar-help              . :help-help)))
@@ -1390,6 +1420,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "x")   #'context-navigator-sidebar-toggle-push)
     (define-key m (kbd "T")   #'context-navigator-sidebar-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-sidebar-push-now)
+    (define-key m (kbd "E")   #'context-navigator-sidebar-clear-group)
     (define-key m (kbd "C")   #'context-navigator-sidebar-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-sidebar-delete-dispatch)
@@ -1422,7 +1453,9 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-sidebar-mode-map
     [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
   (define-key context-navigator-sidebar-mode-map
-    [remap delete-other-windows]   #'context-navigator-delete-other-windows))
+    [remap delete-other-windows]   #'context-navigator-delete-other-windows)
+  ;; New binding sync after reloads
+  (define-key context-navigator-sidebar-mode-map (kbd "E") #'context-navigator-sidebar-clear-group))
 
 (defun context-navigator-sidebar--hl-line-range ()
   "Return region to highlight for the current line.
@@ -1586,6 +1619,17 @@ Buffers are opened in background; we do not change window focus."
     (context-navigator-sidebar--schedule-render)
     (message "Opened %d context buffer(s) in background" count)))
 
+(defun context-navigator-sidebar-clear-group ()
+  "Clear current group's items and redraw immediately."
+  (interactive)
+  (ignore-errors (context-navigator-context-clear-current-group))
+  (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-sidebar--last-render-key nil))))
+  (context-navigator-sidebar--render-if-visible))
+
 (defun context-navigator-sidebar-clear-gptel ()
   "Manually clear gptel context without touching the model; redraw immediately."
   (interactive)
@@ -1602,7 +1646,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-sidebar-activate ()
   "RET action:
 - On toggle segments in header: toggle push/auto flags
-- On footer action segments: invoke the assigned action (push/clear/open buffers)
+- On footer action segments: invoke the assigned action (push/open buffers/clear group/clear gptel)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
@@ -1611,8 +1655,9 @@ Buffers are opened in background; we do not change window focus."
     (cond
      ;; Footer actions (explicit)
      ((eq act 'push-now) (context-navigator-sidebar-push-now))
-     ((eq act 'clear-gptel) (context-navigator-sidebar-clear-gptel))
      ((eq act 'open-buffers) (context-navigator-sidebar-open-all-buffers))
+     ((eq act 'clear-group) (context-navigator-sidebar-clear-group))
+     ((eq act 'clear-gptel) (context-navigator-sidebar-clear-gptel))
      ;; Header toggles
      ((eq tgl 'push) (context-navigator-sidebar-toggle-push))
      ((eq tgl 'auto) (context-navigator-sidebar-toggle-auto-project))
