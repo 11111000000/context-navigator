@@ -16,9 +16,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Emacs ${{ matrix.emacs_version }}
-        uses: purcell/setup-emacs@v5
+        uses: jcs090218/setup-emacs@v1
         with:
-          version: ${{ matrix.emacs_version }}
+          emacs-version: ${{ matrix.emacs_version }}
 
       - name: Run ERT tests
         run: emacs -Q -batch -l test/run-tests.el -f ert-run-tests-batch-and-exit
