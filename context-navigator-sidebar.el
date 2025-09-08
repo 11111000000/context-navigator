@@ -334,6 +334,48 @@ PLUS is non-nil when CAP was reached."
           (and context-navigator-sidebar--openable-plus
                (> (or context-navigator-sidebar--openable-count 0) 0)))))
 
+;; Closable count helpers (footer [∅]) ---------------------------------------
+
+(defun context-navigator-sidebar--collect-closable-buffers ()
+  "Collect unique live buffers corresponding to current model items.
+Returns a list of buffer objects; excludes the sidebar buffer itself."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (seen (make-hash-table :test 'eq))
+         (res '())
+         (sidebar-buf (get-buffer context-navigator-sidebar--buffer-name)))
+    (dolist (it (or items '()))
+      (let ((type (context-navigator-item-type it)))
+        (cond
+         ((eq type 'buffer)
+          (let ((buf (or (context-navigator-item-buffer it)
+                         (and (context-navigator-item-path it)
+                              (get-file-buffer (context-navigator-item-path it))))))
+            (when (and (bufferp buf) (buffer-live-p buf)
+                       (not (eq buf sidebar-buf))
+                       (not (gethash buf seen)))
+              (puthash buf t seen)
+              (push buf res))))
+         ((eq type 'selection)
+          (let ((p (context-navigator-item-path it)))
+            (when (and (stringp p) (get-file-buffer p))
+              (let ((buf (get-file-buffer p)))
+                (when (and (buffer-live-p buf)
+                           (not (eq buf sidebar-buf))
+                           (not (gethash buf seen)))
+                  (puthash buf t seen)
+                  (push buf res))))))
+         ((eq type 'file)
+          (let ((p (context-navigator-item-path it)))
+            (when (and (stringp p) (get-file-buffer p))
+              (let ((buf (get-file-buffer p)))
+                (when (and (buffer-live-p buf)
+                           (not (eq buf sidebar-buf))
+                           (not (gethash buf seen)))
+                  (puthash buf t seen)
+                  (push buf res)))))))))
+    (nreverse res)))
+
 ;; Loading spinner helpers ----------------------------------------------------
 
 (defun context-navigator-sidebar--spinner-start ()
@@ -374,7 +416,7 @@ Degrades to a static indicator when timer slippage exceeds threshold."
 
 
 (defun context-navigator-sidebar--footer-control-segments ()
-  "Build footer control segments: toggles + [Open buffers], [Push now], [Clear group] and [Clear gptel].
+  "Build footer control segments: toggles + [Open buffers], [Close buffers], [Push now], [Clear group] and [Clear gptel].
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
@@ -418,29 +460,31 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                      'help-echo "No buffers to open")
                                s))
         (push s segs)))
-    ;; [Push now] — always shown; when auto-push is ON it is inactive (visually and without keymap).
-    (let* ((label (pcase style
-                    ((or 'icons 'auto) " [⇪]")
-                    (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
+    ;; [Close buffers] — close all live buffers that belong to the current group items
+    (let* ((closable-bufs (context-navigator-sidebar--collect-closable-buffers))
+           (closable (length closable-bufs))
+           (label (pcase style
+                    ((or 'icons 'auto) " [∅]")
+                    (_ (format " [%s]" (context-navigator-i18n :close-buffers)))))
            (s (copy-sequence label))
            (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-      ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
-      (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
-      (if push-on
-          ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
-          (add-text-properties beg (length s)
-                               (list 'face 'shadow
-                                     'help-echo (context-navigator-i18n :push-tip))
-                               s)
-        (let ((m (let ((km (make-sparse-keymap)))
-                   (define-key km [mouse-1] #'context-navigator-sidebar-push-now)
-                   km)))
-          (add-text-properties beg (length s)
-                               (list 'mouse-face 'highlight
-                                     'help-echo (context-navigator-i18n :push-tip)
-                                     'keymap m)
-                               s)))
-      (push s segs))
+      (add-text-properties beg (length s)
+                           (list 'context-navigator-action 'close-buffers)
+                           s)
+      (if (> closable 0)
+          (let ((m (let ((km (make-sparse-keymap)))
+                     (define-key km [mouse-1] #'context-navigator-sidebar-close-all-buffers)
+                     km)))
+            (add-text-properties beg (length s)
+                                 (list 'mouse-face 'highlight
+                                       'help-echo (format "Close %d context buffer(s)" closable)
+                                       'keymap m)
+                                 s))
+        (add-text-properties beg (length s)
+                             (list 'face 'shadow
+                                   'help-echo "No context buffers are open")
+                             s))
+      (push s segs))    
     ;; [Clear group] — clears current group's items; inactive when no items present.
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [✖]")
@@ -464,9 +508,32 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                    'help-echo (context-navigator-i18n :clear-group-tip))
                              s))
       (push s segs))
+    ;; [Push now] — always shown; when auto-push is ON it is inactive (visually and without keymap).
+    (let* ((label (pcase style
+                    ((or 'icons 'auto) " [⇪]")
+                    (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
+           (s (copy-sequence label))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+      ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
+      (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
+      (if push-on
+          ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
+          (add-text-properties beg (length s)
+                               (list 'face 'shadow
+                                     'help-echo (context-navigator-i18n :push-tip))
+                               s)
+        (let ((m (let ((km (make-sparse-keymap)))
+                   (define-key km [mouse-1] #'context-navigator-sidebar-push-now)
+                   km)))
+          (add-text-properties beg (length s)
+                               (list 'mouse-face 'highlight
+                                     'help-echo (context-navigator-i18n :push-tip)
+                                     'keymap m)
+                               s)))
+      (push s segs))
     ;; [Clear gptel] — inactive (shadowed) when no entries available. Use a distinct icon in icons-style.
     (let* ((label (pcase style
-                    ((or 'icons 'auto) " [∅]")
+                    ((or 'icons 'auto) " [⌦]")
                     (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
            (s (copy-sequence label))
            (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
@@ -1659,6 +1726,18 @@ Buffers are opened in background; we do not change window focus."
     (context-navigator-sidebar--schedule-render)
     (message "Opened %d context buffer(s) in background" count)))
 
+(defun context-navigator-sidebar-close-all-buffers ()
+  "Close all live buffers that belong to items in the current model."
+  (interactive)
+  (let* ((bufs (context-navigator-sidebar--collect-closable-buffers))
+         (count 0))
+    (dolist (b bufs)
+      (when (buffer-live-p b)
+        (ignore-errors (kill-buffer b))
+        (setq count (1+ count))))
+    (context-navigator-sidebar--schedule-render)
+    (message "Closed %d context buffer(s)" count)))
+
 (defun context-navigator-sidebar-clear-group ()
   "Clear current group's items and redraw immediately."
   (interactive)
@@ -1686,7 +1765,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-sidebar-activate ()
   "RET action:
 - On toggle segments in header: toggle push/auto flags
-- On footer action segments: invoke the assigned action (push/open buffers/clear group/clear gptel)
+- On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/clear gptel)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
@@ -1696,6 +1775,7 @@ Buffers are opened in background; we do not change window focus."
      ;; Footer actions (explicit)
      ((eq act 'push-now) (context-navigator-sidebar-push-now))
      ((eq act 'open-buffers) (context-navigator-sidebar-open-all-buffers))
+     ((eq act 'close-buffers) (context-navigator-sidebar-close-all-buffers))
      ((eq act 'clear-group) (context-navigator-sidebar-clear-group))
      ((eq act 'clear-gptel) (context-navigator-sidebar-clear-gptel))
      ;; Header toggles

@@ -214,6 +214,12 @@
      (fr . "ouvrir les tampons")
      (de . "puffer öffnen")
      (es . "abrir búferes"))
+    (:close-buffers
+     (en . "close buffers")
+     (ru . "закрыть буферы")
+     (fr . "fermer les tampons")
+     (de . "puffer schließen")
+     (es . "cerrar búferes"))
     (:toggle-push
      (en . "Toggle push to gptel (x)")
      (ru . "Переключить отправку в gptel (x)")
