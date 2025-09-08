@@ -403,19 +403,6 @@ Switching is throttled (configurable) and debounced.
 - Loading errors?
   If a group file is unreadable, the sidebar can auto-open the groups list (toggle in config). Press h to show groups.
 
-* Planned/Optional Screenshots (add as you make them)
-
-- context-navigator-items.png — Items view (already used)
-- context-navigator-groups.png — Groups view (already used)
-- context-navigator-transient.png — Transient menu (C-c n)
-- context-navigator-controls-icons.png — Compact header/footer controls with icons style
-- context-navigator-add-preview.png — Add Preview (Dired recursion/mask)
-- context-navigator-add-from-text.png — Add From Text (token extraction/resolution)
-- context-navigator-openable-counter.png — Footer openable counter in action
-- context-navigator-help.png — Localized help screen
-
-Feel free to name them differently — just update links accordingly.
-
 * License
 MIT — see LICENSE.
 
