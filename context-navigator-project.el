@@ -225,7 +225,7 @@ Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers.
       (let ((default-directory dir))
         (setq root
               (ignore-errors
-                (let ((pr (project-current t)))
+                (let ((pr (project-current nil))) ;; do not prompt when no project
                   (when pr
                     (car (project-roots pr))))))))
     (unless root

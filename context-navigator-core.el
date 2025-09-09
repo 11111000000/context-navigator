@@ -110,7 +110,7 @@ latest state at execution time; setting this to 0 disables debouncing
   "Default session state for pushing Navigator context to gptel."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-auto-project-switch nil
+(defcustom context-navigator-default-auto-project-switch t
   "Default session state for automatic project switching."
   :type 'boolean :group 'context-navigator)
 
@@ -733,6 +733,10 @@ Sets up event wiring and keybindings."
                               (ignore-errors (context-navigator-persist-save items root slug)))))))))))
               context-navigator--event-tokens)
         ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
+        ;; If auto-project is already ON, trigger an initial project switch immediately.
+        (when context-navigator--auto-project-switch
+          (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+            (context-navigator-events-publish :project-switch root)))
         (context-navigator--log "mode enabled"))
     ;; Teardown
     (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
