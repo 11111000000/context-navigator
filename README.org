@@ -31,10 +31,6 @@ Repository: https://github.com/11111000000/context-navigator
 #+attr_org: :width 760
 [[./context-navigator-transient.png]]
 
-#+caption: Compact controls (icons) — header toggles and footer actions with indicators
-#+attr_org: :width 820
-[[./context-navigator-controls-icons.png]]
-
 #+caption: Sidebar help — localized, column‑formatted keys
 #+attr_org: :width 820
 [[./context-navigator-help.png]]
