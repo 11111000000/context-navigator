@@ -1,6 +1,6 @@
 #+title: Emacs Context Navigator
 #+author: Peter Kosov <11111000000@email.com>
-#+options: toc:t num:t
+#+options: toc:t num:nil
 #+toc: headlines 2
 
 * Overview
