@@ -45,7 +45,9 @@
     (dolist (fn lst)
       (condition-case err
           (apply fn args)
-        (error (message "[context-navigator/events] subscriber error: %S" err))))))
+        (error (if (fboundp 'context-navigator-debug)
+                   (context-navigator-debug :error :events "subscriber error: %S" err)
+                 (message "[context-navigator/events] subscriber error: %S" err)))))))
 
 (defun context-navigator-events-debounce (key delay fn)
   "Debounce FN under KEY for DELAY seconds.

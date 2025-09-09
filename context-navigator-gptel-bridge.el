@@ -19,6 +19,7 @@
 (require 'subr-x)
 (require 'context-navigator-model)
 (require 'context-navigator-events)
+(require 'context-navigator-log)
 
 (defvar context-navigator--gptel-advices nil
   "List of (SYMBOL . FN) advices installed by this module.")
@@ -63,13 +64,12 @@ or the variable gptel-context / gptel--context."
       (setq src 'gptel--context
             val (ignore-errors (symbol-value 'gptel--context))))
      (t (setq src 'none val nil)))
-    (when (bound-and-true-p context-navigator-debug)
-      (message "[context-navigator/gptel] context-list via %s -> %s entries"
+    (context-navigator-debug :debug :gptel "context-list via %s -> %s entries"
                src (cond
                     ((listp val) (length val))
                     ((vectorp val) (length val))
                     ((null val) 0)
-                    (t 'unknown))))
+                    (t 'unknown)))
     val))
 
 (defun context-navigator-gptel--entry->item (entry)
@@ -86,7 +86,7 @@ Supports:
 - cons (PATH . PROPS) or bare PATH string (file item)
 
 Return a single item or a list of items, or nil."
-  (let ((dbg (bound-and-true-p context-navigator-debug)))
+  (let ((_dbg (bound-and-true-p context-navigator-debug)))
     (cond
      ;; Plist-style entry (preferred)
      ((and (listp entry)
@@ -127,7 +127,7 @@ Return a single item or a list of items, or nil."
             :path path
             :buffer buf
             :enabled t))
-          (_ (when dbg (message "[context-navigator/gptel] Unknown plist type in entry=%S" entry))
+          (_ (context-navigator-debug :debug :gptel "Unknown plist type in entry=%S" entry)
              nil))))
      ;; (BUFFER . REGS) style (overlays, pairs, lists with positions, or whole buffer markers)
      ((and (consp entry) (bufferp (car entry)))
@@ -227,14 +227,14 @@ Return a single item or a list of items, or nil."
                    :enabled t)
                   items))
            (t
-            (when dbg
-              (message "[context-navigator/gptel] Unknown buffer region element: %S (buf=%s)"
-                       r (buffer-name buf))))))
-        (when dbg
-          (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
-                 (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
-            (message "[context-navigator/gptel] parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
-                     (buffer-name buf) (length items) bufs sels)))
+            (context-navigator-debug :debug :gptel
+                                     "Unknown buffer region element: %S (buf=%s)"
+                                     r (buffer-name buf))))))
+        (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
+               (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
+          (context-navigator-debug :debug :gptel
+                                   "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
+                                   (buffer-name buf) (length items) bufs sels))
         (nreverse items)))
      ;; (PATH . PROPS) or bare \"path\" string
      ((or (and (consp entry) (stringp (car entry)))
@@ -244,9 +244,8 @@ Return a single item or a list of items, or nil."
           (context-navigator-item-create
            :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
      (t
-      (when dbg
-        (message "[context-navigator/gptel] Unknown entry shape: %S" entry))
-      nil))))
+      (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
+      nil)))
 
 (defun context-navigator-gptel-pull ()
   "Return list<context-navigator-item> reflecting current gptel context.
@@ -281,20 +280,20 @@ Robustness improvements:
                           (when (context-navigator-item-p el) (push el res)))
                         (nreverse res)))
                      (t
-                      (when (bound-and-true-p context-navigator-debug)
-                        (message "[context-navigator/gptel] Ignored entry->item result for entry=%S -> %S"
-                                 entry it))
+                      (context-navigator-debug :debug :gptel
+                                               "Ignored entry->item result for entry=%S -> %S"
+                                               entry it)
                       nil))))
                 raw)))
          (uniq (and flat (context-navigator-model-uniq flat))))
-    (when (bound-and-true-p context-navigator-debug)
-      (let* ((count (lambda (pred lst)
-                      (cl-count-if pred lst)))
-             (files (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'file)) uniq)))
-             (bufs  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'buffer)) uniq)))
-             (sels  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'selection)) uniq))))
-        (message "[context-navigator/gptel] pull -> items total=%s files=%s buffers=%s selections=%s"
-                 (length (or uniq '())) (or files 0) (or bufs 0) (or sels 0))))
+    (let* ((count (lambda (pred lst)
+                    (cl-count-if pred lst)))
+           (files (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'file)) uniq)))
+           (bufs  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'buffer)) uniq)))
+           (sels  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'selection)) uniq))))
+      (context-navigator-debug :debug :gptel
+                               "pull -> items total=%s files=%s buffers=%s selections=%s"
+                               (length (or uniq '())) (or files 0) (or bufs 0) (or sels 0)))
     uniq))
 
 (defun context-navigator-gptel--can-add-file () (fboundp 'gptel-context-add-file))
@@ -587,8 +586,7 @@ Used ONLY to keep UI indicators up-to-date; never imports from gptel."
 ;; our lightweight advices to keep UI indicators up-to-date. Do not force-load
 ;; gptel here — remain functional when gptel is absent.
 (with-eval-after-load 'gptel
-  (when (bound-and-true-p context-navigator-debug)
-    (message "[context-navigator/gptel] gptel loaded — registering change advices"))
+  (context-navigator-debug :info :gptel "gptel loaded — registering change advices")
   (when (fboundp 'context-navigator-gptel-on-change-register)
     (ignore-errors (context-navigator-gptel-on-change-register)))
   ;; Notify listeners (sidebar/UI) that gptel state might have changed so they can refresh.

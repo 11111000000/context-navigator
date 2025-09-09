@@ -1523,6 +1523,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "G")   #'context-navigator-sidebar-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-sidebar-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-sidebar-push-now)
+
     ;; Align with transient: X → unload context
     (define-key m (kbd "X")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-sidebar-clear-gptel)

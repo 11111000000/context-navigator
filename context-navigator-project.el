@@ -21,6 +21,15 @@
 
 (defun context-navigator-project--now () (float-time))
 
+(defun context-navigator-project--writable-root-p (dir)
+  "Return non-nil if DIR allows creating a subdirectory."
+  (let* ((abs (and dir (directory-file-name (expand-file-name dir)))))
+    (cond
+     ((null abs) nil)
+     ((file-directory-p abs) (file-writable-p abs))
+     (t (let ((parent (file-name-directory abs)))
+          (and parent (file-writable-p parent)))))))
+
 (defun context-navigator-project-current-root (&optional buffer)
   "Return absolute project root for BUFFER (or current) or nil.
 
@@ -53,7 +62,10 @@ This attempts several strategies for robustness:
              (let ((default-directory buf-dir))
                (ignore-errors (projectile-project-root)))))))
     (when (and (stringp root) (not (string-empty-p root)))
-      (directory-file-name (expand-file-name root)))))
+      (let ((abs (directory-file-name (expand-file-name root))))
+        (if (context-navigator-project--writable-root-p abs)
+            abs
+          nil)))))
 
 (defun context-navigator-project--interesting-buffer-p (buffer)
   "Return non-nil if BUFFER should trigger project switching.

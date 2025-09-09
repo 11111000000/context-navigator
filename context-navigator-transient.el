@@ -28,6 +28,7 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-path-add)
 (require 'context-navigator-sidebar)
+(require 'context-navigator-log)
 
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
@@ -56,7 +57,13 @@ Files larger than this threshold are skipped."
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
     ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
-    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)]])
+    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)]
+   ["Logs"
+    ("D" "Toggle logs" context-navigator-log-toggle)
+    ("L" "Open logs" context-navigator-log-open)
+    ("K" "Clear logs" context-navigator-log-clear)
+    ("V" "Set level" context-navigator-log-set-level)
+    ("F" "Toggle file log" context-navigator-log-toggle-file-persistence)]])
 
 
 (defun context-navigator-transient--maybe-apply-to-gptel ()

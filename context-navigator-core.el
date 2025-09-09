@@ -18,6 +18,7 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-project)
+(require 'context-navigator-log)
 
 ;; Compatibility shim: some Emacs/CL versions used in CI may not provide
 ;; `cl-copy-struct`. Provide a lightweight fallback so tests and code that
@@ -51,9 +52,7 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Auto refresh sidebar/model after external changes."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-debug nil
-  "Enable debug logging."
-  :type 'boolean :group 'context-navigator)
+
 
 (defcustom context-navigator-sidebar-width 33
   "Sidebar window width in columns."
@@ -156,8 +155,7 @@ or removed. This is enabled by default."
   (if (and context-navigator-protect-sidebar-windows
            (context-navigator--sidebar-visible-p))
       (progn
-        (when context-navigator-debug
-          (message "[context-navigator] Skipping window balancing while sidebar is visible"))
+        (context-navigator-debug :debug :core "Skipping window balancing while sidebar is visible")
         ;; No-op to avoid resizing/removing the sidebar window.
         nil)
     (apply orig-fn args)))
@@ -205,9 +203,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 (defalias 'copy-context-navigator-state #'context-navigator--state-copy)
 
 (defun context-navigator--log (fmt &rest args)
-  "Log debug message FMT with ARGS when `context-navigator-debug' is non-nil."
-  (when context-navigator-debug
-    (apply #'message (concat "[context-navigator] " fmt) args)))
+  "Log via centralized logger at :info level under :core topic."
+  (apply #'context-navigator-debug (append (list :info :core fmt) args)))
 
 (defun context-navigator--state-get ()
   "Return current global state value."
@@ -376,18 +373,6 @@ Graceful when gptel is absent: show an informative message and do nothing."
   (let ((root (ignore-errors (context-navigator-project-current-root (current-buffer)))))
     (let ((context-navigator--auto-project-switch t))
       (context-navigator--on-project-switch root))))
-
-(defun context-navigator--sync-from-gptel ()
-  "Deprecated: Navigator no longer pulls from gptel. No-op."
-  (when context-navigator-debug
-    (message "[context-navigator/core] sync-from-gptel is disabled"))
-  (context-navigator--state-get))
-(make-obsolete 'context-navigator--sync-from-gptel nil "0.3.0")
-
-(defun context-navigator--on-gptel-change (&rest _args)
-  "Deprecated: gptel changes no longer affect Navigator. No-op."
-  nil)
-(make-obsolete 'context-navigator--on-gptel-change nil "0.3.0")
 
 (defun context-navigator--load-group-for-root (root slug)
   "Load group SLUG for ROOT (or global) asynchronously and apply to gptel (batched)."

@@ -18,8 +18,7 @@
 (require 'subr-x)
 (require 'context-navigator-model)
 (require 'context-navigator-events)
-
-
+(require 'context-navigator-log)
 
 (defun context-navigator-persist--ensure-dir (dir)
   "Create DIR if missing, returning DIR."
@@ -40,6 +39,15 @@
             (symbol-value 'context-navigator-dir-name))
        ".context")
    (or root default-directory)))
+
+(defun context-navigator-persist--writable-target-dir-p (dir)
+  "Return non-nil if DIR exists and is writable, or its parent directory is writable when DIR is missing."
+  (let* ((d (and dir (file-name-as-directory (expand-file-name dir)))))
+    (cond
+     ((null d) nil)
+     ((file-directory-p d) (file-writable-p d))
+     (t (let ((parent (file-name-directory (directory-file-name d))))
+          (and parent (file-writable-p parent)))))))
 
 (defun context-navigator-persist-context-file (root &optional group-slug)
   "Return absolute path to context file for ROOT (or global).
@@ -164,18 +172,23 @@ Returns the file path or nil on error."
                 :items (delq nil (mapcar (lambda (it)
                                            (context-navigator-persist--item->sexp it root))
                                          items)))))
-    (condition-case err
+    (if (not (context-navigator-persist--writable-target-dir-p dir))
         (progn
-          (context-navigator-persist--ensure-dir dir)
-          (with-temp-file file
-            (let ((print-length nil)
-                  (print-level nil))
-              (prin1 payload (current-buffer))
-              (insert "\n")))
-          file)
-      (error
-       (message "[context-navigator/persist] save error: %S" err)
-       nil))))
+          (context-navigator-debug :warn :persist "skip save: target dir not writable: %s"
+                                   (abbreviate-file-name (or dir "")))
+          nil)
+      (condition-case err
+          (progn
+            (context-navigator-persist--ensure-dir dir)
+            (with-temp-file file
+              (let ((print-length nil)
+                    (print-level nil))
+                (prin1 payload (current-buffer))
+                (insert "\n")))
+            file)
+        (error
+         (context-navigator-debug :error :persist "save error: %S" err)
+         nil)))))
 
 (defun context-navigator-persist--read-one (file)
   "Read single s-exp from FILE safely (no eval)."
@@ -205,17 +218,15 @@ Emits debug messages mirroring the original behavior."
   (let ((raw (context-navigator-persist--read-one file)))
     (cond
      ((not raw)
-      (when (bound-and-true-p context-navigator-debug)
-        (message "[context-navigator/persist] empty or invalid form in %s"
-                 (abbreviate-file-name file)))
+      (context-navigator-debug :warn :persist "empty or invalid form in %s"
+                               (abbreviate-file-name file))
       nil)
      (t
       (condition-case err
           (context-navigator-persist-migrate-if-needed raw)
         (error
-         (when (bound-and-true-p context-navigator-debug)
-           (message "[context-navigator/persist] migrate error: %S (file=%s)"
-                    err (abbreviate-file-name file)))
+         (context-navigator-debug :error :persist "migrate error: %S (file=%s)"
+                                  err (abbreviate-file-name file))
          nil))))))
 
 (defun context-navigator-persist--process-items-async (items-pl root batch callback)
@@ -274,18 +285,23 @@ Publishes :context-load-step events during progress."
          (pl (if (and (listp state) (plist-member state :version))
                  state
                (plist-put (copy-sequence (or state '())) :version 1))))
-    (condition-case err
+    (if (not (context-navigator-persist--writable-target-dir-p dir))
         (progn
-          (context-navigator-persist--ensure-dir dir)
-          (with-temp-file file
-            (let ((print-length nil)
-                  (print-level nil))
-              (prin1 pl (current-buffer))
-              (insert "\n")))
-          file)
-      (error
-       (message "[context-navigator/persist] state save error: %S" err)
-       nil))))
+          (context-navigator-debug :warn :persist "skip state save: target dir not writable: %s"
+                                   (abbreviate-file-name (or dir "")))
+          nil)
+      (condition-case err
+          (progn
+            (context-navigator-persist--ensure-dir dir)
+            (with-temp-file file
+              (let ((print-length nil)
+                    (print-level nil))
+                (prin1 pl (current-buffer))
+                (insert "\n")))
+            file)
+        (error
+         (context-navigator-debug :error :persist "state save error: %S" err)
+         nil)))))
 
 (defun context-navigator-persist-slugify (name)
   "Normalize NAME to a safe group slug:
@@ -371,9 +387,8 @@ preloader without being blocked."
     (context-navigator-events-publish :context-load-start root)
     (if (not (context-navigator-persist--group-file-readable-p file))
         (progn
-          (when (bound-and-true-p context-navigator-debug)
-            (message "[context-navigator/persist] group file missing/unreadable: %s"
-                     (abbreviate-file-name (or file ""))))
+          (context-navigator-debug :warn :persist "group file missing/unreadable: %s"
+                                   (abbreviate-file-name (or file "")))
           (run-at-time 0 nil (lambda () (funcall callback nil))))
       ;; Defer blocking read/parse to avoid jank on project switch
       (run-at-time 0 nil
