@@ -42,6 +42,9 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
 ;; Forward declaration to avoid load cycle with sidebar
 (declare-function context-navigator-sidebar-toggle "context-navigator-sidebar" ())
 (declare-function context-navigator-sidebar-show-groups "context-navigator-sidebar" ())
+;; Forward declarations from project module (for byte-compiler friendliness)
+(declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
+(declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
 
 (defgroup context-navigator nil
   "Modern context manager for Emacs/gptel (functional core)."
@@ -103,11 +106,11 @@ latest state at execution time; setting this to 0 disables debouncing
   "Autoload context when switching projects."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-push-to-gptel t
+(defcustom context-navigator-default-push-to-gptel nil
   "Default session state for pushing Navigator context to gptel."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-auto-project-switch t
+(defcustom context-navigator-default-auto-project-switch nil
   "Default session state for automatic project switching."
   :type 'boolean :group 'context-navigator)
 
@@ -336,11 +339,20 @@ If no sidebar windows are present, behave like `delete-other-windows'."
   (context-navigator-refresh))
 
 (defun context-navigator-toggle-auto-project-switch ()
-  "Toggle session flag for automatic project switching."
+  "Toggle session flag for automatic project switching.
+When turning ON, immediately switch Navigator to the project of the most
+recently visited file-backed buffer (if any). If no file buffer has a
+project, fall back to the first \"interesting\" buffer (file/gptel/Dired).
+If still nothing is found, switch to the global context."
   (interactive)
   (setq context-navigator--auto-project-switch (not context-navigator--auto-project-switch))
   (message "Auto project switch: %s" (if context-navigator--auto-project-switch "on" "off"))
-  (context-navigator-refresh))
+  ;; Force a quick UI refresh for toggles
+  (context-navigator-refresh)
+  ;; On enabling auto-project, immediately pick an appropriate root and publish a switch.
+  (when context-navigator--auto-project-switch
+    (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+      (context-navigator-events-publish :project-switch root))))
 
 (defun context-navigator-push-to-gptel-now ()
   "Manually push current model to gptel (reset + add enabled).
@@ -1031,6 +1043,21 @@ When NO-CONFIRM is non-nil or Emacs runs in batch mode (noninteractive), do not 
     (context-navigator-groups-open)
     (message "Duplicated group %s → %s (%s)" src new-display dst)
     dst))
+
+(defun context-navigator--pick-root-for-autoproject ()
+  "Return a project root for immediate auto-project activation.
+Strategy:
+- Prefer the most recently visited file-backed buffer's project.
+- Fallback to the most recent \"interesting\" buffer (file/gptel/Dired).
+- As a last resort, return nil (global context)."
+  (let* ((buf-file
+          (cl-find-if (lambda (b) (with-current-buffer b buffer-file-name))
+                      (buffer-list)))
+         (root-file (and buf-file (context-navigator-project-current-root buf-file))))
+    (or root-file
+        (let* ((buf-any (cl-find-if #'context-navigator-project--interesting-buffer-p
+                                    (buffer-list))))
+          (and buf-any (context-navigator-project-current-root buf-any))))))
 
 (provide 'context-navigator-core)
 ;;; context-navigator-core.el ends here
