@@ -80,7 +80,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-group-delete "context-navigator-core" (&optional slug))
 (declare-function context-navigator-group-duplicate "context-navigator-core" (&optional src-slug new-display))
 
-(defconst context-navigator-sidebar--buffer-name "*context-navigator-sidebar/")
+(defconst context-navigator-sidebar--buffer-name "*context-navigator-sidebar*")
 
 (defvar-local context-navigator-sidebar--subs nil)
 (defvar-local context-navigator-sidebar--header "Context")
@@ -484,7 +484,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                              (list 'face 'shadow
                                    'help-echo "No context buffers are open")
                              s))
-      (push s segs))    
+      (push s segs))
     ;; [Clear group] — clears current group's items; inactive when no items present.
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [✖]")
@@ -1559,9 +1559,9 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-sidebar-mode-map (kbd "S-<tab>")   #'context-navigator-sidebar-tab-previous)
   ;; Ensure remaps also apply after reload
   (define-key context-navigator-sidebar-mode-map
-    [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
+              [remap indent-for-tab-command] #'context-navigator-sidebar-tab-next)
   (define-key context-navigator-sidebar-mode-map
-    [remap delete-other-windows]   #'context-navigator-delete-other-windows)
+              [remap delete-other-windows]   #'context-navigator-delete-other-windows)
   ;; New binding sync after reloads
   (define-key context-navigator-sidebar-mode-map (kbd "E") #'context-navigator-sidebar-clear-group))
 
