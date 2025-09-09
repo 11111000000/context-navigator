@@ -340,8 +340,9 @@ If no sidebar windows are present, behave like `delete-other-windows'."
 
 (defun context-navigator-toggle-auto-project-switch ()
   "Toggle session flag for automatic project switching.
-When turning ON, immediately switch Navigator to the project of the most
-recently visited file-backed buffer (if any). If no file buffer has a
+When turning ON, ensure `context-navigator-mode' is enabled so the core subscribes
+to :project-switch events. Then immediately switch Navigator to the project of
+the most recently visited file-backed buffer (if any). If no file buffer has a
 project, fall back to the first \"interesting\" buffer (file/gptel/Dired).
 If still nothing is found, switch to the global context."
   (interactive)
@@ -349,8 +350,10 @@ If still nothing is found, switch to the global context."
   (message "Auto project switch: %s" (if context-navigator--auto-project-switch "on" "off"))
   ;; Force a quick UI refresh for toggles
   (context-navigator-refresh)
-  ;; On enabling auto-project, immediately pick an appropriate root and publish a switch.
+  ;; On enabling auto-project, ensure mode is on and then publish a project switch.
   (when context-navigator--auto-project-switch
+    (unless (bound-and-true-p context-navigator-mode)
+      (context-navigator-mode 1))
     (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
       (context-navigator-events-publish :project-switch root))))
 
