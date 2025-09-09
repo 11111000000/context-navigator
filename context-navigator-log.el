@@ -184,12 +184,33 @@ When disabled, still capture :error."
 
 ;;;###autoload
 (defun context-navigator-log-toggle ()
-  "Toggle logging enable flag."
+  "Toggle logging enable flag and report the new state in the echo area and the log."
   (interactive)
   (setq context-navigator-log-enabled (not context-navigator-log-enabled))
-  (context-navigator-debug :info :log "logging %s (level=%s)"
-                           (if context-navigator-log-enabled "ON" "OFF")
-                           context-navigator-log-level))
+  (let* ((state (if context-navigator-log-enabled "ON" "OFF"))
+         (msg (format "logging %s (level=%s)" state context-navigator-log-level)))
+    ;; Echo current state
+    (message "Context Navigator: %s" msg)
+    ;; Force-write a line into the log buffer regardless of current settings
+    (let* ((line (context-navigator-log--format-line :info :log msg))
+           (buf  (context-navigator-log--ensure-buffer)))
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (save-excursion
+            (goto-char (point-max))
+            (let ((start (point)))
+              (insert line "\n")
+              ;; Colorize the [TOPIC] segment with the face matching :info
+              (let* ((m (string-match "\\[[^]]+\\]\\(\\[[^]]+\\]\\)" line))
+                     (lb (and m (+ start (match-beginning 1))))
+                     (le (and m (+ start (match-end 1)))))
+                (when (and lb le)
+                  (add-text-properties lb le
+                                       (list 'face (context-navigator-log--face-for :info)))))))))
+      (context-navigator-log--trim-if-needed buf)
+      (context-navigator-log--append-file line)))
+  ;; Return the new enable state
+  context-navigator-log-enabled)
 
 ;;;###autoload
 (defun context-navigator-log-open ()

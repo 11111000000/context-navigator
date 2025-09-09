@@ -43,34 +43,33 @@
 (defun context-navigator-gptel--context-list ()
   "Return raw gptel context entries or nil if unavailable.
 
-Try several common gptel entry sources for compatibility with multiple
-gptel versions: gptel-context-list, gptel-context--alist, gptel-context--collect,
-or the variable gptel-context / gptel--context."
-  (let (src val)
-    (cond
-     ((fboundp 'gptel-context-list)
-      (setq src 'gptel-context-list
-            val (ignore-errors (gptel-context-list))))
-     ((boundp 'gptel-context--alist)
-      (setq src 'gptel-context--alist
-            val (ignore-errors (symbol-value 'gptel-context--alist))))
-     ((fboundp 'gptel-context--collect)
-      (setq src 'gptel-context--collect
-            val (ignore-errors (gptel-context--collect))))
-     ((boundp 'gptel-context)
-      (setq src 'gptel-context
-            val (ignore-errors (symbol-value 'gptel-context))))
-     ((boundp 'gptel--context)
-      (setq src 'gptel--context
-            val (ignore-errors (symbol-value 'gptel--context))))
-     (t (setq src 'none val nil)))
-    (context-navigator-debug :debug :gptel "context-list via %s -> %s entries"
-               src (cond
-                    ((listp val) (length val))
-                    ((vectorp val) (length val))
-                    ((null val) 0)
-                    (t 'unknown)))
-    val))
+Try several sources in a robust order. Prefer dynamic variables used by tests,
+then public API, then internal variables/collectors. Return the first non-empty
+sequence; if all are empty, return the first sequence (possibly empty)."
+  (let* ((candidates
+          (delq nil
+                (list
+                 ;; Prefer plain variable used in tests and some gptel versions
+                 (and (boundp 'gptel--context)
+                      (ignore-errors (symbol-value 'gptel--context)))
+                 ;; Then public variable
+                 (and (boundp 'gptel-context)
+                      (ignore-errors (symbol-value 'gptel-context)))
+                 ;; Public API
+                 (and (fboundp 'gptel-context-list)
+                      (ignore-errors (gptel-context-list)))
+                 ;; Internal shapes seen in the wild
+                 (and (boundp 'gptel-context--alist)
+                      (ignore-errors (symbol-value 'gptel-context--alist)))
+                 (and (fboundp 'gptel-context--collect)
+                      (ignore-errors (gptel-context--collect))))))
+         (nonempty (cl-find-if (lambda (v)
+                                 (and (sequencep v)
+                                      (> (length v) 0)))
+                               candidates))
+         (any-seq (or nonempty
+                      (cl-find-if (lambda (v) (sequencep v)) candidates))))
+    any-seq))
 
 (defun context-navigator-gptel--entry->item (entry)
   "Convert various gptel ENTRY shapes into one or more context-navigator-item objects.
@@ -123,7 +122,10 @@ Return a single item or a list of items, or nil."
           ((or 'buffer :buffer)
            (context-navigator-item-create
             :type 'buffer
-            :name (or name (and (bufferp buf) (buffer-name buf)) "<buffer>")
+            :name (or name
+                      (and (stringp path) (file-name-nondirectory path))
+                      (and (bufferp buf) (buffer-name buf))
+                      "<buffer>")
             :path path
             :buffer buf
             :enabled t))
@@ -230,22 +232,22 @@ Return a single item or a list of items, or nil."
             (context-navigator-debug :debug :gptel
                                      "Unknown buffer region element: %S (buf=%s)"
                                      r (buffer-name buf))))))
-        (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
-               (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
-          (context-navigator-debug :debug :gptel
-                                   "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
-                                   (buffer-name buf) (length items) bufs sels))
-        (nreverse items)))
-     ;; (PATH . PROPS) or bare \"path\" string
-     ((or (and (consp entry) (stringp (car entry)))
-          (stringp entry))
-      (let ((path (if (stringp entry) entry (car entry))))
-        (when (and (stringp path) (file-exists-p path))
-          (context-navigator-item-create
-           :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
-     (t
-      (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
-      nil)))
+      (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
+             (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
+        (context-navigator-debug :debug :gptel
+                                 "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
+                                 (buffer-name buf) (length items) bufs sels))
+      (nreverse items)))
+    ;; (PATH . PROPS) or bare \"path\" string
+    ((or (and (consp entry) (stringp (car entry)))
+         (stringp entry))
+     (let ((path (if (stringp entry) entry (car entry))))
+       (when (and (stringp path) (file-exists-p path))
+         (context-navigator-item-create
+          :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
+    (t
+     (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
+     nil)))
 
 (defun context-navigator-gptel-pull ()
   "Return list<context-navigator-item> reflecting current gptel context.
@@ -256,9 +258,32 @@ entry->item converter and returns a unique list of items.
 Robustness improvements:
 - Accept a single item, a list/vector of items, or mixed lists and extract valid items.
 - When `context-navigator-debug' is non-nil, log unexpected conversions."
-  (let* ((raw (context-navigator-gptel--context-list))
+  (let* ((raw (or (context-navigator-gptel--context-list)
+                  ;; Fallback for tests/older gptel shapes using a plain variable
+                  (and (boundp 'gptel--context)
+                       (ignore-errors (symbol-value 'gptel--context)))))
+         ;; Normalize RAW to a proper sequence of entries:
+         ;; - vector -> list
+         ;; - single plist entry -> wrap into a list
+         ;; - list of entries -> keep as-is
+         (seq (cond
+               ((null raw) nil)
+               ((vectorp raw) (append raw nil))
+               ;; already a list of entries (heuristic: first element is a plist/alist)
+               ((and (listp raw)
+                     (or (null raw)
+                         (and (listp (car raw))
+                              (or (plist-member (car raw) :type)
+                                  (plist-member (car raw) 'type)))))
+                raw)
+               ;; single plist-like entry
+               ((and (listp raw)
+                     (or (plist-member raw :type)
+                         (plist-member raw 'type)))
+                (list raw))
+               (t raw)))
          (flat
-          (and raw
+          (and seq
                (mapcan
                 (lambda (entry)
                   (let ((it (ignore-errors (context-navigator-gptel--entry->item entry))))
@@ -284,7 +309,7 @@ Robustness improvements:
                                                "Ignored entry->item result for entry=%S -> %S"
                                                entry it)
                       nil))))
-                raw)))
+                seq)))
          (uniq (and flat (context-navigator-model-uniq flat))))
     (let* ((count (lambda (pred lst)
                     (cl-count-if pred lst)))
@@ -381,7 +406,7 @@ errors from different gptel versions."
       ('file
        (ignore-errors
          (context-navigator--silence-messages
-          (gptel-context-remove (context-navigator-item-path item))))
+           (gptel-context-remove (context-navigator-item-path item))))
        t)
       ('buffer
        (let ((buf  (context-navigator-item-buffer item))

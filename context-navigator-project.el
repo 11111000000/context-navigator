@@ -21,6 +21,40 @@
 
 (defun context-navigator-project--now () (float-time))
 
+(defgroup context-navigator-project nil
+  "Project detection settings for Context Navigator."
+  :group 'context-navigator)
+
+(defcustom context-navigator-project-nonfile-modes
+  '(gptel-mode comint-mode term-mode vterm-mode eshell-mode shell-mode ansi-term eat-mode
+               dired-mode wdired-mode)
+  "List of non-file major modes that may represent a real project context.
+Buffers in these modes are considered interesting when their default-directory
+resolves to a project root."
+  :type '(repeat symbol)
+  :group 'context-navigator-project)
+
+(defcustom context-navigator-project-stick-to-last-root t
+  "When non-nil, ignore transient automatic transitions to global (nil root).
+Keeps the last non-nil project root until a new valid root is detected."
+  :type 'boolean
+  :group 'context-navigator-project)
+
+(defun context-navigator-project--corfu-buffer-p (&optional buffer)
+  "Return non-nil if BUFFER looks like a corfu internal buffer."
+  (let ((b (or buffer (current-buffer))))
+    (and (buffer-live-p b)
+         (let ((name (buffer-name b)))
+           (and (stringp name)
+                (or (string-prefix-p " *corfu" name)
+                    (string-prefix-p " *Corfu" name)))))))
+
+(defun context-navigator-project--child-frame-p (&optional frame)
+  "Return non-nil when FRAME (or selected) is a child frame (posframe/popups)."
+  (let ((f (or frame (selected-frame))))
+    (and (frame-live-p f)
+         (frame-parameter f 'parent-frame))))
+
 (defun context-navigator-project--writable-root-p (dir)
   "Return non-nil if DIR allows creating a subdirectory."
   (let* ((abs (and dir (directory-file-name (expand-file-name dir)))))
@@ -70,16 +104,22 @@ This attempts several strategies for robustness:
 (defun context-navigator-project--interesting-buffer-p (buffer)
   "Return non-nil if BUFFER should trigger project switching.
 
-Previously Dired buffers were excluded; include them so that entering a
-Dired buffer inside a project also triggers project context loading when
-auto-project switching is enabled."
-  (with-current-buffer buffer
-    (and
-     ;; Trigger on file-backed buffers, gptel buffers (or modes derived from it),
-     ;; and also Dired buffers.
-     (or buffer-file-name
-         (derived-mode-p 'gptel-mode)
-         (derived-mode-p 'dired-mode)))))
+Considers:
+- file-backed buffers;
+- non-file interactive modes (gptel, comint/term/eshell/vterm/shell, etc.)
+  when their default-directory resolves to a project root.
+
+Excludes minibuffers, child-frame popups and corfu internal buffers."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (not (minibufferp buffer))
+              (not (context-navigator-project--corfu-buffer-p buffer))
+              (or buffer-file-name
+                  (let* ((is-nonfile
+                          (cl-some (lambda (m) (derived-mode-p m))
+                                   context-navigator-project-nonfile-modes)))
+                    (and is-nonfile
+                         (context-navigator-project-current-root buffer))))))))
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)
   "Publish :project-switch only when the project root actually changes.
@@ -87,10 +127,18 @@ auto-project switching is enabled."
 Throttled by `context-navigator-context-switch-interval' to avoid publishing
 a flurry of events during rapid buffer/window changes. When a change is
 detected but the last publish was too recent, schedule a debounced publish
-for the remaining interval."
+for the remaining interval.
+
+Sticky policy: when `context-navigator-project-stick-to-last-root' is non-nil,
+do not auto-switch to global (nil root) on transient glitches — keep the last
+valid root."
   (let* ((buf (or buffer (current-buffer))))
     (when (context-navigator-project--interesting-buffer-p buf)
-      (let* ((root (context-navigator-project-current-root buf)))
+      (let* ((computed (context-navigator-project-current-root buf))
+             (root (if (or computed (not context-navigator-project-stick-to-last-root))
+                       computed
+                     ;; computed is nil and sticky is enabled → stick to last-root
+                     context-navigator-project--last-root)))
         (unless (equal root context-navigator-project--last-root)
           (let* ((now (context-navigator-project--now))
                  (elapsed (and (numberp context-navigator-project--last-switch-time)
@@ -116,10 +164,24 @@ for the remaining interval."
             nil))))))
 
 (defun context-navigator-project--on-buffer-list-update ()
-  (context-navigator-project--maybe-publish-switch (current-buffer)))
+  "Hook: evaluate current buffer for project switch when appropriate.
+
+Ignore events coming from child frames (posframe/popups) and
+when the current buffer is a minibuffer or a corfu internal buffer."
+  (unless (or (context-navigator-project--child-frame-p)
+              (minibufferp (current-buffer))
+              (context-navigator-project--corfu-buffer-p (current-buffer)))
+    (context-navigator-project--maybe-publish-switch (current-buffer))))
 
 (defun context-navigator-project--on-window-selection-change (_frame)
-  (context-navigator-project--maybe-publish-switch (window-buffer (selected-window))))
+  "Hook: react to real window selection changes only.
+
+Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers."
+  (let ((win (selected-window)))
+    (unless (or (context-navigator-project--child-frame-p (selected-frame))
+                (minibufferp (window-buffer win))
+                (context-navigator-project--corfu-buffer-p (window-buffer win)))
+      (context-navigator-project--maybe-publish-switch (window-buffer win)))))
 
 (defun context-navigator-project-setup-hooks ()
   "Install lightweight hooks to track project changes."
@@ -136,6 +198,97 @@ for the remaining interval."
     (remove-hook 'window-selection-change-functions #'context-navigator-project--on-window-selection-change)
     (setq context-navigator-project--hooks-installed nil))
   t)
+
+;; --- Autoproj: Dired + GPTel/org gptel-aibo integration (built-in) ---
+
+(require 'cl-lib)
+(require 'subr-x)
+
+;; Ensure Dired modes are considered interesting non-file modes
+(when (boundp 'context-navigator-project-nonfile-modes)
+  (dolist (m '(dired-mode wdired-mode))
+    (add-to-list 'context-navigator-project-nonfile-modes m)))
+
+;; Helpers
+
+(defun context-navigator-project--local-writable-dir-p (dir)
+  "Return non-nil when DIR is a local, existing, writable directory."
+  (and (stringp dir)
+       (not (file-remote-p dir))
+       (file-directory-p dir)
+       (file-writable-p dir)))
+
+(defun context-navigator-project--project-root-of-dir (dir)
+  "Best-effort project root of DIR using project.el then projectile, or nil."
+  (let (root)
+    (when (and (fboundp 'project-current) (fboundp 'project-roots))
+      (let ((default-directory dir))
+        (setq root
+              (ignore-errors
+                (let ((pr (project-current t)))
+                  (when pr
+                    (car (project-roots pr))))))))
+    (unless root
+      (when (fboundp 'projectile-project-root)
+        (let ((default-directory dir))
+          (setq root (ignore-errors (projectile-project-root))))))
+    (when (and root (not (file-remote-p root)))
+      (directory-file-name root))))
+
+(defun context-navigator-project--project-root-of-buffer (&optional buffer)
+  "Best-effort project root of BUFFER's default-directory."
+  (with-current-buffer (or buffer (current-buffer))
+    (let* ((dir default-directory)
+           (root (and (stringp dir)
+                      (context-navigator-project--project-root-of-dir dir))))
+      (and root (directory-file-name root)))))
+
+(defun context-navigator-project--frame-file-project-root ()
+  "Find the first file-visiting window on current frame; return its project root or nil."
+  (let ((wins (window-list (selected-frame) 'no-minibuffer)))
+    (cl-loop for w in wins
+             for b = (window-buffer w)
+             for f = (with-current-buffer b buffer-file-name)
+             when (and f (file-exists-p f))
+             do (let* ((dir (file-name-directory f))
+                       (root (context-navigator-project--project-root-of-dir dir)))
+                  (when (context-navigator-project--local-writable-dir-p root)
+                    (cl-return (directory-file-name root))))
+             finally (cl-return nil))))
+
+;; Advice: extend interesting-buffer predicate for Dired and gptel-aibo minor mode
+(when (fboundp 'context-navigator-project--interesting-buffer-p)
+  (defun context-navigator-project--interesting-buffer-p/a (orig buf)
+    (or
+     (funcall orig buf)
+     (with-current-buffer buf
+       (or
+        ;; All Dired variants
+        (derived-mode-p 'dired-mode)
+        ;; org buffer with custom GPTel minor mode
+        (bound-and-true-p gptel-aibo-mode)))))
+  (advice-add 'context-navigator-project--interesting-buffer-p
+              :around #'context-navigator-project--interesting-buffer-p/a))
+
+;; Advice: add heuristic fallback for current-root resolution (policy B)
+(when (fboundp 'context-navigator-project-current-root)
+  (defun context-navigator-project--current-root/a (orig &rest args)
+    (let* ((root (ignore-errors (apply orig args))))
+      (cond
+       ;; Use original if it's a suitable local writable root
+       ((and (stringp root)
+             (context-navigator-project--local-writable-dir-p root))
+        (directory-file-name root))
+       (t
+        ;; Heuristic: use project root from any file-visiting window in current frame
+        (let ((fr (context-navigator-project--frame-file-project-root)))
+          (and (stringp fr)
+               (context-navigator-project--local-writable-dir-p fr)
+               (directory-file-name fr)))))))
+  (advice-add 'context-navigator-project-current-root
+              :around #'context-navigator-project--current-root/a))
+
+;; Removed duplicate Autoproj block (cn-autoproj--) to avoid double advices.
 
 (provide 'context-navigator-project)
 ;;; context-navigator-project.el ends here

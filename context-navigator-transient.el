@@ -238,12 +238,16 @@ TRAMP/remote: show a warning and confirm before proceeding."
             ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
             (context-navigator-transient--add-files files))))))
 
-   ;; Active region -> selection item
-   ((use-region-p)
+   ;; Active region -> selection item (robust even when transient-mark-mode is off)
+   ((let ((mk (mark t)))
+      (and (number-or-marker-p mk)
+           (not (equal mk (point)))))
     (let* ((b   (current-buffer))
            (p   (buffer-file-name b))
-           (beg (region-beginning))
-           (end (region-end))
+           (mk  (mark t))
+           (mpos (if (markerp mk) (marker-position mk) mk))
+           (beg (min (point) mpos))
+           (end (max (point) mpos))
            (nm (if p
                    (format "%s:%s-%s" (file-name-nondirectory p) beg end)
                  (format "%s:%s-%s" (buffer-name b) beg end)))

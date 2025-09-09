@@ -165,12 +165,21 @@ so that re-renders triggered by timers do not cause the cursor to jump to BOL or
            (old-line  (save-excursion (goto-char old-point) (line-number-at-pos)))
            (old-col   (save-excursion (goto-char old-point) (current-column)))
            (old-start (and (window-live-p win) (window-start win)))
-           (new-text  (concat (mapconcat #'identity lines "\n") "\n"))
-           (new-hash  (sxhash-equal new-text))
+           ;; Compute plain text for hashing (strip properties) to avoid false misses
+           (text-plain (concat
+                        (mapconcat (lambda (s)
+                                     (if (stringp s) (substring-no-properties s) ""))
+                                   lines
+                                   "\n")
+                        "\n"))
+           (new-hash  (sxhash-equal text-plain))
            (changed   (not (equal context-navigator-render--last-hash new-hash))))
       (when changed
         (erase-buffer)
-        (insert new-text)
+        ;; Insert each line separately to preserve text properties (keymaps, mouse-face, etc.)
+        (dolist (ln lines)
+          (when (stringp ln) (insert ln))
+          (insert "\n"))
         (setq context-navigator-render--last-hash new-hash)
         ;; Compute target position from saved line/column
         (let ((target
