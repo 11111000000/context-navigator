@@ -242,7 +242,9 @@ Return a single item or a list of items, or nil."
     ((or (and (consp entry) (stringp (car entry)))
          (stringp entry))
      (let ((path (if (stringp entry) entry (car entry))))
-       (when (and (stringp path) (file-exists-p path))
+       ;; Be tolerant: create a file item even if the file doesn't exist.
+       ;; Tests and some gptel setups provide logical paths without touching the FS.
+       (when (and (stringp path) (not (string-empty-p path)))
          (context-navigator-item-create
           :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
     (t
