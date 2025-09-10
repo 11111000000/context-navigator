@@ -514,6 +514,33 @@
      (be . "  ? для даведкі")
      (zh . "  ? 帮助")
      (ja . "  ? ヘルプ"))
+    (:groups-help-open
+     (en . " RET: open group")
+     (ru . " RET: открыть группу"))
+    (:groups-help-add
+     (en . " a: add group")
+     (ru . " a: создать группу"))
+    (:groups-help-rename
+     (en . " r: rename")
+     (ru . " r: переименовать"))
+    (:groups-help-delete
+     (en . " d: delete")
+     (ru . " d: удалить"))
+    (:groups-help-copy
+     (en . " c: duplicate")
+     (ru . " c: дублировать"))
+    (:groups-help-refresh
+     (en . " g: refresh")
+     (ru . " g: обновить"))
+    (:groups-help-back
+     (en . " h: back to items")
+     (ru . " h: к элементам"))
+    (:groups-help-quit
+     (en . " q: quit")
+     (ru . " q: выйти"))
+    (:groups-help-help
+     (en . " ?: help")
+     (ru . " ?: справка"))
     (:preview-title
      (en . "Will add %d file(s), total ~%s")
      (ru . "Будет добавлено %d файл(ов), всего ~%s")
