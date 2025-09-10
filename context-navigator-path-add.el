@@ -633,43 +633,60 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
 Rules:
 - If input contains glob metacharacters (* ? [ ]) → mask mode
 - Only one mask is supported at a time
-- Mixing mask and explicit names is not allowed"
+- Mixed input: masks are ignored; only explicit names are added"
   (interactive)
   (let* ((prompt (format "%s: " (context-navigator-i18n :mask-minibuf-prompt)))
          (input (read-from-minibuffer prompt nil nil nil nil nil t))
-         (tokens (context-navigator-extract-pathlike-tokens (or input "")))
          (has-mask-in-input (context-navigator--input-has-mask-p (or input ""))))
-    (cond
-     ;; No tokens extracted:
-     ;; If raw input clearly contains mask metacharacters, treat the raw input as a mask.
-     ((and has-mask-in-input (null tokens))
-      (context-navigator-add-files-from-mask (string-trim (or input "")) t))
-     ;; No tokens and no mask — nothing to do
-     ((null tokens)
-      (message "%s" (context-navigator-i18n :unresolved-found)))
-     (t
-      (let* ((mask-tokens (cl-remove-if-not #'context-navigator--input-has-mask-p tokens))
-             (name-tokens (cl-remove-if #'context-navigator--input-has-mask-p tokens)))
-        (cond
-         ;; Mixed: names + mask
-         ((and has-mask-in-input
-               (> (length mask-tokens) 0)
-               (> (length name-tokens) 0))
+    ;; First pass: decide using raw segments so explicit names always win.
+    (let* ((parts (cl-remove-if (lambda (s) (or (null s) (string-empty-p s)))
+                                (split-string (or input "") "[ \t]+" t)))
+           (norm (delq nil (mapcar (lambda (s)
+                                     (let ((n (context-navigator-path-add--normalize-token s)))
+                                       (and (stringp n) (not (string-empty-p n)) n)))
+                                   parts)))
+           (name-raw (cl-remove-if #'context-navigator--input-has-mask-p norm))
+           (mask-raw (cl-remove-if-not #'context-navigator--input-has-mask-p norm)))
+      (cond
+       ;; Explicit names present → ignore any masks entirely.
+       ((> (length name-raw) 0)
+        (when (> (length mask-raw) 0)
           (message "%s" (context-navigator-i18n :mask-mixed-input)))
-         ;; Too many masks at once
-         ((> (length mask-tokens) 1)
-          (message "%s" (context-navigator-i18n :mask-only-one)))
-         ;; Single mask token extracted
-         ((= (length mask-tokens) 1)
-          (let ((pattern (car mask-tokens)))
-            (context-navigator-add-files-from-mask pattern t)))
-         ;; Raw input has mask but tokenization didn't classify any token as a mask:
-         ;; fall back to treating the entire input as a single mask.
-         ((and has-mask-in-input (= (length mask-tokens) 0))
-          (context-navigator-add-files-from-mask (string-trim (or input "")) t))
-         ;; No mask → legacy behavior (list of names/paths)
-         (t
-          (context-navigator-add-files-from-names tokens t))))))))
+        (let ((names (cl-remove-if-not #'context-navigator-path-add--token-acceptable-p name-raw)))
+          (if (> (length names) 0)
+              (context-navigator-add-files-from-names names t)
+            (message "%s" (context-navigator-i18n :unresolved-found)))))
+       ;; Too many masks
+       ((> (length mask-raw) 1)
+        (message "%s" (context-navigator-i18n :mask-only-one)))
+       ;; Single mask
+       ((= (length mask-raw) 1)
+        (context-navigator-add-files-from-mask (car mask-raw) t))
+       ;; Fallback to tokenizer-based logic for tricky inputs (quotes/dired-like lines)
+       (t
+        (let* ((tokens (context-navigator-extract-pathlike-tokens (or input ""))))
+          (cond
+           ;; Raw input clearly has mask meta but tokenizer produced no tokens
+           ((and has-mask-in-input (null tokens))
+            (context-navigator-add-files-from-mask (string-trim (or input "")) t))
+           ((null tokens)
+            (message "%s" (context-navigator-i18n :unresolved-found)))
+           (t
+            (let* ((mask-tokens (cl-remove-if-not #'context-navigator--input-has-mask-p tokens))
+                   (name-tokens (cl-remove-if #'context-navigator--input-has-mask-p tokens)))
+              (cond
+               ((> (length name-tokens) 0)
+                (when (> (length mask-tokens) 0)
+                  (message "%s" (context-navigator-i18n :mask-mixed-input)))
+                (context-navigator-add-files-from-names name-tokens t))
+               ((> (length mask-tokens) 1)
+                (message "%s" (context-navigator-i18n :mask-only-one)))
+               ((= (length mask-tokens) 1)
+                (context-navigator-add-files-from-mask (car mask-tokens) t))
+               ((and has-mask-in-input (= (length mask-tokens) 0))
+                (context-navigator-add-files-from-mask (string-trim (or input "")) t))
+               (t
+                (context-navigator-add-files-from-names tokens t))))))))))))
 
 ;; -----------------------------------------------------------------------------
 ;; Mask/glob helpers (v1)

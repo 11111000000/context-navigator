@@ -215,8 +215,8 @@
      (zh . "无效的通配符：%s")
      (ja . "無効なマスク: %s"))
     (:mask-mixed-input
-     (en . "Either mask or list of names. Split the operation.")
-     (ru . "Либо маска, либо список имён. Разделите операции.")
+     (en . "Mixed input: ignoring mask(s), adding explicit names")
+     (ru . "Смешанный ввод: игнорируем маску(и), добавляем явные имена")
      (fr . "Masque ou liste de noms, pas les deux. Scindez l’opération.")
      (de . "Entweder Maske oder Namensliste. Vorgang aufteilen.")
      (es . "Máscara o lista de nombres. Divida la operación.")

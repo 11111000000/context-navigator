@@ -44,7 +44,7 @@
 (require 'context-navigator-groups-delete-test)
 (require 'context-navigator-mask-tests)
 (require 'context-navigator-mask-posix-class-test)
-(require 'context-navigator-add-from-minibuffer-mask-test)
+(require 'context-navigator-minibuf-mixed-input-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

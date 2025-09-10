@@ -16,13 +16,5 @@
     (funcall #'context-navigator--set-state st)
     st))
 
-(ert-deftest context-navigator-core/merge-disabled-on-sync ()
-  "sync-from-gptel was removed — test skipped."
-  (ert-skip "Navigator no longer pulls from gptel"))
-
-(ert-deftest context-navigator-core/on-gptel-change-gated-by-inhibit-refresh ()
-  "gptel-change handler removed — test skipped."
-  (ert-skip "Navigator no longer listens to gptel-change"))
-
 (provide 'context-navigator-core-test)
 ;;; context-navigator-core-test.el ends here
