@@ -1269,6 +1269,18 @@ Order of operations:
              (context-navigator-sidebar--schedule-render))))
         context-navigator-sidebar--subs))
 
+(defun context-navigator-sidebar--subscribe-project-events ()
+  "Subscribe to project switch updates to refresh groups list when needed."
+  (push (context-navigator-events-subscribe
+         :project-switch
+         (lambda (_root)
+           ;; Invalidate cached groups and refresh when groups view is active.
+           (setq context-navigator-sidebar--groups nil)
+           (when (eq context-navigator-sidebar--mode 'groups)
+             (ignore-errors (context-navigator-groups-open))
+             (context-navigator-sidebar--schedule-render))))
+        context-navigator-sidebar--subs))
+
 (defun context-navigator-sidebar--subscribe-gptel-events ()
   "Subscribe to gptel changes and keep cached keys in sync."
   (push (context-navigator-events-subscribe
@@ -1435,6 +1447,7 @@ Guard against duplicate subscriptions."
     (context-navigator-sidebar--subscribe-model-events)
     (context-navigator-sidebar--subscribe-load-events)
     (context-navigator-sidebar--subscribe-groups-events)
+    (context-navigator-sidebar--subscribe-project-events)
     ;; gptel events + advices + initial cache
     (context-navigator-sidebar--subscribe-gptel-events)
     (ignore-errors (context-navigator-gptel-on-change-register))
