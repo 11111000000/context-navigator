@@ -33,43 +33,104 @@
          (message-log-max nil))
      ,@body))
 
+(defun context-navigator-gptel--ensure-loaded ()
+  "Try to load gptel once. Return non-nil when loaded."
+  (or (featurep 'gptel)
+      (ignore-errors (require 'gptel nil t))))
+
 (defun context-navigator-gptel-available-p ()
-  "Return non-nil when gptel context functions are available."
+  "Return non-nil when gptel context functions are available.
+Attempts to soft-require gptel on first call."
+  (context-navigator-gptel--ensure-loaded)
   (or (boundp 'gptel-context)
       (fboundp 'gptel-context-add)
       (fboundp 'gptel-context-add-file)
-      (fboundp 'gptel-context--add-region)))
+      (fboundp 'gptel-context--add-region)
+      (boundp 'gptel-context--alist)))
 
 (defun context-navigator-gptel--context-list ()
   "Return raw gptel context entries or nil if unavailable.
 
-Try several sources in a robust order. Prefer dynamic variables used by tests,
-then public API, then internal variables/collectors. Return the first non-empty
-sequence; if all are empty, return the first sequence (possibly empty)."
-  (let* ((candidates
-          (delq nil
-                (list
-                 ;; Prefer plain variable used in tests and some gptel versions
-                 (and (boundp 'gptel--context)
-                      (ignore-errors (symbol-value 'gptel--context)))
-                 ;; Then public variable
-                 (and (boundp 'gptel-context)
-                      (ignore-errors (symbol-value 'gptel-context)))
-                 ;; Public API
-                 (and (fboundp 'gptel-context-list)
-                      (ignore-errors (gptel-context-list)))
-                 ;; Internal shapes seen in the wild
-                 (and (boundp 'gptel-context--alist)
-                      (ignore-errors (symbol-value 'gptel-context--alist)))
-                 (and (fboundp 'gptel-context--collect)
-                      (ignore-errors (gptel-context--collect))))))
-         (nonempty (cl-find-if (lambda (v)
-                                 (and (sequencep v)
-                                      (> (length v) 0)))
-                               candidates))
-         (any-seq (or nonempty
-                      (cl-find-if (lambda (v) (sequencep v)) candidates))))
-    any-seq))
+Prefer robust sources that reflect the actual current context:
+- gptel-context--collect (function) — authoritative, normalized list
+- gptel-context--alist (variable)   — internal storage used by gptel
+Fallbacks:
+- public variables/APIs (gptel-context, gptel-context-list, gptel--context)
+
+Return the first non-empty sequence among candidates; when all are empty,
+return the first available sequence (possibly empty)."
+  (context-navigator-gptel--ensure-loaded)
+  (let* ((seqs
+          ;; Order matters: prefer collect → alist → public var → private var → public API
+          (list
+           (cons 'collect (and (fboundp 'gptel-context--collect)
+                               (ignore-errors (gptel-context--collect))))
+           (cons 'alist   (and (boundp 'gptel-context--alist)
+                               (ignore-errors (symbol-value 'gptel-context--alist))))
+           (cons 'public  (and (boundp 'gptel-context)
+                               (ignore-errors (symbol-value 'gptel-context))))
+           (cons 'priv    (and (boundp 'gptel--context)
+                               (ignore-errors (symbol-value 'gptel--context))))
+           (cons 'api     (and (fboundp 'gptel-context-list)
+                               (ignore-errors (gptel-context-list))))))
+         (nonempty
+          (cl-find-if (lambda (cell)
+                        (let ((v (cdr cell)))
+                          (and (sequencep v) (> (length v) 0))))
+                      seqs))
+         (chosen (or (and nonempty (cdr nonempty))
+                     (let ((first (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))
+                       (and first (cdr first))))))
+    (ignore-errors
+      (context-navigator-debug :debug :gptel
+                               "context-list source=%s size=%s"
+                               (car (or nonempty (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))
+                               (length (or chosen '()))))
+    chosen))
+
+(defun context-navigator-gptel--raw-keys ()
+  "Best-effort stable keys directly from raw gptel list."
+  (let ((raw (context-navigator-gptel--context-list))
+        (keys '()))
+    (dolist (e raw)
+      (cond
+       ((stringp e)
+        (push (format "file:%s" e) keys))
+       ((and (consp e) (stringp (car e)))
+        (push (format "file:%s" (car e)) keys))
+       ((and (consp e) (bufferp (car e)))
+        (let* ((buf (car e))
+               (p   (and (buffer-live-p buf)
+                         (buffer-local-value 'buffer-file-name buf)))
+               (nm  (and (buffer-live-p buf) (buffer-name buf))))
+          (push (format "buf:%s:%s" (or nm "") (or p "")) keys)))))
+    (delete-dups (nreverse keys))))
+
+(defun context-navigator-gptel--raw-items-fallback ()
+  "Best-effort items from raw gptel list (files and whole buffers).
+Selections are not reconstructed here."
+  (let ((raw (context-navigator-gptel--context-list))
+        (items '()))
+    (dolist (e raw)
+      (cond
+       ((stringp e)
+        (push (context-navigator-item-create
+               :type 'file :name (file-name-nondirectory e) :path e :enabled t)
+              items))
+       ((and (consp e) (stringp (car e)))
+        (let ((p (car e)))
+          (push (context-navigator-item-create
+                 :type 'file :name (file-name-nondirectory p) :path p :enabled t)
+                items)))
+       ((and (consp e) (bufferp (car e)))
+        (let* ((buf (car e))
+               (p   (and (buffer-live-p buf)
+                         (buffer-local-value 'buffer-file-name buf)))
+               (nm  (and (buffer-live-p buf) (buffer-name buf))))
+          (push (context-navigator-item-create
+                 :type 'buffer :name (or nm "<buffer>") :path p :buffer buf :enabled t)
+                items)))))
+    (nreverse items)))
 
 (defun context-navigator-gptel--entry->item (entry)
   "Convert various gptel ENTRY shapes into one or more context-navigator-item objects.
@@ -231,25 +292,26 @@ Return a single item or a list of items, or nil."
            (t
             (context-navigator-debug :debug :gptel
                                      "Unknown buffer region element: %S (buf=%s)"
-                                     r (buffer-name buf))))))
-      (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
-             (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
-        (context-navigator-debug :debug :gptel
-                                 "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
-                                 (buffer-name buf) (length items) bufs sels))
-      (nreverse items)))
-    ;; (PATH . PROPS) or bare \"path\" string
-    ((or (and (consp entry) (stringp (car entry)))
-         (stringp entry))
-     (let ((path (if (stringp entry) entry (car entry))))
-       ;; Be tolerant: create a file item even if the file doesn't exist.
-       ;; Tests and some gptel setups provide logical paths without touching the FS.
-       (when (and (stringp path) (not (string-empty-p path)))
-         (context-navigator-item-create
-          :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
-    (t
-     (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
-     nil)))
+                                     r (buffer-name buf)))))
+        ;; Stats and return within the same scope so `items' is bound.
+        (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
+               (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
+          (context-navigator-debug :debug :gptel
+                                   "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
+                                   (buffer-name buf) (length items) bufs sels))
+        (nreverse items)))
+     ;; (PATH . PROPS) or bare \"path\" string
+     ((or (and (consp entry) (stringp (car entry)))
+          (stringp entry))
+      (let ((path (if (stringp entry) entry (car entry))))
+        ;; Be tolerant: create a file item even if the file doesn't exist.
+        ;; Tests and some gptel setups provide logical paths without touching the FS.
+        (when (and (stringp path) (not (string-empty-p path)))
+          (context-navigator-item-create
+           :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
+     (t
+      (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
+      nil))))
 
 (defun context-navigator-gptel-pull ()
   "Return list<context-navigator-item> reflecting current gptel context.
@@ -260,6 +322,7 @@ entry->item converter and returns a unique list of items.
 Robustness improvements:
 - Accept a single item, a list/vector of items, or mixed lists and extract valid items.
 - When `context-navigator-debug' is non-nil, log unexpected conversions."
+  (context-navigator-gptel--ensure-loaded)
   (let* ((raw (or (context-navigator-gptel--context-list)
                   ;; Fallback for tests/older gptel shapes using a plain variable
                   (and (boundp 'gptel--context)
@@ -313,6 +376,11 @@ Robustness improvements:
                       nil))))
                 seq)))
          (uniq (and flat (context-navigator-model-uniq flat))))
+    ;; Fallback: if conversion yielded no items but raw context is non-empty,
+    ;; construct coarse items from raw to reflect actual gptel presence.
+    (when (and (or (null uniq) (= (length uniq) 0))
+               (sequencep raw) (> (length raw) 0))
+      (setq uniq (ignore-errors (context-navigator-gptel--raw-items-fallback))))
     (let* ((count (lambda (pred lst)
                     (cl-count-if pred lst)))
            (files (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'file)) uniq)))
@@ -330,6 +398,7 @@ Robustness improvements:
 
 (defun context-navigator-gptel--add-item (item)
   "Try to add ITEM to gptel context. Return t on success."
+  (context-navigator-gptel--ensure-loaded)
   (pcase (context-navigator-item-type item)
     ('file
      (when (context-navigator-gptel--can-add-file)
@@ -378,6 +447,7 @@ This function attempts a best-effort remove-all when supported by the
 underlying gptel; it publishes a :gptel-change :reset event so listeners
 (e.g. the core sync) can react. We keep the call guarded and tolerate
 errors from different gptel versions."
+  (context-navigator-gptel--ensure-loaded)
   (when (context-navigator-gptel--can-remove-all)
     (ignore-errors (context-navigator--silence-messages (gptel-context-remove-all))))
   (let ((count 0))
@@ -396,13 +466,22 @@ errors from different gptel versions."
       (cl-some (lambda (x) (eq (context-navigator-item-type x) 'selection)) upds)))
 
 (defun context-navigator-gptel--needs-reset-p (rems upds)
-  "Return non-nil if we should fallback to reset for this diff."
+  "Return non-nil if we should fallback to reset for this diff.
+
+Reset when:
+- precise remove/add is unsupported;
+- selections participate in diff;
+- buffers participate in diff (gptel cannot reliably remove buffer contexts by buffer)."
   (or (not (context-navigator-gptel--can-remove))
       (not (context-navigator-gptel--can-add-file))
-      (context-navigator-gptel--selection-in-diff-p rems upds)))
+      (context-navigator-gptel--selection-in-diff-p rems upds)
+      ;; Any buffer item in removals/updates → do full reset to ensure correctness.
+      (cl-some (lambda (x) (eq (context-navigator-item-type x) 'buffer)) rems)
+      (cl-some (lambda (x) (eq (context-navigator-item-type x) 'buffer)) upds)))
 
 (defun context-navigator-gptel--remove-one (item)
   "Best-effort removal of ITEM from gptel. Return t on success."
+  (context-navigator-gptel--ensure-loaded)
   (when (context-navigator-gptel--can-remove)
     (pcase (context-navigator-item-type item)
       ('file
@@ -475,6 +554,13 @@ Return count of successful operations."
 Когда точечные операции невозможны, выполняется сброс (reset)."
   (unless (context-navigator-gptel-available-p)
     (cl-return-from context-navigator-gptel-apply (list :applied nil :reason 'unavailable)))
+  ;; Detect converter failure: if pull is empty but raw gptel has entries, do reset.
+  (let* ((current (context-navigator-gptel-pull))
+         (raw     (context-navigator-gptel--context-list)))
+    (when (and (or (null current) (= (length current) 0))
+               (sequencep raw) (> (length raw) 0))
+      (let ((r (context-navigator-gptel--reset-to desired-items)))
+        (cl-return-from context-navigator-gptel-apply (append (list :applied t) r)))))
   (let* ((current (context-navigator-gptel-pull))
          (diff    (context-navigator-model-diff current desired-items))
          (adds    (plist-get diff :add))
@@ -555,41 +641,53 @@ Selections may not support precise removal; fallback to reset without the item."
   "Install a variable watcher on SYM to publish :gptel-change. Return watcher fn or nil."
   (when (and (boundp sym)
              (fboundp 'add-variable-watcher))
-    (let ((fn (lambda (&rest _)
-                (context-navigator-events-publish :gptel-change sym))))
-      (add-variable-watcher sym fn)
-      fn)))
+    ;; Avoid duplicate variable watchers.
+    (let ((existing (assoc sym context-navigator--gptel-var-watchers)))
+      (if existing
+          (cdr existing)
+        (let ((fn (lambda (&rest _)
+                    (context-navigator-events-publish :gptel-change sym))))
+          (add-variable-watcher sym fn)
+          fn)))))
 
 (defun context-navigator-gptel--advise (sym)
   "Add an :after advice to SYM that publishes :gptel-change. Return advice fn or nil."
   (when (fboundp sym)
-    (let ((fn (lambda (&rest _)
-                (context-navigator-events-publish :gptel-change sym))))
-      (advice-add sym :after fn)
-      fn)))
+    ;; Avoid duplicate advices for the same symbol.
+    (let ((existing (assoc sym context-navigator--gptel-advices)))
+      (if existing
+          (cdr existing)
+        (let ((fn (lambda (&rest _)
+                    (context-navigator-events-publish :gptel-change sym))))
+          (advice-add sym :after fn)
+          fn)))))
 
 (defun context-navigator-gptel-on-change-register ()
   "Install advices and variable watchers to publish :gptel-change.
 
 Used ONLY to keep UI indicators up-to-date; never imports from gptel."
   (let (added)
-    ;; Advices on common mutation functions
+    ;; Advices on common mutation functions (idempotent)
     (dolist (sym '(gptel-context-add
                    gptel-context-add-file
                    gptel-context--add-region
                    gptel-context-remove
                    gptel-context-remove-all))
-      (let ((fn (context-navigator-gptel--advise sym)))
-        (when fn
-          (push (cons sym fn) context-navigator--gptel-advices)
-          (setq added t))))
-    ;; Variable watchers (Emacs 29+) for versions mutating variables directly
+      (when (and (fboundp sym)
+                 (not (assoc sym context-navigator--gptel-advices)))
+        (let ((fn (context-navigator-gptel--advise sym)))
+          (when fn
+            (push (cons sym fn) context-navigator--gptel-advices)
+            (setq added t)))))
+    ;; Variable watchers (Emacs 29+) for versions mutating variables directly (idempotent)
     (when (fboundp 'add-variable-watcher)
       (dolist (vsym '(gptel-context gptel-context--alist gptel--context))
-        (let ((fn (context-navigator-gptel--add-var-watcher vsym)))
-          (when fn
-            (push (cons vsym fn) context-navigator--gptel-var-watchers)
-            (setq added t)))))
+        (when (and (boundp vsym)
+                   (not (assoc vsym context-navigator--gptel-var-watchers)))
+          (let ((fn (context-navigator-gptel--add-var-watcher vsym)))
+            (when fn
+              (push (cons vsym fn) context-navigator--gptel-var-watchers)
+              (setq added t))))))
     added))
 
 (defun context-navigator-gptel-on-change-unregister ()

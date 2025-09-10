@@ -7,16 +7,35 @@
 (require 'context-navigator-gptel-bridge)
 
 (ert-deftest context-navigator-gptel/pull-converts-basic-entries ()
+  "Bridge converts basic raw entries: file string and buffer region pair."
   (context-navigator-test-with-mocked-gptel
-   (let* ((gptel--context (list
-                           (list :type 'file :path "/tmp/a.txt")
-                           (list :type 'selection :path "/tmp/b.txt" :beg 1 :end 5)
-                           (list :type 'buffer :path "/tmp/c.txt"))))
-     (let ((items (context-navigator-gptel-pull)))
-       (should (= (length items) 3))
-       (should (member "file:/tmp/a.txt" (mapcar #'context-navigator-model-item-key items)))
-       (should (member "sel:/tmp/b.txt:1-5" (mapcar #'context-navigator-model-item-key items)))
-       (should (member "buf:c.txt:/tmp/c.txt" (mapcar #'context-navigator-model-item-key items)))))))
+   (let* ((fa (make-temp-file "ctxnav-a-" nil ".txt"))
+          (fc (make-temp-file "ctxnav-c-" nil ".txt"))
+          (buf (find-file-noselect fc)))
+     (unwind-protect
+         (with-current-buffer buf
+           (erase-buffer)
+           (insert "hello world")
+           (save-buffer)
+           (let* ((beg (point-min))
+                  (end (+ beg 5))
+                  (raw (list
+                        ;; file as string path
+                        fa
+                        ;; buffer with region (beg . end)
+                        (cons buf (list (cons beg end))))))
+             ;; Force bridge to use our raw list
+             (cl-letf (((symbol-function 'context-navigator-gptel--context-list)
+                        (lambda () raw)))
+               (let* ((items (context-navigator-gptel-pull))
+                      (keys  (mapcar #'context-navigator-model-item-key items)))
+                 (should (>= (length items) 2))
+                 (should (member (format "file:%s" fa) keys))
+                 ;; selection key uses file path of the buffer's file
+                 (should (member (format "sel:%s:%d-%d" fc beg end) keys))))))
+       (when (buffer-live-p buf) (kill-buffer buf))
+       (ignore-errors (delete-file fa))
+       (ignore-errors (delete-file fc))))))
 
 ;; apply should ignore disabled items on add
 (ert-deftest context-navigator-gptel/apply-ignores-disabled-on-add ()

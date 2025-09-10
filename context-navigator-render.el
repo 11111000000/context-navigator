@@ -15,6 +15,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'context-navigator-model)
+(require 'context-navigator-log)
 
 (defgroup context-navigator-render nil
   "Rendering settings for context-navigator."
@@ -35,6 +36,11 @@
 - text  : use plain text bullets (●/○) with colors
 - off   : hide indicators entirely"
   :type '(choice (const auto) (const icons) (const text) (const off))
+  :group 'context-navigator-render)
+
+(defface context-navigator-disabled-face
+  '((t :foreground "gray55"))
+  "Face used to render disabled items in the sidebar."
   :group 'context-navigator-render)
 
 (defvar-local context-navigator-render--last-hash nil)
@@ -113,25 +119,36 @@ indicator sits centered and appears moderately large relative to item text."
   "Format a single ITEM into a propertized line string, using ICON-FN if non-nil.
 When LEFT-WIDTH is non-nil, align the left column to that width.
 
-Binary indicator (when gptel keys list is provided):
-- green  ● : item present in gptel
-- gray   ○ : item absent in gptel."
+Binary indicator:
+- green  ● : item present in gptel (when keys snapshot says so)
+- gray   ○ : item absent in gptel or when the keys snapshot is unknown.
+Disabled items are rendered with a subdued face (only the name). Indicator reflects actual gptel presence (green when present, gray otherwise)."
   (let* ((key (context-navigator-model-item-key item))
          (name (context-navigator-render--truncate
                 (or (context-navigator-item-name item) "")
                 context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
-         ;; Show indicators only when we have a non-empty keys snapshot.
-         ;; When gptel keys are absent (nil), hide indicators.
-         (have-keys (consp context-navigator-render--gptel-keys))
-         (present (and have-keys (member key context-navigator-render--gptel-keys)))
-         (state-icon (and have-keys
-                          (context-navigator-render--indicator present)))
+         (enabled (not (null (context-navigator-item-enabled item))))
+         (keys-list context-navigator-render--gptel-keys)
+         ;; Reflect actual presence in gptel regardless of enabled flag.
+         (present (and keys-list (member key keys-list)))
+         ;; Always render an indicator; when PRESENT is nil it will be gray
+         (state-icon (context-navigator-render--indicator present))
+         ;; Trace why indicator is green/gray in this render row
+         (ignore-errors
+           (context-navigator-debug :trace :render
+                                    "indicator key=%s enabled=%s present=%s keys=%d"
+                                    key enabled (and present t)
+                                    (length (or keys-list '()))))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
+         ;; Dim only the name for disabled items; do not touch indicator/icon.
+         (name-prop (if enabled
+                        name
+                      (propertize name 'face 'context-navigator-disabled-face)))
          (left (context-navigator-render--left-column
                 state-icon
                 (and (stringp icon) icon)
-                name))
+                name-prop))
          (right (context-navigator-render--right-column path))
          ;; Add a small left padding to each item line
          (line (context-navigator-render--compose-line (concat " " left) right left-width)))

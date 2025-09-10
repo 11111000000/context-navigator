@@ -1066,5 +1066,44 @@ Strategy:
                                     (buffer-list))))
           (and buf-any (context-navigator-project-current-root buf-any))))))
 
+(defun context-navigator--reinit-after-reload ()
+  "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
+Also triggers an immediate project switch so header shows actual project."
+  (when (bound-and-true-p context-navigator-mode)
+    ;; Reset event bus to avoid duplicated subscribers from older definitions.
+    (ignore-errors (context-navigator-events-reset))
+    (setq context-navigator--event-tokens nil)
+    ;; Ensure project hooks installed
+    (ignore-errors (context-navigator-project-setup-hooks))
+    ;; Re-subscribe
+    (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
+          context-navigator--event-tokens)
+    (push (context-navigator-events-subscribe
+           :model-refreshed
+           (lambda (_state)
+             ;; Debounced autosave (latest state at execution time)
+             (when context-navigator-autosave
+               (context-navigator-events-debounce
+                :autosave
+                (or context-navigator-autosave-debounce 0.5)
+                (lambda ()
+                  (let ((st (context-navigator--state-get)))
+                    (when (and context-navigator-autosave
+                               (context-navigator-state-p st)
+                               (not (context-navigator-state-inhibit-autosave st)))
+                      (let ((root (context-navigator-state-last-project-root st))
+                            (slug (context-navigator-state-current-group-slug st))
+                            (items (context-navigator-state-items st)))
+                        (when (and (stringp slug) (not (string-empty-p slug)))
+                          (ignore-errors (context-navigator-persist-save items root slug)))))))))))
+          context-navigator--event-tokens)
+    ;; Trigger initial project switch so UI/header reflect actual project
+    (when context-navigator--auto-project-switch
+      (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+        (context-navigator-events-publish :project-switch root)))))
+
+;; Auto-reinit after reload (eval-buffer/byte-compile)
+(context-navigator--reinit-after-reload)
+
 (provide 'context-navigator-core)
 ;;; context-navigator-core.el ends here

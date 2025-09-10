@@ -22,6 +22,7 @@
 (require 'context-navigator-icons)
 (require 'context-navigator-persist)
 (require 'context-navigator-i18n)
+(require 'context-navigator-log)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -1102,15 +1103,56 @@ Wraps to the bottom when no previous element is found before point."
                "0.2.1")
 
 (defun context-navigator-sidebar-toggle-enabled ()
-  "Toggle enabled/disabled for the item at point, apply to gptel.
+  "Toggle inclusion of the item at point in gptel sync (model :enabled).
 
-Deprecated for 't' binding: use `context-navigator-sidebar-toggle-gptel' to toggle gptel membership."
+Toggles the item's enabled flag and, when push→gptel is ON, applies the
+updated set to gptel immediately. The new state is persisted via the
+existing debounced autosave."
   (interactive)
   (when-let* ((item (context-navigator-sidebar--at-item)))
-    (let* ((key (context-navigator-model-item-key item)))
-      (message "Deprecated: toggling model only for %s" (or (context-navigator-item-name item) key))
-      (let* ((st (ignore-errors (context-navigator-toggle-item key))))
-        (ignore-errors st))
+    (let* ((key (context-navigator-model-item-key item))
+           (name (or (context-navigator-item-name item) key)))
+      ;; Toggle model
+      (ignore-errors (context-navigator-toggle-item key))
+      ;; Apply to gptel immediately when auto-push is ON and refresh indicators snapshot
+      (when (and (boundp 'context-navigator--push-to-gptel)
+                 context-navigator--push-to-gptel)
+        (let* ((st (ignore-errors (context-navigator--state-get)))
+               (items (and st (context-navigator-state-items st))))
+          (let ((res (ignore-errors (context-navigator-gptel-apply (or items '())))))
+            (ignore-errors
+              (context-navigator-debug :debug :ui "toggle:t apply -> %S" res)))
+          ;; Immediately refresh cached keys so lamps reflect actual presence now.
+          (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+                 (pulled-keys (and (listp lst)
+                                   (mapcar #'context-navigator-model-item-key lst)))
+                 (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                (fboundp 'context-navigator-gptel--raw-keys)
+                                (ignore-errors (context-navigator-gptel--raw-keys))))
+                 (fallback-keys
+                  (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                             (or (null raw-keys) (= (length raw-keys) 0)))
+                    (and (listp items)
+                         (mapcar #'context-navigator-model-item-key
+                                 (cl-remove-if-not #'context-navigator-item-enabled items)))))
+                 (keys (or pulled-keys raw-keys fallback-keys '())))
+            (let ((h (sxhash-equal keys)))
+              (setq context-navigator-sidebar--gptel-keys keys
+                    context-navigator-sidebar--gptel-keys-hash h)
+              (ignore-errors
+                (context-navigator-debug :debug :ui
+                                         "toggle:t immediate pull -> keys=%d hash=%s%s"
+                                         (length keys) h
+                                         (if (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                                  (or (null raw-keys) (= (length raw-keys) 0)))
+                                             " (fallback)" "")))))))
+      ;; Report new state briefly
+      (let* ((st2 (ignore-errors (context-navigator--state-get)))
+             (idx (and st2 (context-navigator-state-index st2)))
+             (it2 (and idx (gethash key idx)))
+             (en (and it2 (context-navigator-item-enabled it2))))
+        (message (if en "Enabled: %s" "Disabled: %s") name))
+      ;; Refresh UI and advance to the next item
       (context-navigator-sidebar--schedule-render)
       (context-navigator-sidebar--render-if-visible)
       (context-navigator-sidebar-next-item))))
@@ -1233,20 +1275,54 @@ Order of operations:
          :gptel-change
          (lambda (&rest _)
            (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-                  (keys (and (listp lst)
-                             (mapcar #'context-navigator-model-item-key lst))))
+                  (pulled-keys (and (listp lst)
+                                    (mapcar #'context-navigator-model-item-key lst)))
+                  (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                 (fboundp 'context-navigator-gptel--raw-keys)
+                                 (ignore-errors (context-navigator-gptel--raw-keys))))
+                  ;; Last-resort fallback: enabled items in model only if both pulled and raw are empty
+                  (fallback-keys
+                   (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                              (or (null raw-keys) (= (length raw-keys) 0)))
+                     (let* ((st (ignore-errors (context-navigator--state-get)))
+                            (items (and st (context-navigator-state-items st))))
+                       (and (listp items)
+                            (mapcar #'context-navigator-model-item-key
+                                    (cl-remove-if-not #'context-navigator-item-enabled items))))))
+                  (keys (or pulled-keys raw-keys fallback-keys '()))
+                  (h (sxhash-equal keys))
+                  (n (length keys))
+                  (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                     (or (null raw-keys) (= (length raw-keys) 0))))
+                  (sample (mapconcat (lambda (s) s)
+                                     (cl-subseq keys 0 (min 5 n))
+                                     ", ")))
              (setq context-navigator-sidebar--gptel-keys keys
-                   context-navigator-sidebar--gptel-keys-hash (sxhash-equal keys)))
+                   context-navigator-sidebar--gptel-keys-hash h)
+             (ignore-errors
+               (context-navigator-debug :debug :ui
+                                        "gptel-change: pulled %d keys, hash=%s, sample=[%s]%s"
+                                        n h sample
+                                        (if use-fallback " (fallback)" ""))))
            (context-navigator-sidebar--schedule-render)))
         context-navigator-sidebar--subs))
 
 (defun context-navigator-sidebar--init-gptel-cache ()
   "Initialize cached gptel keys once."
   (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-         (keys (and (listp lst)
-                    (mapcar #'context-navigator-model-item-key lst))))
+         (pulled (and (listp lst)
+                      (mapcar #'context-navigator-model-item-key lst)))
+         (raw (and (or (null pulled) (= (length pulled) 0))
+                   (fboundp 'context-navigator-gptel--raw-keys)
+                   (ignore-errors (context-navigator-gptel--raw-keys))))
+         (keys (or pulled raw '()))
+         (h (sxhash-equal keys)))
     (setq context-navigator-sidebar--gptel-keys keys
-          context-navigator-sidebar--gptel-keys-hash (sxhash-equal keys))))
+          context-navigator-sidebar--gptel-keys-hash h)
+    (ignore-errors
+      (context-navigator-debug :debug :ui
+                               "gptel-init: pulled %d keys, hash=%s"
+                               (length (or keys '())) h))))
 
 (defun context-navigator-sidebar--close-hijacked-windows ()
   "Close any windows previously marked as sidebar that now show a foreign buffer.
@@ -1324,12 +1400,31 @@ render."
                                (with-current-buffer buf
                                  (when (get-buffer-window buf t)
                                    (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-                                          (keys (and (listp lst)
-                                                     (mapcar #'context-navigator-model-item-key lst)))
-                                          (h (sxhash-equal keys)))
+                                          (pulled-keys (and (listp lst)
+                                                            (mapcar #'context-navigator-model-item-key lst)))
+                                          (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                                         (fboundp 'context-navigator-gptel--raw-keys)
+                                                         (ignore-errors (context-navigator-gptel--raw-keys))))
+                                          (fallback-keys
+                                           (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                                      (or (null raw-keys) (= (length raw-keys) 0)))
+                                             (let* ((st (ignore-errors (context-navigator--state-get)))
+                                                    (items (and st (context-navigator-state-items st))))
+                                               (and (listp items)
+                                                    (mapcar #'context-navigator-model-item-key
+                                                            (cl-remove-if-not #'context-navigator-item-enabled items))))))
+                                          (keys (or pulled-keys raw-keys fallback-keys '()))
+                                          (h (sxhash-equal keys))
+                                          (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                                             (or (null raw-keys) (= (length raw-keys) 0)))))
                                      (unless (equal h context-navigator-sidebar--gptel-keys-hash)
                                        (setq context-navigator-sidebar--gptel-keys keys
                                              context-navigator-sidebar--gptel-keys-hash h)
+                                       (ignore-errors
+                                         (context-navigator-debug :debug :ui
+                                                                  "gptel-poll: updated keys=%d hash=%s%s"
+                                                                  (length keys) h
+                                                                  (if use-fallback " (fallback)" "")))
                                        (context-navigator-sidebar--schedule-render)))))))))))))
 
 (defun context-navigator-sidebar--install-subs ()
@@ -1401,7 +1496,7 @@ MAP is a keymap to search for COMMAND bindings."
                     (context-navigator-sidebar-previous-item     . :help-previous-item)
                     (context-navigator-sidebar-activate          . :help-activate)
                     (context-navigator-sidebar-preview           . :help-preview)
-                    (context-navigator-sidebar-toggle-gptel      . :help-toggle-gptel)
+                    (context-navigator-sidebar-toggle-enabled     . :help-toggle-gptel)
                     (context-navigator-sidebar-delete-dispatch   . :help-delete)
                     (context-navigator-sidebar-refresh-dispatch  . :help-refresh)
                     (context-navigator-sidebar-go-up             . :help-go-up)
@@ -1501,7 +1596,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "j")   #'context-navigator-sidebar-next-item)
     (define-key m (kbd "k")   #'context-navigator-sidebar-previous-item)
     (define-key m (kbd "l")   #'context-navigator-sidebar-activate)
-    (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-gptel)
+    (define-key m (kbd "t")   #'context-navigator-sidebar-toggle-enabled)
 
     ;; TAB navigation between interactive elements
     ;; Bind several TAB event representations to be robust across terminals/minor-modes.
@@ -1548,7 +1643,7 @@ MAP is a keymap to search for COMMAND bindings."
 ;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
 (when (keymapp context-navigator-sidebar-mode-map)
   ;; Keep legacy binding in sync
-  (define-key context-navigator-sidebar-mode-map (kbd "t") #'context-navigator-sidebar-toggle-gptel)
+  (define-key context-navigator-sidebar-mode-map (kbd "t") #'context-navigator-sidebar-toggle-enabled)
   ;; Make TAB robust across reloads/terminals/minor-modes
   (define-key context-navigator-sidebar-mode-map (kbd "TAB")       #'context-navigator-sidebar-tab-next)
   (define-key context-navigator-sidebar-mode-map (kbd "<tab>")     #'context-navigator-sidebar-tab-next)
@@ -1660,6 +1755,18 @@ Do not highlight header/separator lines."
   "Toggle push-to-gptel session flag and refresh header immediately."
   (interactive)
   (ignore-errors (context-navigator-toggle-push-to-gptel))
+  ;; Immediately refresh cached keys from gptel so indicators reflect actual presence,
+  ;; regardless of push flag.
+  (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
+         (keys (and (listp lst)
+                    (mapcar #'context-navigator-model-item-key lst)))
+         (h (sxhash-equal keys)))
+    (setq context-navigator-sidebar--gptel-keys keys
+          context-navigator-sidebar--gptel-keys-hash h)
+    (ignore-errors
+      (context-navigator-debug :debug :ui
+                               "toggle:push -> keys=%d hash=%s"
+                               (length (or keys '())) h)))
   ;; Force immediate redraw for visible sidebar
   (let ((buf (get-buffer context-navigator-sidebar--buffer-name)))
     (when (buffer-live-p buf)

@@ -5,15 +5,17 @@
 (require 'context-navigator-render)
 (require 'context-navigator-model)
 
-(ert-deftest ctxnav-render/indicators-hidden-when-no-keys ()
-  "When gptel keys are absent, no indicator bullets should be rendered."
+(ert-deftest ctxnav-render/indicator-gray-when-no-keys ()
+  "When gptel keys are absent, gray indicator ○ should be rendered (always-on indicators)."
   (let* ((item (context-navigator-item-create :type 'file :path "/tmp/a.txt" :name "a.txt" :enabled t))
          (context-navigator-render--gptel-keys nil)
          (lines (context-navigator-render-build-lines (list item) "Hdr" nil 32))
          (line (nth 2 lines))) ;; first item line
     (should (stringp line))
-    (should-not (string-match-p "●" line))
-    (should-not (string-match-p "○" line))))
+    ;; Expect gray ○ when keys snapshot is absent
+    (should (string-match-p "○" line))
+    ;; Should not show green ● in this case
+    (should-not (string-match-p "●" line))))
 
 (ert-deftest ctxnav-render/indicators-text-fallback-when-no-icons ()
   "With keys present and no icon provider, text bullets should be shown."
