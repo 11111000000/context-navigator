@@ -21,6 +21,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-events)
 (require 'context-navigator-i18n)
+(require 'context-navigator-project)
 
 (defgroup context-navigator-path-add nil
   "Settings for adding files from names/paths."
@@ -67,7 +68,7 @@ Default behavior (nil) hides dotfiles unless the component explicitly begins wit
   :type 'boolean :group 'context-navigator-path-add)
 
 ;; Reuse max file size if defined by transient module; declare to avoid require.
-(defvar context-navigator-max-file-size (* 2 1024 1024)
+(defvar context-navigator-max-file-size (* 1 1024 1024)
   "Maximum file size (bytes) to include when adding files (fallback default).")
 
 ;; -----------------------------------------------------------------------------
@@ -102,15 +103,41 @@ Default behavior (nil) hides dotfiles unless the component explicitly begins wit
           prefix)))))
 
 (defun context-navigator-path-add--normalize-token (raw)
-  "Normalize RAW path-like token or return nil when not acceptable."
-  (let* ((s (string-trim raw)))
+  "Normalize RAW path-like token or return nil when not acceptable.
+
+Steps:
+- trim whitespace
+- strip surrounding quotes/angles/brackets/parentheses
+- strip trailing position suffix :N or :A-B (but not drive C:)
+- strip trailing punctuation that cannot be part of filename (,.;:)]}\"»)"
+  (let* ((s (and (stringp raw) (string-trim raw))))
     (when (and (stringp s) (not (string-empty-p s)))
-      (let* ((q (context-navigator-path-add--string-trim-quotes s)))
-        (cond
-         ((context-navigator-path-add--looks-like-url-p q) nil)
-         (t
-          (let* ((no-pos (context-navigator-path-add--strip-position-suffix q)))
-            (string-trim no-pos))))))))
+      (let* ((strip1 (context-navigator-path-add--string-trim-quotes s))
+             ;; Also strip () [] {} and «» if wrapped
+             (strip2 (let ((q strip1))
+                       (cond
+                        ((and (>= (length q) 2)
+                              (or (and (eq (aref q 0) ?\() (eq (aref q (1- (length q))) ?\)))
+                                  (and (eq (aref q 0) ?\[) (eq (aref q (1- (length q))) ?\]))
+                                  (and (eq (aref q 0) ?\{) (eq (aref q (1- (length q))) ?\}))
+                                  (and (eq (aref q 0) ?«)  (eq (aref q (1- (length q))) ?»))))
+                         (substring q 1 (1- (length q))))
+                        (t q))))
+             ;; URLs are rejected
+             (_ (when (context-navigator-path-add--looks-like-url-p strip2)
+                  (cl-return-from context-navigator-path-add--normalize-token nil)))
+             ;; Remove :N or :A-B position suffixes (keep C: drive)
+             (no-pos (context-navigator-path-add--strip-position-suffix strip2))
+             ;; Strip trailing punctuation like ",.;:)]}\"»" if present, repeatedly
+             (trim-tails
+              (let ((q no-pos)
+                    (tails '("," "." ";" ":" ")" "]" "}" "”" "»")))
+                (while (and (stringp q)
+                            (> (length q) 0)
+                            (member (substring q (1- (length q))) tails))
+                  (setq q (substring q 0 (1- (length q)))))
+                q)))
+        (string-trim trim-tails)))))
 
 (defun context-navigator-path-add--case-fold-p ()
   "Return non-nil when basename match should be case-insensitive."
@@ -150,14 +177,20 @@ Default behavior (nil) hides dotfiles unless the component explicitly begins wit
       (and a (file-attribute-size a)))))
 
 (defun context-navigator-path-add--project-root ()
-  "Resolve project root from core state or current buffer."
+  "Resolve project root using core state first, then project module fallbacks, else default-directory."
   (let* ((st (ignore-errors (context-navigator--state-get)))
-         (root (and st (context-navigator-state-last-project-root st))))
-    (or root
-        (ignore-errors
-          (let ((proj (project-current nil)))
-            (when proj (expand-file-name (project-root proj)))))
-        default-directory)))
+         (last-root (and st (context-navigator-state-last-project-root st)))
+         (root (or last-root
+                   ;; Prefer project module (handles org/gptel/dired via default-directory),
+                   ;; and fallback to any file-visiting window on current frame.
+                   (ignore-errors
+                     (or (context-navigator-project-current-root (current-buffer))
+                         (context-navigator-project--frame-file-project-root)))
+                   ;; Finally, naive project.el detection
+                   (ignore-errors
+                     (let ((proj (project-current nil)))
+                       (when proj (expand-file-name (project-root proj))))))))
+    (or root default-directory)))
 
 ;; -----------------------------------------------------------------------------
 ;; Index cache
@@ -291,20 +324,46 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
                                    "procfile" "brewfile")))))))))
 
 (defun context-navigator-extract-pathlike-tokens (text)
-  "Extract path-like tokens from TEXT. Return list of normalized strings."
-  (let ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_./\\\\:*?\\[\\]-]+\\)"))
-    (let ((pos 0) (acc '()))
-      (while (and (< pos (length text))
-                  (string-match re text pos))
-        (let* ((m0 (match-string 0 text)))
-          (setq pos (match-end 0))
-          (when (and (stringp m0) (not (string-empty-p (string-trim m0))))
-            (let ((norm (context-navigator-path-add--normalize-token m0)))
-              (when (and (stringp norm)
-                         (not (string-empty-p norm))
-                         (context-navigator-path-add--token-acceptable-p norm))
-                (push norm acc))))))
-      (nreverse (delete-dups acc)))))
+  "Extract path-like tokens from TEXT. Return list of normalized strings.
+
+Primary pass:
+- regex-based extraction from quotes/angles and path-like char runs
+
+Fallback (when primary found nothing):
+- dired-like lines: take the last whitespace-separated field on each line,
+  normalize and validate as a candidate (helps with org blocks containing dired listings)."
+  (let* ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_./\\\\:*?\\[\\]-]+\\)")
+         (pos 0) (acc '()))
+    ;; Primary pass
+    (while (and (< pos (length text))
+                (string-match re text pos))
+      (let* ((m0 (match-string 0 text)))
+        (setq pos (match-end 0))
+        (when (and (stringp m0) (not (string-empty-p (string-trim m0))))
+          (let ((norm (context-navigator-path-add--normalize-token m0)))
+            (when (and (stringp norm)
+                       (not (string-empty-p norm))
+                       (context-navigator-path-add--token-acceptable-p norm))
+              (push norm acc))))))
+    (setq acc (nreverse (delete-dups acc)))
+    (if (> (length acc) 0)
+        acc
+      ;; Fallback: scan line-by-line, pick last field
+      (let ((lines (split-string text "\n" t)))
+        (dolist (ln lines)
+          (let* ((trim (string-trim ln)))
+            (when (and (stringp trim) (not (string-empty-p trim)))
+              ;; split by whitespace; take last non-empty chunk
+              (let* ((parts (cl-remove-if (lambda (s) (or (null s) (string-empty-p s)))
+                                          (split-string trim "[ \t]+" t)))
+                     (last (car (last parts))))
+                (when last
+                  (let* ((norm (context-navigator-path-add--normalize-token last)))
+                    (when (and (stringp norm)
+                               (not (string-empty-p norm))
+                               (context-navigator-path-add--token-acceptable-p norm))
+                      (push norm acc))))))))
+        (nreverse (delete-dups acc))))))
 
 ;; -----------------------------------------------------------------------------
 ;; Resolution algorithm
@@ -323,49 +382,64 @@ Everything else (e.g. trailing slash directories like 'app/', plain words) is re
 :accepted list<abs-file>  — direct unique resolutions (abs/rel or unique index matches)
 :ambiguous alist (token . matches)
 :unresolved list<token>"
-  (let* ((basename-map
-          (let ((ht (make-hash-table :test (if (context-navigator-path-add--case-fold-p) 'equal 'equal))))
+  (let* ((casefold (context-navigator-path-add--case-fold-p))
+         (basename-map
+          ;; basename (with ext) -> list of files
+          (let ((ht (make-hash-table :test (if casefold 'equal 'equal))))
             (dolist (p index)
-              (let ((bn (context-navigator-path-add--basename p)))
-                (let* ((k (if (context-navigator-path-add--case-fold-p)
-                              (downcase bn) bn))
-                       (cur (gethash k ht)))
-                  (puthash k (cons p cur) ht))))
+              (let* ((bn (context-navigator-path-add--basename p))
+                     (k  (if casefold (downcase bn) bn)))
+                (puthash k (cons p (gethash k ht)) ht)))
             ht))
-         (casefold (context-navigator-path-add--case-fold-p))
+         (noext-map
+          ;; basename sans extension -> list of files
+          (let ((ht (make-hash-table :test (if casefold 'equal 'equal))))
+            (dolist (p index)
+              (let* ((bn (context-navigator-path-add--basename p))
+                     (nx (file-name-sans-extension bn))
+                     (k  (if casefold (downcase nx) nx)))
+                (puthash k (cons p (gethash k ht)) ht)))
+            ht))
          (acc-accepted '())
          (acc-amb '())
          (acc-unres '()))
     (dolist (tok tokens)
       (cond
-       ;; absolute
+       ;; Absolute path
        ((context-navigator-path-add--absolute-p tok)
         (if (context-navigator-path-add--regular-file-p tok)
             (push (expand-file-name tok) acc-accepted)
           (push tok acc-unres)))
-       ;; relative
+       ;; Relative path that exists
        ((file-exists-p (context-navigator-path-add--resolve-relative root tok))
         (let ((p (context-navigator-path-add--resolve-relative root tok)))
           (if (context-navigator-path-add--regular-file-p p)
               (push (expand-file-name p) acc-accepted)
             (push tok acc-unres))))
        (t
-        ;; search by basename in index
+        ;; Search through project index
         (let* ((bn (context-navigator-path-add--basename tok)))
-          (if (and (not (context-navigator-path-add--has-dirsep-p tok))
-                   (not (context-navigator-path-add--has-extension-p tok)))
-              ;; Bare name without extension: do not treat as a file
-              (push tok acc-unres)
-            (let* ((key (if (context-navigator-path-add--case-fold-p) (downcase bn) bn))
-                   (hits (copy-sequence (or (gethash key basename-map) '()))))
+          (cond
+           ;; Bare basename without extension → search by sans-extension map
+           ((and (not (context-navigator-path-add--has-dirsep-p tok))
+                 (not (context-navigator-path-add--has-extension-p tok)))
+            (let* ((key (if casefold (downcase (file-name-sans-extension bn))
+                          (file-name-sans-extension bn)))
+                   (hits (copy-sequence (or (gethash key noext-map) '()))))
               (cond
-               ((= (length hits) 1)
-                (push (car hits) acc-accepted))
+               ((= (length hits) 1) (push (car hits) acc-accepted))
                ((> (length hits) 1)
                 (push (cons tok (cl-subseq hits 0 (min 10 (length hits)))) acc-amb))
-               (t
-                ;; No substring fallback — only full valid paths or unique basename matches.
-                (push tok acc-unres)))))))))
+               (t (push tok acc-unres)))))
+           ;; Basename with extension or with dirs → search by full basename
+           (t
+            (let* ((key (if casefold (downcase bn) bn))
+                   (hits (copy-sequence (or (gethash key basename-map) '()))))
+              (cond
+               ((= (length hits) 1) (push (car hits) acc-accepted))
+               ((> (length hits) 1)
+                (push (cons tok (cl-subseq hits 0 (min 10 (length hits)))) acc-amb))
+               (t (push tok acc-unres))))))))))
     (list :accepted (nreverse (delete-dups acc-accepted))
           :ambiguous (nreverse acc-amb)
           :unresolved (nreverse acc-unres))))
@@ -499,15 +573,58 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
 
 ;;;###autoload
 (defun context-navigator-add-from-text ()
-  "Extract path-like tokens from region or buffer and add resolved files."
+  "Extract path-like tokens from region or buffer, preview, and add resolved files to the active group."
   (interactive)
   (let* ((src (if (use-region-p)
                   (buffer-substring-no-properties (region-beginning) (region-end))
                 (buffer-substring-no-properties (point-min) (point-max))))
          (tokens (context-navigator-extract-pathlike-tokens (or src ""))))
-    (if (null tokens)
-        (message "%s" (context-navigator-i18n :unresolved-found))
-      (context-navigator-add-files-from-names tokens t))))
+    (if (or (null tokens) (= (length tokens) 0))
+        (message "%s" (context-navigator-i18n :text-no-tokens))
+      (let* ((root (context-navigator-path-add--project-root))
+             (res (context-navigator-resolve-names->files tokens root))
+             (files (plist-get res :files))
+             (amb (plist-get res :ambiguous))
+             (unr (plist-get res :unresolved))
+             (too-many (> (length files) (or context-navigator-path-add-limit 50))))
+        ;; Ambiguities: abort and show a short summary
+        (when (and (consp amb) (> (length amb) 0))
+          (let ((sample (mapconcat
+                         (lambda (cell)
+                           (format "%s → %d" (car cell) (length (cdr cell))))
+                         (cl-subseq amb 0 (min 10 (length amb)))
+                         ", ")))
+            (message "%s %s" (context-navigator-i18n :ambiguous-found) sample))
+          (cl-return-from context-navigator-add-from-text nil))
+        ;; Unresolved: show a short list (non-fatal)
+        (when (and (consp unr) (> (length unr) 0))
+          (let ((sample (string-join (cl-subseq unr 0 (min 10 (length unr))) ", ")))
+            (message "%s %s" (context-navigator-i18n :unresolved-found) sample)))
+        ;; Too many
+        (when too-many
+          (message (context-navigator-i18n :too-many) (length files) (or context-navigator-path-add-limit 50))
+          (cl-return-from context-navigator-add-from-text nil))
+        ;; Remote confirmation
+        (when (and (> (plist-get res :remote) 0)
+                   (not (yes-or-no-p (format (context-navigator-i18n :remote-warning) (plist-get res :remote)))))
+          (message "%s" (context-navigator-i18n :aborted))
+          (cl-return-from context-navigator-add-from-text nil))
+        ;; Nothing to add
+        (if (not (and (listp files) (> (length files) 0)))
+            (message "%s" (context-navigator-i18n :unresolved-found))
+          ;; Preview + confirm
+          (if (not (context-navigator-path-add--preview-and-confirm files res))
+              (message "%s" (context-navigator-i18n :aborted))
+            ;; Add and push (batched)
+            (let* ((st-before (context-navigator--state-get))
+                   (items-before (and st-before (context-navigator-state-items st-before)))
+                   (added (context-navigator-path-add--append-files-as-items files))
+                   (st-after (context-navigator--state-get))
+                   (items-after (and st-after (context-navigator-state-items st-after)))
+                   (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
+                   (adds (plist-get diff :add)))
+              (context-navigator-path-add--maybe-apply-to-gptel adds)
+              (message (context-navigator-i18n :added-files) added))))))))
 
 ;;;###autoload
 (defun context-navigator-add-from-minibuffer ()

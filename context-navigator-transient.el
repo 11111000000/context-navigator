@@ -34,7 +34,7 @@
   "Settings for universal add operations."
   :group 'context-navigator)
 
-(defcustom context-navigator-max-file-size (* 2 1024 1024)
+(defcustom context-navigator-max-file-size (* 1 1024 1024)
   "Maximum file size (bytes) to include when adding files recursively.
 Files larger than this threshold are skipped."
   :type 'integer :group 'context-navigator-add)

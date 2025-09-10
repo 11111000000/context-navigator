@@ -284,6 +284,16 @@
      (be . "Ня вырашана:")
      (zh . "未解析：")
      (ja . "未解決:"))
+    (:text-no-tokens
+     (en . "No paths found in selection")
+     (ru . "В выделении не обнаружены пути")
+     (fr . "Aucun chemin trouvé dans la sélection")
+     (de . "Keine Pfade in der Auswahl gefunden")
+     (es . "No se encontraron rutas en la selección")
+     (uk . "У виділенні не знайдено шляхів")
+     (be . "У вылучэнні не знойдзена шляхоў")
+     (zh . "选区中未发现路径")
+     (ja . "選択範囲にパスが見つかりません"))
     (:too-many
      (en . "Too many files (%d), max %d — operation cancelled")
      (ru . "Слишком много файлов (%d), максимум %d — операция отменена")
