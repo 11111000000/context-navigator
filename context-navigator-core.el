@@ -567,15 +567,13 @@ Otherwise start immediately."
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
-  (if (not context-navigator--auto-project-switch)
-      nil
-    ;; Enabled:
-    ;; Always update last-project-root and log.
-    (let* ((cur (context-navigator--state-get))
-           (new (context-navigator--state-copy cur)))
-      (setf (context-navigator-state-last-project-root new) root)
-      (context-navigator--set-state new))
-    (context-navigator--log "Project switch -> %s" (or root "~"))
+  ;; Always update last project root for UI/header, regardless of auto-switch flag.
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-copy cur)))
+    (setf (context-navigator-state-last-project-root new) root)
+    (context-navigator--set-state new))
+  (context-navigator--log "Project switch -> %s" (or root "~"))
+  (when context-navigator--auto-project-switch
     (if context-navigator-autoload
         (progn
           ;; Inhibit autosave/refresh during transition to avoid leaking saves.
@@ -760,6 +758,16 @@ Prunes dead buffer items (non-live buffers). Return the new state."
       (message "Removed %d dead buffer item(s)" removed))
     (context-navigator--set-state new)
     (context-navigator-events-publish :model-refreshed new)
+    ;; Immediate autosave on any change (in addition to debounced autosave):
+    (when (and context-navigator-autosave
+               (context-navigator-state-p new)
+               (not (context-navigator-state-inhibit-autosave new)))
+      (let ((root (context-navigator-state-last-project-root new))
+            (slug (context-navigator-state-current-group-slug new))
+            (items (context-navigator-state-items new)))
+        ;; Save only when a named group is active; avoid legacy single-file writes.
+        (when (and (stringp slug) (not (string-empty-p slug)))
+          (ignore-errors (context-navigator-persist-save items root slug)))))
     new))
 
 (defun context-navigator-add-item (item)
@@ -1070,12 +1078,13 @@ Strategy:
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
 Also triggers an immediate project switch so header shows actual project."
   (when (bound-and-true-p context-navigator-mode)
-    ;; Reset event bus to avoid duplicated subscribers from older definitions.
-    (ignore-errors (context-navigator-events-reset))
+    ;; Unsubscribe only our own tokens; do not reset the global event bus
+    ;; to avoid breaking other modules’ subscriptions (logs, UI, etc.).
+    (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
     (setq context-navigator--event-tokens nil)
     ;; Ensure project hooks installed
     (ignore-errors (context-navigator-project-setup-hooks))
-    ;; Re-subscribe
+    ;; Re-subscribe core listeners
     (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
           context-navigator--event-tokens)
     (push (context-navigator-events-subscribe

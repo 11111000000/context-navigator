@@ -72,7 +72,9 @@ This attempts several strategies for robustness:
 - Fallback: if that fails, try detecting the project using the buffer's
   `default-directory' (useful for special buffers like gptel that are not
   file-backed but inherit a directory from their originating project).
-- Finally, try projectile fallbacks with the same approaches."
+- Finally, try projectile fallbacks with the same approaches.
+
+Note: returns only local, writable roots to avoid switching to non-writable locations."
   (let* ((buf (or buffer (current-buffer)))
          ;; buffer's default-directory may be the best hint for non-file buffers
          (buf-dir (when (bufferp buf) (with-current-buffer buf default-directory)))
@@ -97,9 +99,7 @@ This attempts several strategies for robustness:
                (ignore-errors (projectile-project-root)))))))
     (when (and (stringp root) (not (string-empty-p root)))
       (let ((abs (directory-file-name (expand-file-name root))))
-        (if (context-navigator-project--writable-root-p abs)
-            abs
-          nil)))))
+        (and (context-navigator-project--writable-root-p abs) abs)))))
 
 (defun context-navigator-project--interesting-buffer-p (buffer)
   "Return non-nil if BUFFER should trigger project switching.
@@ -244,7 +244,9 @@ Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers.
       (and root (directory-file-name root)))))
 
 (defun context-navigator-project--frame-file-project-root ()
-  "Find the first file-visiting window on current frame; return its project root or nil."
+  "Find the first file-visiting window on current frame; return its project root or nil.
+
+Only returns local, writable roots."
   (let ((wins (window-list (selected-frame) 'no-minibuffer)))
     (cl-loop for w in wins
              for b = (window-buffer w)
@@ -267,26 +269,32 @@ Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers.
         (derived-mode-p 'dired-mode)
         ;; org buffer with custom GPTel minor mode
         (bound-and-true-p gptel-aibo-mode)))))
-  (advice-add 'context-navigator-project--interesting-buffer-p
-              :around #'context-navigator-project--interesting-buffer-p/a))
+  ;; Avoid duplicate advice on reload
+  (unless (advice-member-p #'context-navigator-project--interesting-buffer-p/a
+                           'context-navigator-project--interesting-buffer-p)
+    (advice-add 'context-navigator-project--interesting-buffer-p
+                :around #'context-navigator-project--interesting-buffer-p/a)))
 
 ;; Advice: add heuristic fallback for current-root resolution (policy B)
 (when (fboundp 'context-navigator-project-current-root)
   (defun context-navigator-project--current-root/a (orig &rest args)
     (let* ((root (ignore-errors (apply orig args))))
       (cond
-       ;; Use original if it's a suitable local writable root
+       ;; Use original only when it is a local, writable directory
        ((and (stringp root)
              (context-navigator-project--local-writable-dir-p root))
-        (directory-file-name root))
+        (directory-file-name (expand-file-name root)))
        (t
         ;; Heuristic: use project root from any file-visiting window in current frame
         (let ((fr (context-navigator-project--frame-file-project-root)))
           (and (stringp fr)
                (context-navigator-project--local-writable-dir-p fr)
                (directory-file-name fr)))))))
-  (advice-add 'context-navigator-project-current-root
-              :around #'context-navigator-project--current-root/a))
+  ;; Avoid duplicate advice on reload
+  (unless (advice-member-p #'context-navigator-project--current-root/a
+                           'context-navigator-project-current-root)
+    (advice-add 'context-navigator-project-current-root
+                :around #'context-navigator-project--current-root/a)))
 
 ;; Removed duplicate Autoproj block (cn-autoproj--) to avoid double advices.
 
