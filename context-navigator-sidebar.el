@@ -863,10 +863,10 @@ situation where visiting a file replaces the sidebar buffer and makes it
 hard to restore the sidebar afterward."
   (when-let* ((item (context-navigator-sidebar--at-item)))
     (let* ((selected-win (selected-window))
-           (is-sidebar (and (window-live-p selected-win)
-                            (window-parameter selected-win 'context-navigator-sidebar)
-                            (eq (window-buffer selected-win) (current-buffer))))
-           (open-in-other (or preview is-sidebar)))
+           (is-nav (and (window-live-p selected-win)
+                        (eq (window-buffer selected-win) (current-buffer))
+                        (derived-mode-p 'context-navigator-sidebar-mode)))
+           (open-in-other (or preview is-nav)))
       (pcase (context-navigator-item-type item)
         ('file
          (let ((f (context-navigator-item-path item)))

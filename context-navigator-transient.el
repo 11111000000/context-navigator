@@ -4,7 +4,7 @@
 
 ;;; Commentary:
 ;; Global transient on C-c n:
-;;  n: toggle sidebar
+;;  n: open Navigator
 ;;  p: switch to current buffer's project
 ;;  a: add current file/region/buffer/dired selection (minimal)
 ;;  g: groups list
@@ -29,6 +29,7 @@
 (require 'context-navigator-path-add)
 (require 'context-navigator-sidebar)
 (require 'context-navigator-log)
+(require 'context-navigator-view)
 
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
@@ -43,8 +44,9 @@ Files larger than this threshold are skipped."
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
   [["Panel/Project"
-    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-sidebar-toggle)
-    ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
+    ("n" "Open Navigator" context-navigator-open)
+    ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)
+    ("M" "Toggle display mode" context-navigator-toggle-display-mode)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-sidebar-show-groups)
     ("X" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]

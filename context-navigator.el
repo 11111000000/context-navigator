@@ -62,6 +62,14 @@
 ;;;###autoload
 (autoload 'context-navigator-transient "context-navigator-transient" "Open Context Navigator transient." t)
 
+;; View/Display dispatcher and buffer-mode open
+;;;###autoload
+(autoload 'context-navigator-open "context-navigator-view" "Open Navigator according to display mode." t)
+;;;###autoload
+(autoload 'context-navigator-toggle-display-mode "context-navigator-view" "Toggle display mode (sidebar|buffer)." t)
+;;;###autoload
+(autoload 'context-navigator-buffer-open "context-navigator-view" "Open Navigator in a regular window (magit-like)." t)
+
 ;;;###autoload
 (defun context-navigator-version ()
   "Return version string for Context Navigator."

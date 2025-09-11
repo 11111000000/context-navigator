@@ -16,6 +16,7 @@
 (require 'context-navigator-render)
 (require 'context-navigator-icons)
 (require 'context-navigator-sidebar)
+(require 'context-navigator-view)
 
 ;; Load tests
 (require 'context-navigator-test-helpers)
