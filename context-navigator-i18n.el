@@ -671,6 +671,80 @@
      (be . "Буфер дададзены ў кантэкст")
      (zh . "已将缓冲区添加到上下文")
      (ja . "バッファをコンテキストに追加しました"))
+
+    ;; Help window / sidebar help
+    (:help-title
+     (en . "Context Navigator — Help")
+     (ru . "Context Navigator — Справка"))
+    (:help-global-title
+     (en . "Global keys")
+     (ru . "Глобальные клавиши"))
+    (:help-global-summary
+     (en . "The following bindings are available in the sidebar buffer.")
+     (ru . "Следующие клавиши доступны в буфере боковой панели."))
+    (:help-groups-summary
+     (en . "In Groups mode additional keys are available: a add, r rename, c duplicate, d delete.")
+     (ru . "В режиме групп доступны дополнительные клавиши: a — создать, r — переименовать, c — дублировать, d — удалить."))
+
+    ;; Per-command help lines (descriptions only; keys are shown dynamically)
+    (:help-next-item
+     (en . "Next item")
+     (ru . "Следующий элемент"))
+    (:help-previous-item
+     (en . "Previous item")
+     (ru . "Предыдущий элемент"))
+    (:help-activate
+     (en . "Activate/open")
+     (ru . "Открыть/активировать"))
+    (:help-preview
+     (en . "Preview in other window")
+     (ru . "Предпросмотр в другом окне"))
+    (:help-toggle-gptel
+     (en . "Toggle include/exclude item")
+     (ru . "Включить/исключить элемент"))
+    (:help-delete
+     (en . "Delete from model")
+     (ru . "Удалить из модели"))
+    (:help-refresh
+     (en . "Refresh view")
+     (ru . "Обновить список"))
+    (:help-go-up
+     (en . "Back to groups/items")
+     (ru . "Назад к группам/элементам"))
+    (:help-group-create
+     (en . "Create group")
+     (ru . "Создать группу"))
+    (:help-group-rename
+     (en . "Rename group")
+     (ru . "Переименовать группу"))
+    (:help-group-duplicate
+     (en . "Duplicate group")
+     (ru . "Дублировать группу"))
+    (:help-toggle-push
+     (en . "Toggle push→gptel")
+     (ru . "Переключить отправку→gptel"))
+    (:help-toggle-auto
+     (en . "Toggle auto-project")
+     (ru . "Переключить авто‑проект"))
+    (:help-open-all
+     (en . "Open all context buffers")
+     (ru . "Открыть все буферы контекста"))
+    (:help-push-now
+     (en . "Push now to gptel")
+     (ru . "Отправить сейчас в gptel"))
+    (:help-clear-group
+     (en . "Clear current group")
+     (ru . "Очистить текущую группу"))
+    (:help-clear-gptel
+     (en . "Clear gptel context")
+     (ru . "Очистить контекст gptel"))
+    (:help-quit
+     (en . "Close sidebar")
+     (ru . "Закрыть боковую панель"))
+    (:help-help
+     (en . "Show this help")
+     (ru . "Показать эту справку"))
+
     ;; ... (оставить остальные блоки без изменений, дополнив их недостающими переводами)
     )
   "Translation dictionary for minimal UI strings.")
