@@ -109,6 +109,7 @@ Steps:
 - trim whitespace
 - strip surrounding quotes/angles/brackets/parentheses
 - strip trailing position suffix :N or :A-B (but not drive C:)
+- strip trailing annotation blocks in parentheses at the end
 - strip trailing punctuation that cannot be part of filename (,.;:)]}\"»)"
   (let* ((s (and (stringp raw) (string-trim raw))))
     (when (and (stringp s) (not (string-empty-p s)))
@@ -122,22 +123,43 @@ Steps:
                                   (and (eq (aref q 0) ?\{) (eq (aref q (1- (length q))) ?\}))
                                   (and (eq (aref q 0) ?«)  (eq (aref q (1- (length q))) ?»))))
                          (substring q 1 (1- (length q))))
-                        (t q))))
-             ;; URLs are rejected
-             (_ (when (context-navigator-path-add--looks-like-url-p strip2)
-                  (cl-return-from context-navigator-path-add--normalize-token nil)))
-             ;; Remove :N or :A-B position suffixes (keep C: drive)
-             (no-pos (context-navigator-path-add--strip-position-suffix strip2))
-             ;; Strip trailing punctuation like ",.;:)]}\"»" if present, repeatedly
-             (trim-tails
-              (let ((q no-pos)
-                    (tails '("," "." ";" ":" ")" "]" "}" "”" "»")))
-                (while (and (stringp q)
-                            (> (length q) 0)
-                            (member (substring q (1- (length q))) tails))
-                  (setq q (substring q 0 (1- (length q)))))
-                q)))
-        (string-trim trim-tails)))))
+                        (t q)))))
+        ;; URLs are rejected early without using cl-return-from (avoid no-catch in batch)
+        (if (context-navigator-path-add--looks-like-url-p strip2)
+            nil
+          (let* (;; Remove :N or :A-B position suffixes (keep C: drive)
+                 (no-pos (context-navigator-path-add--strip-position-suffix strip2))
+                 ;; Strip trailing annotation blocks in parentheses e.g. " (…)" or "（…）"
+                 (no-parens
+                  (let ((q no-pos))
+                    ;; Remove one or more trailing parenthesized annotation blocks with optional spaces
+                    (while (string-match "[ \t]*\\(([^)]*)\\|（[^）]*）\\)\\s-*\\'" q)
+                      (setq q (replace-match "" t t q)))
+                    ;; If a stray opening bracket remains at the end, drop it too
+                    (setq q (replace-regexp-in-string "[ \t]*[({（]\\s-*\\'" "" q))
+                    q))
+                 ;; Collapse doubled backslashes inside token, but keep leading UNC (\\) intact
+                 (no-esc
+                  (let ((q no-parens))
+                    (if (and (>= (length q) 2) (string-prefix-p "\\\\" q))
+                        (concat "\\\\"
+                                "\\"
+                                (replace-regexp-in-string "\\\\\\\\+" "\\\\" (substring q 2)))
+                      (replace-regexp-in-string "\\\\\\\\+" "\\\\" q))))
+                 ;; Strip trailing punctuation like ",.;:)]}\"»" if present, repeatedly
+                 ;; Guard: keep bare Windows drive like "C:" intact.
+                 (trim-tails
+                  (let ((q no-esc)
+                        (tails '("," "." ";" ":" ")" "]" "}" "”" "»")))
+                    (let ((drive-only (string-match-p "\\`[A-Za-z]:\\'" q)))
+                      (while (and (stringp q)
+                                  (> (length q) 0)
+                                  (let* ((last (substring q (1- (length q)))))
+                                    (and (member last tails)
+                                         (not (and drive-only (string= last ":"))))))
+                        (setq q (substring q 0 (1- (length q))))))
+                    q)))
+            (string-trim trim-tails)))))))
 
 (defun context-navigator-path-add--case-fold-p ()
   "Return non-nil when basename match should be case-insensitive."
@@ -164,6 +186,11 @@ Steps:
   "Return non-nil when S has a filename extension (basename has a dot suffix)."
   (let ((ext (file-name-extension (file-name-nondirectory s))))
     (and (stringp ext) (not (string-empty-p ext)))))
+
+(defun context-navigator-path-add--has-double-sep-p (s)
+  "Return non-nil when S contains a double directory separator (// or \\\\)."
+  (and (stringp s)
+       (string-match-p "\\(//\\|\\\\\\\\\\)" s)))
 
 (defun context-navigator-path-add--regular-file-p (p)
   (and (stringp p) (file-exists-p p) (file-regular-p p)))
@@ -299,29 +326,28 @@ Steps:
 Rules:
 - reject URLs
 - accept absolute paths (POSIX/Windows/UNC)
-- tokens with a directory separator are accepted when the last component is non-empty (no need for an extension)
-- tokens without a directory separator are accepted when they either have an extension
-  or match common extensionless filenames (Makefile, README, LICENSE, Dockerfile, etc.)
-Everything else (e.g. trailing slash directories like 'app/', plain words) is rejected."
+- accept tokens with a directory separator when:
+  - basename is non-empty and not . or ..
+  - string does not contain double separators (// or \\\\)
+- accept tokens without a directory separator only when they have an extension
+Everything else (e.g. trailing slash directories like 'app/', plain words, or
+well-known extensionless names like Makefile) is rejected."
   (and (stringp s)
        (not (string-empty-p s))
        (not (context-navigator-path-add--looks-like-url-p s))
        (let ((bn (file-name-nondirectory s)))
          (or
-          ;; Absolute paths
+          ;; Absolute paths (POSIX/Windows/UNC)
           (context-navigator-path-add--absolute-p s)
-          ;; Relative/with dir separators: accept when basename is non-empty and not . or ..
+          ;; With dir separators: must not have double separators and basename must be valid
           (and (context-navigator-path-add--has-dirsep-p s)
+               (not (context-navigator-path-add--has-double-sep-p s))
                (stringp bn)
                (not (string-empty-p bn))
                (not (member bn '("." ".."))))
-          ;; Bare basenames: require extension OR well-known extensionless names
+          ;; Bare basenames: require extension
           (and (not (context-navigator-path-add--has-dirsep-p s))
-               (or (context-navigator-path-add--has-extension-p s)
-                   (let* ((bnu (downcase bn)))
-                     (member bnu '("makefile" "readme" "license" "copying"
-                                   "dockerfile" "vagrantfile" "gemfile" "rakefile"
-                                   "procfile" "brewfile")))))))))
+               (context-navigator-path-add--has-extension-p s))))))
 
 (defun context-navigator-extract-pathlike-tokens (text)
   "Extract path-like tokens from TEXT. Return list of normalized strings.
@@ -332,7 +358,7 @@ Primary pass:
 Fallback (when primary found nothing):
 - dired-like lines: take the last whitespace-separated field on each line,
   normalize and validate as a candidate (helps with org blocks containing dired listings)."
-  (let* ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_./\\\\:*?\\[\\]-]+\\)")
+  (let* ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_.:/\\\\-]+\\)")
          (pos 0) (acc '()))
     ;; Primary pass
     (while (and (< pos (length text))

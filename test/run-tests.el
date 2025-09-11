@@ -31,6 +31,7 @@
 (require 'context-navigator-groups-create-switch-test)
 (require 'context-navigator-transient-test)
 (require 'context-navigator-add-test)
+(require 'context-navigator-path-add-test)
 (require 'context-navigator-render-indicators-test)
 (require 'context-navigator-render-disabled-test)
 (require 'context-navigator-sidebar-toggle-enabled-test)

@@ -19,15 +19,19 @@
   (make-temp-file "cn-pa-" t))
 
 (ert-deftest cn-pa-extract-normalize-basic ()
-  "Extract quoted/unquoted tokens and normalize suffixes and quotes."
+  "Extract quoted/unquoted tokens and normalize suffixes and quotes.
+Rules:
+- paths are tokens with dir separators (/ or \\) or with an extension
+- reject tokens with double separators (// or \\\\)
+- do not accept extensionless basenames like Makefile"
   (let* ((s "foo/bar.txt:12 'src/main.c:34-56' <include/header.h> \"C:\\\\dir\\\\file.rs:10\" http://example.com/a baz Makefile")
          (tokens (context-navigator-extract-pathlike-tokens s)))
-    ;; URL should be ignored; unquoted token with space 'baz Makefile' -> only 'Makefile' if present
+    ;; URL should be ignored; 'baz Makefile' → none (no slash, no extension)
     (should (member "foo/bar.txt" tokens))
     (should (member "src/main.c" tokens))
     (should (member "include/header.h" tokens))
     (should (member "C:\\dir\\file.rs" tokens))
-    (should (member "Makefile" tokens))
+    (should (not (member "Makefile" tokens)))
     ;; No URL token
     (should (null (cl-find-if (lambda (t) (string-match-p "http" t)) tokens)))))
 
@@ -97,6 +101,18 @@
                           pl))))
           (should (eq (plist-get plist :aborted) :too-many)))
       (ignore-errors (delete-directory dir t)))))
+
+(ert-deftest cn-pa-extract-paren-tail ()
+  "Extract path when a trailing '(' follows the file."
+  (let* ((s "- src/app/modules/configuration/configuration.component.ts (")
+         (tokens (context-navigator-extract-pathlike-tokens s)))
+    (should (member "src/app/modules/configuration/configuration.component.ts" tokens))))
+
+(ert-deftest cn-pa-extract-paren-annotation-full ()
+  "Extract path when an annotation in parentheses follows the file."
+  (let* ((s "- src/app/models/settings.ts (для AppConfigurationService)")
+         (tokens (context-navigator-extract-pathlike-tokens s)))
+    (should (member "src/app/models/settings.ts" tokens))))
 
 (provide 'context-navigator-path-add-test)
 ;;; context-navigator-path-add-test.el ends here
