@@ -207,13 +207,14 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
       nil)))
 
 (defun context-navigator--protect-balance-windows (orig-fn &rest args)
-  "Advice wrapper around ORIG-FN that no-ops when Navigator windows must be protected."
-  (if (or (and context-navigator-protect-sidebar-windows
-               (context-navigator--sidebar-visible-p))
-          (and context-navigator-protect-buffer-windows
-               (context-navigator--buffer-mode-visible-p)))
+  "Advice wrapper around ORIG-FN that no-ops when the sidebar Navigator window must be protected.
+
+Protection applies only to the sidebar display mode; Navigator in buffer mode is a normal
+window and should not prevent global window-balancing commands."
+  (if (and context-navigator-protect-sidebar-windows
+           (context-navigator--sidebar-visible-p))
       (progn
-        (context-navigator-debug :debug :core "Skipping window balancing while Navigator window is visible")
+        (context-navigator-debug :debug :core "Skipping window balancing while Navigator sidebar window is visible")
         nil)
     (apply orig-fn args)))
 
