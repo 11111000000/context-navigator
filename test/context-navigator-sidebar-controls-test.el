@@ -1,8 +1,8 @@
-;;; context-navigator-sidebar-controls-test.el --- Tests for footer controls visibility -*- lexical-binding: t; -*-
+;;; context-navigator-view-controls-test.el --- Tests for footer controls visibility -*- lexical-binding: t; -*-
 
 (require 'ert)
 (require 'cl-lib)
-(require 'context-navigator-sidebar)
+(require 'context-navigator-view)
 (require 'context-navigator-model)
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-off-no-gptel ()
@@ -11,7 +11,7 @@
         (context-navigator-language 'en))
     (cl-letf (((symbol-value 'context-navigator--push-to-gptel) nil)
               ((symbol-function 'context-navigator-gptel-pull) (lambda () '())))
-      (let* ((segs (context-navigator-sidebar--footer-control-segments))
+      (let* ((segs (context-navigator-view--footer-control-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
         (should (string-match-p "\\[Clear gptel\\]" joined))))))
@@ -23,7 +23,7 @@
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) nil)
                ((symbol-function 'context-navigator-gptel-pull)
                 (lambda () (list (context-navigator-item-create :type 'file :path "/tmp/a" :name "a" :enabled t)))))
-      (let* ((segs (context-navigator-sidebar--footer-control-segments))
+      (let* ((segs (context-navigator-view--footer-control-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
         (should (string-match-p "\\[Clear gptel\\]" joined))))))
@@ -35,10 +35,10 @@
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) t)
                ((symbol-function 'context-navigator-gptel-pull)
                 (lambda () (list (context-navigator-item-create :type 'file :path "/tmp/a" :name "a" :enabled t)))))
-      (let* ((segs (context-navigator-sidebar--footer-control-segments))
+      (let* ((segs (context-navigator-view--footer-control-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
         (should (string-match-p "\\[Clear gptel\\]" joined))))))
 
-(provide 'context-navigator-sidebar-controls-test)
-;;; context-navigator-sidebar-controls-test.el ends here
+(provide 'context-navigator-view-controls-test)
+;;; context-navigator-view-controls-test.el ends here

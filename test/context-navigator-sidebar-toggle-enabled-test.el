@@ -1,11 +1,11 @@
-;;; context-navigator-sidebar-toggle-enabled-test.el --- Tests for sidebar toggle t (+autopush) -*- lexical-binding: t; -*-
+;;; context-navigator-view-toggle-enabled-test.el --- Tests for sidebar toggle t (+autopush) -*- lexical-binding: t; -*-
 
 (require 'ert)
 (require 'cl-lib)
 (require 'context-navigator-test-helpers)
 (require 'context-navigator-core)
 (require 'context-navigator-render)
-(require 'context-navigator-sidebar)
+(require 'context-navigator-view)
 (require 'context-navigator-model)
 (require 'context-navigator-gptel-bridge)
 
@@ -41,7 +41,7 @@
              (should (ctxnav-sidebar-test--goto-first-item))
              ;; Toggle to disabled -> expect removal from gptel
              (let ((before-calls (length gptel--calls)))
-               (context-navigator-sidebar-toggle-enabled)
+               (context-navigator-view-toggle-enabled)
                ;; Model: enabled=nil
                (let* ((st (context-navigator--state-get))
                       (idx (context-navigator-state-index st))
@@ -55,7 +55,7 @@
              (goto-char (point-min))
              (should (ctxnav-sidebar-test--goto-first-item))
              (let ((before (length gptel--context)))
-               (context-navigator-sidebar-toggle-enabled)
+               (context-navigator-view-toggle-enabled)
                (let* ((st2 (context-navigator--state-get))
                       (idx2 (context-navigator-state-index st2))
                       (key (context-navigator-model-item-key it)))
@@ -80,7 +80,7 @@
              (should (ctxnav-sidebar-test--goto-first-item))
              (let ((calls-before (length gptel--calls))
                    (ctx-before (copy-sequence gptel--context)))
-               (context-navigator-sidebar-toggle-enabled)
+               (context-navigator-view-toggle-enabled)
                (let* ((st (context-navigator--state-get))
                       (idx (context-navigator-state-index st))
                       (key (context-navigator-model-item-key it)))
@@ -91,5 +91,5 @@
          (when (buffer-live-p buf) (kill-buffer buf))
          (ignore-errors (delete-file tmp)))))))
 
-(provide 'context-navigator-sidebar-toggle-enabled-test)
-;;; context-navigator-sidebar-toggle-enabled-test.el ends here
+(provide 'context-navigator-view-toggle-enabled-test)
+;;; context-navigator-view-toggle-enabled-test.el ends here

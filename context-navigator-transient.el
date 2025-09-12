@@ -27,7 +27,7 @@
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
 (require 'context-navigator-path-add)
-(require 'context-navigator-sidebar)
+(require 'context-navigator-view)
 (require 'context-navigator-log)
 
 (defgroup context-navigator-add nil
@@ -43,16 +43,16 @@ Files larger than this threshold are skipped."
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
   [["Panel/Project"
-    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-sidebar-toggle)
+    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-view-toggle)
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
-    ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-sidebar-show-groups)
+    ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
     ("X" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]
    ["Actions"
     ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
     ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
     ("t" (lambda () (context-navigator-i18n :add-from-text)) context-navigator-add-from-text)
-    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-sidebar-open-all-buffers)]
+    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)]
    ["GPTel"
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)

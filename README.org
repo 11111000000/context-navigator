@@ -9,7 +9,7 @@ Emacs Context Navigator is a lightweight, project‑aware context manager and si
 
 The idea: practice “context engineering”. Instead of keeping task state, open files, buffer selections, and notes in your head, externalize them into clear, reusable context groups per project (or globally). Switch context instantly, reduce cognitive load, and keep your focus on the work.
 
-- Sidebar to browse items and groups, with compact controls
+- View to browse items and groups, with compact controls
 - Project‑aware, optional auto‑switch on buffer/project change
 - One‑way integration with GPTel (push current items → GPTel)
 - Async, per‑group persistence with progress and spinner
@@ -55,7 +55,7 @@ Not on MELPA. Use a local checkout or straight.el from GitHub.
 (use-package context-navigator
   :commands (context-navigator-start
              context-navigator-mode
-             context-navigator-sidebar-open)
+             context-navigator-view-open)
   :init
   ;; Optional, but handy: set a global key for the transient menu
   (setq context-navigator-global-key "C-c n")
@@ -147,7 +147,7 @@ Examples:
   - GPTel: G (toggle push), A (toggle auto‑project), P (push now), C (clear gptel)
   - Logs: D (toggle logs), L (open logs), K (clear logs), V (set level), F (toggle file logging)
 
-- Sidebar (context-navigator-sidebar-mode)
+- Sidebar (context-navigator-view-mode)
   - RET / l: activate (visit item/open group)
   - SPC: preview (other window)
   - n/p/j/k: next/previous
@@ -177,7 +177,7 @@ Below are all public settings collected from the source, grouped by module. “D
 |--------------------------------------------+---------------------------+---------------------------+-----------------------------------------------------------------------------------------------+----------------------------------|
 | context-navigator-auto-refresh             | boolean                   | t                         | Auto refresh model/sidebar after external changes                                             | core/context-navigator-core.el   |
 | context-navigator-global-key               | string or nil             | nil                       | Global key for transient (e.g., "C-c n"); nil = no binding                                    | core/context-navigator-core.el   |
-| context-navigator-sidebar-width            | integer                   | 33                        | Sidebar width in columns                                                                      | core/context-navigator-core.el   |
+| context-navigator-view-width            | integer                   | 33                        | Sidebar width in columns                                                                      | core/context-navigator-core.el   |
 | context-navigator-max-filename-length      | integer                   | 64                        | Max display length for file names                                                             | core/context-navigator-core.el   |
 | context-navigator-context-switch-interval  | number                    | 0.7                       | Throttle interval (s) for project auto‑switch                                                | core/context-navigator-core.el   |
 | context-navigator-context-load-batch-size  | integer                   | 64                        | Batch size for async context load                                                             | core/context-navigator-core.el   |
@@ -201,20 +201,20 @@ Constants:
 |----------------------------------+----------+---------+------------------------------------------------+----------------------------------|
 | context-navigator-persist-version| constant | 3       | Persist format version used across modules     | core/context-navigator-core.el   |
 
-** Sidebar (context-navigator-sidebar.el)
+** Sidebar (context-navigator-view.el)
 
 | Variable                                         | Type                                  | Default | Description                                                            | Module/File                         |
 |--------------------------------------------------+---------------------------------------+---------+------------------------------------------------------------------------+--------------------------------------|
-| context-navigator-auto-open-groups-on-error      | boolean                               | t       | Auto‑open groups list when a group fails to load                      | sidebar/context-navigator-sidebar.el |
-| context-navigator-highlight-active-group         | boolean                               | t       | Highlight active group in groups list                                 | sidebar/context-navigator-sidebar.el |
-| context-navigator-controls-style                 | choice (auto|icons|text)             | text    | Labels style for toggles/actions                                       | sidebar/context-navigator-sidebar.el |
-| context-navigator-openable-count-ttl             | number                                | 0.3     | Cache TTL (s) for openable counter                                    | sidebar/context-navigator-sidebar.el |
-| context-navigator-openable-soft-cap              | integer                               | 100     | Soft cap for counting openable buffers                                | sidebar/context-navigator-sidebar.el |
-| context-navigator-openable-remote-mode           | choice (lazy|strict|off)              | lazy    | How to treat remote files in “Open buffers”                           | sidebar/context-navigator-sidebar.el |
-| context-navigator-gptel-indicator-poll-interval  | number                                | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)              | sidebar/context-navigator-sidebar.el |
-| context-navigator-sidebar-spinner-frames         | list of strings                       | ⠋…⠏   | Frames for the loading spinner                                         | sidebar/context-navigator-sidebar.el |
-| context-navigator-sidebar-spinner-interval       | number                                | 0.1     | Spinner animation interval (s)                                         | sidebar/context-navigator-sidebar.el |
-| context-navigator-sidebar-spinner-degrade-threshold | number                             | 0.25    | Degrade to static indicator if timer slips beyond this (s)             | sidebar/context-navigator-sidebar.el |
+| context-navigator-auto-open-groups-on-error      | boolean                               | t       | Auto‑open groups list when a group fails to load                      | sidebar/context-navigator-view.el |
+| context-navigator-highlight-active-group         | boolean                               | t       | Highlight active group in groups list                                 | sidebar/context-navigator-view.el |
+| context-navigator-controls-style                 | choice (auto|icons|text)             | text    | Labels style for toggles/actions                                       | sidebar/context-navigator-view.el |
+| context-navigator-openable-count-ttl             | number                                | 0.3     | Cache TTL (s) for openable counter                                    | sidebar/context-navigator-view.el |
+| context-navigator-openable-soft-cap              | integer                               | 100     | Soft cap for counting openable buffers                                | sidebar/context-navigator-view.el |
+| context-navigator-openable-remote-mode           | choice (lazy|strict|off)              | lazy    | How to treat remote files in “Open buffers”                           | sidebar/context-navigator-view.el |
+| context-navigator-gptel-indicator-poll-interval  | number                                | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)              | sidebar/context-navigator-view.el |
+| context-navigator-view-spinner-frames         | list of strings                       | ⠋…⠏   | Frames for the loading spinner                                         | sidebar/context-navigator-view.el |
+| context-navigator-view-spinner-interval       | number                                | 0.1     | Spinner animation interval (s)                                         | sidebar/context-navigator-view.el |
+| context-navigator-view-spinner-degrade-threshold | number                             | 0.25    | Degrade to static indicator if timer slips beyond this (s)             | sidebar/context-navigator-view.el |
 
 ** Render (context-navigator-render.el)
 
@@ -299,7 +299,7 @@ Constants:
   (context-navigator-global-key "C-c n")
   (context-navigator-autoload t)
   (context-navigator-autosave t)
-  (context-navigator-sidebar-width 36)
+  (context-navigator-view-width 36)
 
   ;; Sidebar & render
   (context-navigator-controls-style 'icons)
@@ -384,7 +384,7 @@ Manual project switch at any time: =M-x context-navigator-switch-to-current-buff
 - The menu/keys don’t work?
   - Ensure =context-navigator-mode= is enabled and set =context-navigator-global-key= (or call =M-x context-navigator-transient=).
 - Sidebar doesn’t open?
-  - Try =M-x context-navigator-start= or =M-x context-navigator-sidebar-open=.
+  - Try =M-x context-navigator-start= or =M-x context-navigator-view-open=.
 - Icons are missing?
   - Install =all-the-icons= and run =M-x all-the-icons-install-fonts=, then restart Emacs.
 - GPTel is not installed?

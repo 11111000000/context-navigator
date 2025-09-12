@@ -40,8 +40,8 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
       (copy-tree obj)))))
 
 ;; Forward declaration to avoid load cycle with sidebar
-(declare-function context-navigator-sidebar-toggle "context-navigator-sidebar" ())
-(declare-function context-navigator-sidebar-show-groups "context-navigator-sidebar" ())
+(declare-function context-navigator-view-toggle "context-navigator-view" ())
+(declare-function context-navigator-view-show-groups "context-navigator-view" ())
 ;; Forward declarations from project module (for byte-compiler friendliness)
 (declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
 (declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
@@ -57,7 +57,7 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
 
 
 
-(defcustom context-navigator-sidebar-width 33
+(defcustom context-navigator-view-width 33
   "Sidebar window width in columns."
   :type 'integer :group 'context-navigator)
 
@@ -150,8 +150,8 @@ or removed. This is enabled by default."
 
 (defun context-navigator--sidebar-visible-p ()
   "Return non-nil when the Context Navigator sidebar buffer is visible in any window."
-  (and (boundp 'context-navigator-sidebar--buffer-name)
-       (get-buffer-window context-navigator-sidebar--buffer-name t)))
+  (and (boundp 'context-navigator-view--buffer-name)
+       (get-buffer-window context-navigator-view--buffer-name t)))
 
 (defun context-navigator--protect-balance-windows (orig-fn &rest args)
   "Advice wrapper around ORIG-FN that no-ops when sidebar is visible and protection is enabled."
@@ -287,8 +287,8 @@ window after `delete-other-windows' and preserves the user's intended layout.
 
 If no sidebar windows are present, behave like `delete-other-windows'."
   (interactive)
-  (let ((buf (and (boundp 'context-navigator-sidebar--buffer-name)
-                  (get-buffer context-navigator-sidebar--buffer-name))))
+  (let ((buf (and (boundp 'context-navigator-view--buffer-name)
+                  (get-buffer context-navigator-view--buffer-name))))
     (when buf
       (dolist (w (get-buffer-window-list buf nil t))
         (when (window-live-p w)
