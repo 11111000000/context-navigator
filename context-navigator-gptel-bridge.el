@@ -663,9 +663,16 @@ Selections may not support precise removal; fallback to reset without the item."
           fn)))))
 
 (defun context-navigator-gptel-on-change-register ()
-  "Install advices and variable watchers to publish :gptel-change.
+  "Install lightweight advices to publish :gptel-change (no variable watchers).
 
-Used ONLY to keep UI indicators up-to-date; never imports from gptel."
+Rationale: variable watchers on gptel internals (like `gptel-context--alist')
+tend to produce a feedback loop when any reader calls `gptel-context--collect',
+because the variable is rewritten even when content is unchanged.
+That triggers :gptel-change, which triggers another read, and so on.
+
+We keep only function advices on mutation entry points."
+  ;; Ensure we start clean (remove previously installed advices/watchers).
+  (ignore-errors (context-navigator-gptel-on-change-unregister))
   (let (added)
     ;; Advices on common mutation functions (idempotent)
     (dolist (sym '(gptel-context-add
@@ -679,15 +686,6 @@ Used ONLY to keep UI indicators up-to-date; never imports from gptel."
           (when fn
             (push (cons sym fn) context-navigator--gptel-advices)
             (setq added t)))))
-    ;; Variable watchers (Emacs 29+) for versions mutating variables directly (idempotent)
-    (when (fboundp 'add-variable-watcher)
-      (dolist (vsym '(gptel-context gptel-context--alist gptel--context))
-        (when (and (boundp vsym)
-                   (not (assoc vsym context-navigator--gptel-var-watchers)))
-          (let ((fn (context-navigator-gptel--add-var-watcher vsym)))
-            (when fn
-              (push (cons vsym fn) context-navigator--gptel-var-watchers)
-              (setq added t))))))
     added))
 
 (defun context-navigator-gptel-on-change-unregister ()
@@ -713,6 +711,8 @@ Used ONLY to keep UI indicators up-to-date; never imports from gptel."
 (with-eval-after-load 'gptel
   (context-navigator-debug :info :gptel "gptel loaded — registering change advices")
   (when (fboundp 'context-navigator-gptel-on-change-register)
+    ;; Ensure old watchers (if any) are removed before installing advices.
+    (ignore-errors (context-navigator-gptel-on-change-unregister))
     (ignore-errors (context-navigator-gptel-on-change-register)))
   ;; Notify listeners (sidebar/UI) that gptel state might have changed so they can refresh.
   (when (fboundp 'context-navigator-events-publish)

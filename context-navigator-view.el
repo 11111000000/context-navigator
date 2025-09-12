@@ -1455,12 +1455,14 @@ Order of operations:
   (push (context-navigator-events-subscribe
          :gptel-change
          (lambda (&rest _)
-           (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-                  (pulled-keys (and (listp lst)
-                                    (mapcar #'context-navigator-model-item-key lst)))
-                  (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                 (fboundp 'context-navigator-gptel--raw-keys)
+           ;; Prefer raw keys (fast, read-only) to avoid triggering gptel collectors.
+           (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
                                  (ignore-errors (context-navigator-gptel--raw-keys))))
+                  (pulled-keys
+                   (and (or (null raw-keys) (= (length raw-keys) 0))
+                        (let ((lst (ignore-errors (context-navigator-gptel-pull))))
+                          (and (listp lst)
+                               (mapcar #'context-navigator-model-item-key lst)))))
                   ;; Last-resort fallback: enabled items in model only if both pulled and raw are empty
                   (fallback-keys
                    (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
@@ -1470,7 +1472,7 @@ Order of operations:
                        (and (listp items)
                             (mapcar #'context-navigator-model-item-key
                                     (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                  (keys (or pulled-keys raw-keys fallback-keys '()))
+                  (keys (or raw-keys pulled-keys fallback-keys '()))
                   (h (sxhash-equal keys))
                   (n (length keys))
                   (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
@@ -1578,12 +1580,14 @@ Only applies to sidebar windows (side-window). Buffer-mode windows are not auto-
                              (when (buffer-live-p buf)
                                (with-current-buffer buf
                                  (when (get-buffer-window buf t)
-                                   (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-                                          (pulled-keys (and (listp lst)
-                                                            (mapcar #'context-navigator-model-item-key lst)))
-                                          (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                                         (fboundp 'context-navigator-gptel--raw-keys)
+                                   ;; Prefer raw keys (read-only) to avoid triggering gptel collectors.
+                                   (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
                                                          (ignore-errors (context-navigator-gptel--raw-keys))))
+                                          (pulled-keys
+                                           (and (or (null raw-keys) (= (length raw-keys) 0))
+                                                (let ((lst (ignore-errors (context-navigator-gptel-pull))))
+                                                  (and (listp lst)
+                                                       (mapcar #'context-navigator-model-item-key lst)))))
                                           (fallback-keys
                                            (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
                                                       (or (null raw-keys) (= (length raw-keys) 0)))
@@ -1592,7 +1596,7 @@ Only applies to sidebar windows (side-window). Buffer-mode windows are not auto-
                                                (and (listp items)
                                                     (mapcar #'context-navigator-model-item-key
                                                             (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                                          (keys (or pulled-keys raw-keys fallback-keys '()))
+                                          (keys (or raw-keys pulled-keys fallback-keys '()))
                                           (h (sxhash-equal keys))
                                           (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
                                                              (or (null raw-keys) (= (length raw-keys) 0)))))
