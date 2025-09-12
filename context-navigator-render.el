@@ -38,6 +38,19 @@
   :type '(choice (const auto) (const icons) (const text) (const off))
   :group 'context-navigator-render)
 
+(defcustom context-navigator-render-path-prefix-mode 'short
+  "Prefix mode before item names:
+- off      : do not show path prefix
+- short    : show abbreviated path per directory (minimal unique prefixes); dotdirs start with 2 chars
+- relative : full relative directory path to project root
+- full     : full absolute directory path"
+  :type '(choice (const off) (const short) (const relative) (const full))
+  :group 'context-navigator-render)
+
+(defcustom context-navigator-render-prefix-dim-face 'shadow
+  "Face used to render path prefix before item names."
+  :type 'face :group 'context-navigator-render)
+
 (defface context-navigator-disabled-face
   '((t :foreground "gray55"))
   "Face used to render disabled items in the sidebar."
@@ -49,6 +62,9 @@
 When non-nil, shows a binary indicator in the sidebar:
 - green  ● : item present in gptel
 - gray   ○ : item absent in gptel")
+
+(defvar-local context-navigator-render--prefix-getter nil
+  "Buffer-local function (path -> prefix-string) used during a single render pass.")
 
 (defun context-navigator-render--truncate (s n)
   "Return S truncated to N chars with ellipsis."
@@ -124,9 +140,9 @@ Binary indicator:
 - gray   ○ : item absent in gptel or when the keys snapshot is unknown.
 Disabled items are rendered with a subdued face (only the name). Indicator reflects actual gptel presence (green when present, gray otherwise)."
   (let* ((key (context-navigator-model-item-key item))
-         (name (context-navigator-render--truncate
-                (or (context-navigator-item-name item) "")
-                context-navigator-render-truncate-name))
+         (raw-name (or (context-navigator-item-name item) ""))
+         (name (context-navigator-render--truncate raw-name
+                                                   context-navigator-render-truncate-name))
          (path (or (context-navigator-item-path item) ""))
          (enabled (not (null (context-navigator-item-enabled item))))
          (keys-list context-navigator-render--gptel-keys)
@@ -134,35 +150,187 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
          (present (and keys-list (member key keys-list)))
          ;; Always render an indicator; when PRESENT is nil it will be gray
          (state-icon (context-navigator-render--indicator present))
-         ;; Trace why indicator is green/gray in this render row
-         (ignore-errors
-           (context-navigator-debug :trace :render
-                                    "indicator key=%s enabled=%s present=%s keys=%d"
-                                    key enabled (and present t)
-                                    (length (or keys-list '()))))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
-         ;; Dim only the name for disabled items; do not touch indicator/icon.
+         ;; Build prefix via buffer-local getter when available
+         (prefix (cond
+                  ((and (stringp path) (not (string-empty-p path))
+                        (functionp context-navigator-render--prefix-getter))
+                   (funcall context-navigator-render--prefix-getter path))
+                  (t "")))
+         (prefix-prop (if (and (stringp prefix) (> (length prefix) 0))
+                          (propertize prefix 'face context-navigator-render-prefix-dim-face)
+                        ""))
+         ;; Dim only the name for disabled items; do not touch indicator/icon or prefix.
          (name-prop (if enabled
                         name
                       (propertize name 'face 'context-navigator-disabled-face)))
+         (visible-name (concat prefix-prop name-prop))
          (left (context-navigator-render--left-column
                 state-icon
                 (and (stringp icon) icon)
-                name-prop))
+                visible-name))
          (right (context-navigator-render--right-column path))
          ;; Add a small left padding to each item line
          (line (context-navigator-render--compose-line (concat " " left) right left-width)))
     (context-navigator-render--propertize-line line key item)))
 
+(defun context-navigator-render--header-lines (header)
+  "Build header title and separator lines."
+  (let* ((title (or header "Context"))
+         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
+         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
+    (list hl sep)))
+
+(defun context-navigator-render--state-root ()
+  "Return last known project root from state, or nil."
+  (let ((st (and (fboundp 'context-navigator--state-get)
+                 (ignore-errors (context-navigator--state-get)))))
+    (and st
+         (fboundp 'context-navigator-state-last-project-root)
+         (ignore-errors (context-navigator-state-last-project-root st)))))
+
+(defun context-navigator-render--relpath (p root)
+  "Return file-relative-name of P to ROOT, or P on failure."
+  (condition-case _err
+      (if (and (stringp root) (stringp p))
+          (file-relative-name (expand-file-name p)
+                              (file-name-as-directory (expand-file-name root)))
+        p)
+    (error p)))
+
+(defun context-navigator-render--split-relpath (rel)
+  "Split REL into (DIRS . BASENAME). DIRS is a list of directories."
+  (if (and (stringp rel) (not (string-empty-p rel)))
+      (let* ((dir (file-name-directory rel))
+             (base (file-name-nondirectory rel))
+             (dirs (and dir
+                        (split-string (directory-file-name dir) "/" t))))
+        (cons dirs base))
+    (cons nil (or rel ""))))
+
+(defun context-navigator-render--minimal-prefix-map (names)
+  "Compute minimal unique prefixes among sibling NAMES.
+Return an alist of (name . minimal-prefix)."
+  (let* ((lens (make-hash-table :test 'equal))
+         (startlen (lambda (s)
+                     (if (and (stringp s) (> (length s) 0)
+                              (eq (aref s 0) ?.))
+                         (min 2 (length s))
+                       (min 1 (length s))))))
+    (dolist (n names)
+      (puthash n (funcall startlen n) lens))
+    ;; Expand prefix lengths until all prefixes are unique
+    (let ((dups t))
+      (while dups
+        (let ((seen (make-hash-table :test 'equal))
+              (coll '()))
+          (maphash
+           (lambda (nm ln)
+             (let* ((ln (min ln (length nm)))
+                    (pref (substring nm 0 ln)))
+               (if (gethash pref seen)
+                   (push nm coll)
+                 (puthash pref nm seen))))
+           lens)
+          (setq dups (nreverse (delete-dups coll))))
+        (dolist (nm dups)
+          (let* ((cur (gethash nm lens))
+                 (next (min (1+ (or cur 1)) (length nm))))
+            (puthash nm next lens)))))
+    (let (alist)
+      (maphash
+       (lambda (nm ln)
+         (push (cons nm (substring nm 0 (min ln (length nm)))) alist))
+       lens)
+      alist)))
+
+(defun context-navigator-render--build-short-prefix-map (items root)
+  "Return hash: abs-path -> short directory prefix \"a/b/\" relative to ROOT.
+Items with paths outside ROOT get an empty prefix."
+  (let* ((tree (make-hash-table :test 'equal))
+         (acc  (make-hash-table :test 'equal)))
+    ;; Collect children per parent-dir-list key
+    (dolist (it items)
+      (let ((p (context-navigator-item-path it)))
+        (when (and (stringp p) (not (string-empty-p p)))
+          (let ((rel (context-navigator-render--relpath p root)))
+            (when (not (string-prefix-p ".." rel))
+              (let* ((dirs+base (context-navigator-render--split-relpath rel))
+                     (dirs (car dirs+base)))
+                (when dirs
+                  (dotimes (i (length dirs))
+                    (let* ((parent (cl-subseq dirs 0 i))
+                           (child  (nth i dirs))
+                           (lst    (gethash parent tree)))
+                      (puthash parent (cons child lst) tree))))))))))
+    ;; For each parent, compute minimal prefixes map
+    (let ((prefix-per-parent (make-hash-table :test 'equal)))
+      (maphash
+       (lambda (parent children)
+         (let* ((uniq (delete-dups (nreverse children)))
+                (mp   (context-navigator-render--minimal-prefix-map uniq)))
+           (puthash parent mp prefix-per-parent)))
+       tree)
+      ;; Compute prefix for each item path
+      (dolist (it items)
+        (let ((p (context-navigator-item-path it)))
+          (when (and (stringp p) (not (string-empty-p p)))
+            (let ((rel (context-navigator-render--relpath p root)))
+              (if (string-prefix-p ".." rel)
+                  (puthash p "" acc)
+                (let* ((dirs (car (context-navigator-render--split-relpath rel)))
+                       (parts '()))
+                  (dolist (i (number-sequence 0 (1- (length (or dirs '())))))
+                    (let* ((parent (cl-subseq dirs 0 i))
+                           (child  (nth i dirs))
+                           (mp     (gethash parent prefix-per-parent))
+                           (pref   (or (cdr (assoc child mp)) child)))
+                      (push pref parts)))
+                  (let ((prefix (if parts
+                                    (concat (mapconcat #'identity (nreverse parts) "/") "/")
+                                  "")))
+                    (puthash p prefix acc))))))))
+      acc)))
+
+(defun context-navigator-render--relative-prefix (p root)
+  "Return directory prefix relative to ROOT for path P, or empty string."
+  (let* ((rel (context-navigator-render--relpath p root))
+         (dir (file-name-directory rel)))
+    (if (and dir (> (length dir) 0))
+        dir
+      "")))
+
+(defun context-navigator-render--full-prefix (p)
+  "Return absolute directory for P (with trailing slash trimmed by caller)."
+  (let ((dir (file-name-directory (expand-file-name p))))
+    (or dir "")))
+
+(defun context-navigator-render--make-prefix-getter (mode root items)
+  "Return a function that maps absolute path -> prefix string for MODE."
+  (let ((short-map (when (eq mode 'short)
+                     (context-navigator-render--build-short-prefix-map items root))))
+    (pcase mode
+      ('off (lambda (_p) ""))
+      ('short (lambda (p) (or (and short-map (gethash p short-map)) "")))
+      ('relative (lambda (p) (context-navigator-render--relative-prefix p root)))
+      ('full (lambda (p)
+               (let ((d (context-navigator-render--full-prefix p)))
+                 (if (and d (> (length d) 0))
+                     (file-name-as-directory d)
+                   ""))))
+      (_ (lambda (_p) "")))))
+
 (defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
   "Return list of propertized lines for ITEMS with HEADER line first.
 ICON-FN is a function (item -> string|nil) to decorate items.
 When LEFT-WIDTH is non-nil, align left column to that width."
-  (let* ((title (or header "Context"))
-         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         ;; Use textual/full-width separator (box-drawing) for header separation. Make it unobtrusive.
-         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
-    (append (list hl sep)
+  (let* ((header-lines (context-navigator-render--header-lines header))
+         (root (context-navigator-render--state-root))
+         (mode (or context-navigator-render-path-prefix-mode 'short))
+         ;; Install getter for this render pass
+         (context-navigator-render--prefix-getter
+          (context-navigator-render--make-prefix-getter mode root items)))
+    (append header-lines
             (mapcar (lambda (it)
                       (context-navigator-render--format-line it icon-fn left-width))
                     items))))

@@ -109,6 +109,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--last-render-key nil)        ;; cached render key to skip redundant renders
 (defvar-local context-navigator-view--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view
 (defvar-local context-navigator-view--last-mode nil)              ;; last rendered mode: 'items or 'groups
+(defvar-local context-navigator-view--sorted-root nil)            ;; root used for cached items sort
+(defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 
 (defcustom context-navigator-view-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -676,18 +678,120 @@ and the item lines (REST...)."
          (gen (or (and (context-navigator-state-p state)
                        (context-navigator-state-generation state))
                   0))
+         (root (and (context-navigator-state-p state)
+                    (context-navigator-state-last-project-root state)))
+         ;; relpath cache per generation/root
+         (_ (unless (and context-navigator-view--relpaths-hash
+                         (= gen (or context-navigator-view--sorted-gen -1))
+                         (equal root context-navigator-view--sorted-root))
+              (setq context-navigator-view--relpaths-hash (make-hash-table :test 'equal))))
+         (relpath-of
+          (lambda (it)
+            (let* ((key (context-navigator-model-item-key it))
+                   (cached (and context-navigator-view--relpaths-hash
+                                (gethash key context-navigator-view--relpaths-hash)))
+                   (p (and (stringp (context-navigator-item-path it))
+                           (context-navigator-item-path it))))
+              (or cached
+                  (let* ((rel (condition-case _err
+                                  (if (and p root)
+                                      (file-relative-name (expand-file-name p)
+                                                          (file-name-as-directory (expand-file-name root)))
+                                    p)
+                                (error p))))
+                    (when (hash-table-p context-navigator-view--relpaths-hash)
+                      (puthash key rel context-navigator-view--relpaths-hash))
+                    rel)))))
+         ;; natural-lessp (case-insensitive with numeric chunks)
+         (natural-lessp
+          (lambda (a b)
+            (cl-labels
+                ((chunks (s)
+                   (let ((i 0) (n (length s)) (cur "") (res '()))
+                     (while (< i n)
+                       (let ((c (aref s i)))
+                         (if (and (>= c ?0) (<= c ?9))
+                             ;; flush cur then read number
+                             (progn
+                               (when (> (length cur) 0)
+                                 (push (cons :str (downcase cur)) res)
+                                 (setq cur ""))
+                               (let ((j i))
+                                 (while (and (< j n)
+                                             (let ((d (aref s j))) (and (>= d ?0) (<= d ?9))))
+                                   (setq j (1+ j)))
+                                 (push (cons :num (string-to-number (substring s i j))) res)
+                                 (setq i (1- j))))
+                           (setq cur (concat cur (string c)))))
+                       (setq i (1+ i)))
+                     (when (> (length cur) 0)
+                       (push (cons :str (downcase cur)) res))
+                     (nreverse res)))
+                 (cmp (xa xb)
+                   (cond
+                    ((and (null xa) (null xb)) nil)
+                    ((null xa) t)
+                    ((null xb) nil)
+                    (t
+                     (let* ((a1 (car xa)) (b1 (car xb)))
+                       (cond
+                        ((and (eq (car a1) :num) (eq (car b1) :num))
+                         (if (/= (cdr a1) (cdr b1))
+                             (< (cdr a1) (cdr b1))
+                           (cmp (cdr xa) (cdr xb))))
+                        ((and (eq (car a1) :str) (eq (car b1) :str))
+                         (let ((sa (cdr a1)) (sb (cdr b1)))
+                           (if (string= sa sb)
+                               (cmp (cdr xa) (cdr xb))
+                             (string-lessp sa sb))))
+                        ((eq (car a1) :num) t)
+                        (t nil)))))))
+              (cmp (chunks (or a "")) (chunks (or b ""))))))
+         (in-subdir-p
+          (lambda (rel)
+            (and (stringp rel)
+                 (not (string-prefix-p ".." rel))
+                 (string-match-p "/" rel))))
+         (basename-of
+          (lambda (rel-or-path)
+            (file-name-nondirectory (or rel-or-path ""))))
          (sorted-items
           (if (and (listp context-navigator-view--sorted-items)
                    (integerp context-navigator-view--sorted-gen)
-                   (= gen context-navigator-view--sorted-gen))
+                   (= gen context-navigator-view--sorted-gen)
+                   (equal root context-navigator-view--sorted-root))
               context-navigator-view--sorted-items
             (let ((s (sort (copy-sequence (or items '()))
                            (lambda (a b)
-                             (let ((na (downcase (or (context-navigator-item-name a) "")))
-                                   (nb (downcase (or (context-navigator-item-name b) ""))))
-                               (string-lessp na nb))))))
+                             (let* ((ra (funcall relpath-of a))
+                                    (rb (funcall relpath-of b))
+                                    (pa (and (stringp (context-navigator-item-path a))
+                                             (context-navigator-item-path a)))
+                                    (pb (and (stringp (context-navigator-item-path b))
+                                             (context-navigator-item-path b)))
+                                    (has-pa (and (stringp pa) (> (length pa) 0)))
+                                    (has-pb (and (stringp pb) (> (length pb) 0)))
+                                    (sa (and has-pa (funcall in-subdir-p ra)))
+                                    (sb (and has-pb (funcall in-subdir-p rb))))
+                               (cond
+                                ;; Items with paths first; without paths at the bottom
+                                ((and (not has-pa) (not has-pb))
+                                 ;; both without paths -> natural by name
+                                 (funcall natural-lessp
+                                          (downcase (or (context-navigator-item-name a) ""))
+                                          (downcase (or (context-navigator-item-name b) ""))))
+                                ((and (not has-pa) has-pb) nil)
+                                ((and has-pa (not has-pb)) t)
+                                ;; Both have paths: subdirs first
+                                ((and sa (not sb)) t)
+                                ((and (not sa) sb) nil)
+                                ;; Same group: natural sort by relpath (dir/base)
+                                (t (funcall natural-lessp
+                                            (downcase (or ra ""))
+                                            (downcase (or rb ""))))))))))
               (setq context-navigator-view--sorted-items s
-                    context-navigator-view--sorted-gen gen)
+                    context-navigator-view--sorted-gen gen
+                    context-navigator-view--sorted-root root)
               s)))
          (left-width (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
          (base (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
@@ -707,16 +811,78 @@ and the item lines (REST...)."
     (list hl sep up rest)))
 
 
+(defun context-navigator-view--status-text-at-point ()
+  "Return status text for the current point:
+- item line → relative path to project root (or absolute when no root)
+- \"..\" line → localized \"<to groups>\"
+- footer action/toggle → their help-echo
+- otherwise → empty string."
+  (cond
+   ;; On an item: show relative path (dirs + basename), or buffer name when no path
+   ((get-text-property (point) 'context-navigator-item)
+    (let* ((it (get-text-property (point) 'context-navigator-item))
+           (p  (context-navigator-item-path it))
+           (st (ignore-errors (context-navigator--state-get)))
+           (root (and st (ignore-errors (context-navigator-state-last-project-root st)))))
+      (cond
+       ((and (stringp p) (> (length p) 0))
+        (condition-case _err
+            (if (stringp root)
+                (file-relative-name (expand-file-name p)
+                                    (file-name-as-directory (expand-file-name root)))
+              (abbreviate-file-name p))
+          (error (abbreviate-file-name p))))
+       (t (or (context-navigator-item-name it) "")))))
+   ;; On up line
+   ((get-text-property (point) 'context-navigator-groups-up)
+    (context-navigator-i18n :status-up-to-groups))
+   ;; On footer action or header toggle: show help-echo
+   ((or (get-text-property (point) 'context-navigator-action)
+        (get-text-property (point) 'context-navigator-toggle))
+    (or (get-text-property (point) 'help-echo) ""))
+   (t "")))
+
+(defun context-navigator-view--status-refresh-inline ()
+  "Update the status line under footer in-place when present."
+  (let ((buf (current-buffer)))
+    (when (buffer-live-p buf)
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-min))
+          (let ((pos (text-property-not-all (point-min) (point-max)
+                                            'context-navigator-status-line nil)))
+            (when pos
+              (goto-char pos)
+              (let* ((beg (line-beginning-position))
+                     (end (line-end-position))
+                     (txt (context-navigator-view--status-text-at-point))
+                     (line (propertize (concat " " (or txt ""))
+                                       'face 'shadow
+                                       'context-navigator-status-line t)))
+                (delete-region beg end)
+                (insert line)))))))))
+
 (defun context-navigator-view--items-footer-lines (total-width)
   "Return footer lines for items view wrapped to TOTAL-WIDTH."
   (let* ((ctrl-lines (context-navigator-view--footer-control-lines total-width))
+         (status-line
+          (let* ((txt (context-navigator-view--status-text-at-point))
+                 (line (propertize (concat " " (or txt ""))
+                                   'face 'shadow
+                                   'context-navigator-status-line t)))
+            (list line)))
          (help-segments (list (context-navigator-i18n :items-help-view-groups)
                               (context-navigator-i18n :items-help-help)))
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
                   (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Blank line before controls to visually separate items list from controls.
-    (append (list "") ctrl-lines (cons "" help-lines))))
+    ;; Layout:
+    ;; - blank line
+    ;; - controls (one or more lines)
+    ;; - status line (one line)
+    ;; - blank line
+    ;; - help lines
+    (append (list "") ctrl-lines status-line (cons "" help-lines))))
 
 
 (defun context-navigator-view--render-items (state header total-width)
@@ -946,7 +1112,8 @@ hard to restore the sidebar afterward."
                     (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))))
     (when pos
       (goto-char pos)
-      (beginning-of-line))))
+      (beginning-of-line)
+      (context-navigator-view--status-refresh-inline))))
 
 (defun context-navigator-view-previous-item ()
   "Move point to the previous item line or \"..\" or group line."
@@ -970,7 +1137,8 @@ hard to restore the sidebar afterward."
                       best))))
     (when pos
       (goto-char pos)
-      (beginning-of-line))))
+      (beginning-of-line)
+      (context-navigator-view--status-refresh-inline))))
 
 ;; TAB navigation helpers ----------------------------------------------------
 
@@ -1052,7 +1220,8 @@ Wraps to the top when no further element is found after point."
       ;; wrap
       (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
     (if pos
-        (goto-char pos)
+        (progn (goto-char pos)
+               (context-navigator-view--status-refresh-inline))
       (message "No interactive elements"))))
 
 (defun context-navigator-view-tab-previous ()
@@ -1084,7 +1253,8 @@ Wraps to the bottom when no previous element is found before point."
       ;; wrap to last interactive element
       (setq pos (context-navigator-view--find-prev-interactive-pos (point-max))))
     (if pos
-        (goto-char pos)
+        (progn (goto-char pos)
+               (context-navigator-view--status-refresh-inline))
       (message "No interactive elements"))))
 
 (defun context-navigator-view--remove-at-point ()

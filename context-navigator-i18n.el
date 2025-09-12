@@ -541,6 +541,9 @@
     (:groups-help-help
      (en . " ?: help")
      (ru . " ?: справка"))
+    (:status-up-to-groups
+     (en . "<to groups>")
+     (ru . "<к группам>"))
     (:preview-title
      (en . "Will add %d file(s), total ~%s")
      (ru . "Будет добавлено %d файл(ов), всего ~%s")
