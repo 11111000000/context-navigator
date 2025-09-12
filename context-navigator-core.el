@@ -39,9 +39,14 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
      (t
       (copy-tree obj)))))
 
-;; Forward declaration to avoid load cycle with sidebar
+;; Forward declaration to avoid load cycle with sidebar/buffer view
+(declare-function context-navigator-view-open "context-navigator-view" ())
+(declare-function context-navigator-view-close "context-navigator-view" ())
 (declare-function context-navigator-view-toggle "context-navigator-view" ())
 (declare-function context-navigator-view-show-groups "context-navigator-view" ())
+(declare-function context-navigator-buffer-open "context-navigator-view" ())
+(declare-function context-navigator-buffer-close "context-navigator-view" ())
+(declare-function context-navigator-buffer-toggle "context-navigator-view" ())
 ;; Forward declarations from project module (for byte-compiler friendliness)
 (declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
 (declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
@@ -148,18 +153,67 @@ and `balance-windows-area') when the sidebar is present so the sidebar window is
 or removed. This is enabled by default."
   :type 'boolean :group 'context-navigator)
 
+(defcustom context-navigator-protect-buffer-windows nil
+  "When non-nil, protect Navigator buffer windows (magit-like mode) from balance operations.
+Disabled by default."
+  :type 'boolean :group 'context-navigator)
+
+(defcustom context-navigator-display-mode 'buffer
+  "How to display Navigator: 'buffer (magit-like) or 'sidebar."
+  :type '(choice (const buffer) (const sidebar))
+  :group 'context-navigator)
+
+(defcustom context-navigator-remember-display-mode t
+  "When non-nil, remember last chosen display mode between sessions."
+  :type 'boolean :group 'context-navigator)
+
+(defcustom context-navigator-buffer-placement 'reuse-other-window
+  "Placement policy for magit-like buffer mode:
+- reuse-other-window : show in other window when available, else split
+- split-right        : split selected window to the right
+- split-below        : split selected window below"
+  :type '(choice (const reuse-other-window)
+                 (const split-right)
+                 (const split-below))
+  :group 'context-navigator)
+
+(defcustom context-navigator-buffer-split-size 0.5
+  "Size for splitting in buffer mode.
+When 0<value<1 treat as fraction of current window; otherwise columns/rows."
+  :type 'number :group 'context-navigator)
+
 (defun context-navigator--sidebar-visible-p ()
-  "Return non-nil when the Context Navigator sidebar buffer is visible in any window."
-  (and (boundp 'context-navigator-view--buffer-name)
-       (get-buffer-window context-navigator-view--buffer-name t)))
+  "Return non-nil when a window marked as 'sidebar displays our buffer on the current frame."
+  (let ((buf (and (boundp 'context-navigator-view--buffer-name)
+                  (get-buffer context-navigator-view--buffer-name))))
+    (catch 'hit
+      (dolist (w (window-list nil nil))
+        (when (and (window-live-p w)
+                   (eq (window-buffer w) buf)
+                   (eq (window-parameter w 'context-navigator-view) 'sidebar))
+          (throw 'hit t)))
+      nil)))
+
+(defun context-navigator--buffer-mode-visible-p ()
+  "Return non-nil when Navigator buffer window (marked 'buffer) is visible on current frame."
+  (let ((buf (and (boundp 'context-navigator-view--buffer-name)
+                  (get-buffer context-navigator-view--buffer-name))))
+    (catch 'hit
+      (dolist (w (window-list nil nil))
+        (when (and (window-live-p w)
+                   (eq (window-buffer w) buf)
+                   (eq (window-parameter w 'context-navigator-view) 'buffer))
+          (throw 'hit t)))
+      nil)))
 
 (defun context-navigator--protect-balance-windows (orig-fn &rest args)
-  "Advice wrapper around ORIG-FN that no-ops when sidebar is visible and protection is enabled."
-  (if (and context-navigator-protect-sidebar-windows
-           (context-navigator--sidebar-visible-p))
+  "Advice wrapper around ORIG-FN that no-ops when Navigator windows must be protected."
+  (if (or (and context-navigator-protect-sidebar-windows
+               (context-navigator--sidebar-visible-p))
+          (and context-navigator-protect-buffer-windows
+               (context-navigator--buffer-mode-visible-p)))
       (progn
-        (context-navigator-debug :debug :core "Skipping window balancing while sidebar is visible")
-        ;; No-op to avoid resizing/removing the sidebar window.
+        (context-navigator-debug :debug :core "Skipping window balancing while Navigator window is visible")
         nil)
     (apply orig-fn args)))
 
@@ -169,6 +223,47 @@ or removed. This is enabled by default."
     (advice-add 'balance-windows :around #'context-navigator--protect-balance-windows))
   (ignore-errors
     (advice-add 'balance-windows-area :around #'context-navigator--protect-balance-windows)))
+
+;;;###autoload
+(defun context-navigator-open ()
+  "Open Navigator in the current display mode."
+  (interactive)
+  (pcase context-navigator-display-mode
+    ('sidebar (ignore-errors (context-navigator-view-open)))
+    ('buffer  (ignore-errors (context-navigator-buffer-open)))
+    (_        (ignore-errors (context-navigator-buffer-open)))))
+
+;;;###autoload
+(defun context-navigator-close ()
+  "Close Navigator in the current display mode."
+  (interactive)
+  (pcase context-navigator-display-mode
+    ('sidebar (ignore-errors (context-navigator-view-close)))
+    ('buffer  (ignore-errors (context-navigator-buffer-close)))
+    (_        (ignore-errors (context-navigator-buffer-close)))))
+
+;;;###autoload
+(defun context-navigator-toggle ()
+  "Toggle Navigator visibility in the current display mode."
+  (interactive)
+  (pcase context-navigator-display-mode
+    ('sidebar (ignore-errors (context-navigator-view-toggle)))
+    ('buffer  (ignore-errors (context-navigator-buffer-toggle)))
+    (_        (ignore-errors (context-navigator-buffer-toggle)))))
+
+;;;###autoload
+(defun context-navigator-display-mode-toggle ()
+  "Toggle Navigator display mode between 'buffer and 'sidebar and reopen."
+  (interactive)
+  (setq context-navigator-display-mode
+        (if (eq context-navigator-display-mode 'buffer) 'sidebar 'buffer))
+  (when (and (boundp 'context-navigator-remember-display-mode)
+             context-navigator-remember-display-mode)
+    (ignore-errors
+      (customize-save-variable 'context-navigator-display-mode context-navigator-display-mode)))
+  (ignore-errors (context-navigator-close))
+  (ignore-errors (context-navigator-open))
+  (message "Navigator display mode: %s" context-navigator-display-mode))
 
 (cl-defstruct (context-navigator-state
                (:constructor context-navigator--state-make))

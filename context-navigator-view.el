@@ -15,6 +15,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'seq)
 (require 'context-navigator-events)
 (require 'context-navigator-render)
 (require 'context-navigator-model)
@@ -81,7 +82,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-group-delete "context-navigator-core" (&optional slug))
 (declare-function context-navigator-group-duplicate "context-navigator-core" (&optional src-slug new-display))
 
-(defconst context-navigator-view--buffer-name "*context-navigator-view*")
+(defconst context-navigator-view--buffer-name "*context-navigator*")
 
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
@@ -1198,16 +1199,14 @@ Order of operations:
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-quit ()
-  "Close the sidebar window and kill its buffer, removing subscriptions."
+  "Close the sidebar window. Remove subscriptions but do not kill the buffer."
   (interactive)
   (when-let* ((buf (get-buffer context-navigator-view--buffer-name)))
     (with-current-buffer buf
       (context-navigator-view--remove-subs))
     (dolist (win (get-buffer-window-list buf nil t))
       (when (window-live-p win)
-        (delete-window win)))
-    (when (buffer-live-p buf)
-      (kill-buffer buf))))
+        (delete-window win)))))
 
 (defun context-navigator-view--subscribe-model-events ()
   "Subscribe to generic model refresh events."
@@ -1340,12 +1339,14 @@ Order of operations:
   "Close any windows previously marked as sidebar that now show a foreign buffer.
 
 This helper is safe to call multiple times and is intended to be invoked
-debounced from `buffer-list-update-hook' to avoid UI thrash."
+debounced from `buffer-list-update-hook' to avoid UI thrash.
+
+Note: only applies to sidebar windows; normal buffer-mode windows are not auto-closed."
   (let ((our (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p our)
       (dolist (w (window-list nil nil))
         (when (and (window-live-p w)
-                   (window-parameter w 'context-navigator-view)
+                   (eq (window-parameter w 'context-navigator-view) 'sidebar)
                    (not (eq (window-buffer w) our)))
           (ignore-errors (delete-window w)))))))
 
@@ -1366,7 +1367,7 @@ debounced from `buffer-list-update-hook' to avoid UI thrash."
                (when (buffer-live-p our)
                  (dolist (w (window-list nil nil))
                    (when (and (window-live-p w)
-                              (window-parameter w 'context-navigator-view)
+                              (eq (window-parameter w 'context-navigator-view) 'sidebar)
                               (not (eq (window-buffer w) our)))
                      (ignore-errors (delete-window w))))))))))
   (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn))
@@ -1374,16 +1375,12 @@ debounced from `buffer-list-update-hook' to avoid UI thrash."
 (defun context-navigator-view--install-window-select-hook ()
   "Install window-selection-change hook to re-render on focus and auto-close hijacked sidebar windows.
 
-When the selected window is marked with the 'context-navigator-view window
-parameter but does not display the sidebar buffer, it is considered hijacked
-and will be closed to avoid leaving a stale side window around. When the
-selected window is the real sidebar (shows our buffer), we schedule a light
-render."
+Only applies to sidebar windows (side-window). Buffer-mode windows are not auto-closed."
   (setq context-navigator-view--winselect-fn
         (lambda (_frame)
           (let ((win (selected-window)))
             (when (and (window-live-p win)
-                       (window-parameter win 'context-navigator-view))
+                       (eq (window-parameter win 'context-navigator-view) 'sidebar))
               (let* ((our (get-buffer context-navigator-view--buffer-name))
                      (cur (and (window-live-p win) (window-buffer win))))
                 (if (not (eq cur our))
@@ -1720,7 +1717,7 @@ Do not highlight header/separator lines."
       ;; If the buffer is shown in multiple windows (rare), mark them all.
       (dolist (w (get-buffer-window-list buf nil t))
         (when (window-live-p w)
-          (set-window-parameter w 'context-navigator-view t)))
+          (set-window-parameter w 'context-navigator-view 'sidebar)))
       (select-window win))
     win))
 
@@ -1737,6 +1734,83 @@ Do not highlight header/separator lines."
   (if (get-buffer-window context-navigator-view--buffer-name t)
       (context-navigator-view-close)
     (context-navigator-view-open)))
+
+;;; Buffer-mode (magit-like) entry points
+
+(defun context-navigator--buffer-mode--split (direction size)
+  "Split selected window in DIRECTION ('right or 'below) using SIZE."
+  (let* ((base (selected-window))
+         (cols (window-total-width base))
+         (rows (window-total-height base))
+         (amt (cond
+               ((and (numberp size) (> size 0) (< size 1))
+                (if (eq direction 'right) (floor (* cols size)) (floor (* rows size))))
+               ((and (numberp size) (>= size 1)) size)
+               (t nil))))
+    (split-window base amt direction)))
+
+;;;###autoload
+(defun context-navigator-buffer-open ()
+  "Open the Navigator buffer in a regular window (magit-like).
+- Reuse other window when available, else split (right by default).
+- Always select the Navigator window."
+  (interactive)
+  (let* ((buf (get-buffer-create context-navigator-view--buffer-name))
+         (visible (get-buffer-window buf 0))
+         (placement (if (boundp 'context-navigator-buffer-placement)
+                        context-navigator-buffer-placement
+                      'reuse-other-window))
+         (split-size (if (boundp 'context-navigator-buffer-split-size)
+                         context-navigator-buffer-split-size
+                       0.5))
+         win)
+    (if (window-live-p visible)
+        (setq win visible)
+      (pcase placement
+        ('reuse-other-window
+         (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
+                                                   (not (eq w (selected-window)))))
+                                  (window-list (selected-frame) 'no-minibuffer)))
+                (w (car wins)))
+           (if (window-live-p w)
+               (setq win w)
+             (setq win (context-navigator--buffer-mode--split 'right split-size)))))
+        ('split-right
+         (setq win (context-navigator--buffer-mode--split 'right split-size)))
+        ('split-below
+         (setq win (context-navigator--buffer-mode--split 'below split-size)))
+        (_
+         (setq win (context-navigator--buffer-mode--split 'right split-size)))))
+    (when (window-live-p win)
+      (set-window-buffer win buf)
+      (when (window-live-p win)
+        (set-window-parameter win 'context-navigator-view 'buffer))
+      (with-current-buffer buf
+        (context-navigator-view-mode)
+        (setq-local buffer-read-only t)
+        (context-navigator-view--install-subs)
+        (context-navigator-view--render))
+      (select-window win))
+    win))
+
+;;;###autoload
+(defun context-navigator-buffer-close ()
+  "Close Navigator buffer windows on the current frame (do not kill the buffer)."
+  (interactive)
+  (let* ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (dolist (w (window-list (selected-frame) 'no-minibuffer))
+        (when (and (window-live-p w)
+                   (eq (window-buffer w) buf))
+          (delete-window w))))))
+
+;;;###autoload
+(defun context-navigator-buffer-toggle ()
+  "Toggle Navigator buffer visibility on the current frame."
+  (interactive)
+  (if (get-buffer-window context-navigator-view--buffer-name 0)
+      (context-navigator-buffer-close)
+    (context-navigator-buffer-open)))
 
 ;; Helpers for group mode
 

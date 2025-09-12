@@ -1,8 +1,11 @@
 ;;; run-tests.el --- Simple test runner for context-navigator -*- lexical-binding: t; -*-
 
-;; Load path
-(add-to-list 'load-path (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name))))
-(add-to-list 'load-path (file-name-directory (or load-file-name buffer-file-name)))
+;; Load path (robust: handle batch/interactive where load-file-name or buffer-file-name may be nil)
+(let* ((this-file (or load-file-name buffer-file-name default-directory))
+       (test-dir (file-name-directory this-file))
+       (proj-root (expand-file-name ".." test-dir)))
+  (add-to-list 'load-path proj-root)
+  (add-to-list 'load-path test-dir))
 
 ;; Load modules that tests may need
 (require 'context-navigator)
@@ -46,6 +49,7 @@
 (require 'context-navigator-mask-tests)
 (require 'context-navigator-mask-posix-class-test)
 (require 'context-navigator-minibuf-mixed-input-test)
+(require 'context-navigator-buffer-mode-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."

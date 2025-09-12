@@ -88,9 +88,9 @@ Notes:
 * Quick Start
 
 - Enable the mode: =M-x context-navigator-mode= (or add =(context-navigator-mode 1)= to your init)
-- Open the sidebar right away: =M-x context-navigator-start= (or use the transient)
+- Open the Navigator right away: =M-x context-navigator-start= (default display: buffer/magit-like; switch with M in transient)
 - Press your global key, e.g., =C-c n=, then:
-  - n — toggle sidebar
+  - n — toggle Navigator; M — Display Mode (buffer/sidebar)
   - a — Add (universal): region/file/buffer or Dired selection
   - f — Add files by glob (from minibuffer)
   - t — Add files from text (extracts paths from region/buffer)
@@ -197,32 +197,32 @@ Below are all public settings collected from the source, grouped by module. “D
 | context-navigator-protect-sidebar-windows  | boolean                   | t                         | Protect sidebar from window‑balancing (skip balance while visible)                            | core/context-navigator-core.el   |
 
 Constants:
-| Variable                         | Type     | Default | Description                                    | Module/File                     |
-|----------------------------------+----------+---------+------------------------------------------------+----------------------------------|
-| context-navigator-persist-version| constant | 3       | Persist format version used across modules     | core/context-navigator-core.el   |
+| Variable                          | Type     | Default | Description                                | Module/File                    |
+|-----------------------------------+----------+---------+--------------------------------------------+--------------------------------|
+| context-navigator-persist-version | constant |       3 | Persist format version used across modules | core/context-navigator-core.el |
 
 ** Sidebar (context-navigator-view.el)
 
-| Variable                                         | Type                                  | Default | Description                                                            | Module/File                         |
-|--------------------------------------------------+---------------------------------------+---------+------------------------------------------------------------------------+--------------------------------------|
-| context-navigator-auto-open-groups-on-error      | boolean                               | t       | Auto‑open groups list when a group fails to load                      | sidebar/context-navigator-view.el |
-| context-navigator-highlight-active-group         | boolean                               | t       | Highlight active group in groups list                                 | sidebar/context-navigator-view.el |
-| context-navigator-controls-style                 | choice (auto|icons|text)             | text    | Labels style for toggles/actions                                       | sidebar/context-navigator-view.el |
-| context-navigator-openable-count-ttl             | number                                | 0.3     | Cache TTL (s) for openable counter                                    | sidebar/context-navigator-view.el |
-| context-navigator-openable-soft-cap              | integer                               | 100     | Soft cap for counting openable buffers                                | sidebar/context-navigator-view.el |
-| context-navigator-openable-remote-mode           | choice (lazy|strict|off)              | lazy    | How to treat remote files in “Open buffers”                           | sidebar/context-navigator-view.el |
-| context-navigator-gptel-indicator-poll-interval  | number                                | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)              | sidebar/context-navigator-view.el |
-| context-navigator-view-spinner-frames         | list of strings                       | ⠋…⠏   | Frames for the loading spinner                                         | sidebar/context-navigator-view.el |
-| context-navigator-view-spinner-interval       | number                                | 0.1     | Spinner animation interval (s)                                         | sidebar/context-navigator-view.el |
-| context-navigator-view-spinner-degrade-threshold | number                             | 0.25    | Degrade to static indicator if timer slips beyond this (s)             | sidebar/context-navigator-view.el |
+| Variable                                         | Type            | Default | Description                                                | Module/File                       |                                             |                                   |
+|--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------|
+| context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-controls-style                 | choice (auto    | icons   | text)                                                      | text                              | Labels style for toggles/actions            | sidebar/context-navigator-view.el |
+| context-navigator-openable-count-ttl             | number          | 0.3     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |
+| context-navigator-gptel-indicator-poll-interval  | number          | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-view-spinner-frames            | list of strings | ⠋…⠏     | Frames for the loading spinner                             | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-view-spinner-interval          | number          | 0.1     | Spinner animation interval (s)                             | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-view-spinner-degrade-threshold | number          | 0.25    | Degrade to static indicator if timer slips beyond this (s) | sidebar/context-navigator-view.el |                                             |                                   |
 
 ** Render (context-navigator-render.el)
 
-| Variable                                   | Type                              | Default | Description                                                 | Module/File                        |
-|--------------------------------------------+-----------------------------------+---------+-------------------------------------------------------------+-------------------------------------|
-| context-navigator-render-show-path         | boolean                           | nil     | Show item path in right column                              | render/context-navigator-render.el  |
-| context-navigator-render-truncate-name     | integer                           | 64      | Max display length for item names                           | render/context-navigator-render.el  |
-| context-navigator-render-indicator-style   | choice (auto|icons|text|off)     | text    | GPTel presence indicators style                             | render/context-navigator-render.el  |
+| Variable                                 | Type         | Default | Description                       | Module/File                        |      |                                 |                                    |
+|------------------------------------------+--------------+---------+-----------------------------------+------------------------------------+------+---------------------------------+------------------------------------|
+| context-navigator-render-show-path       | boolean      | nil     | Show item path in right column    | render/context-navigator-render.el |      |                                 |                                    |
+| context-navigator-render-truncate-name   | integer      | 64      | Max display length for item names | render/context-navigator-render.el |      |                                 |                                    |
+| context-navigator-render-indicator-style | choice (auto | icons   | text                              | off)                               | text | GPTel presence indicators style | render/context-navigator-render.el |
 
 ** Icons (context-navigator-icons.el)
 
@@ -233,24 +233,24 @@ Constants:
 
 ** Project detection (context-navigator-project.el)
 
-| Variable                                | Type           | Default                                        | Description                                                                                | Module/File                           |
-|-----------------------------------------+----------------+------------------------------------------------+--------------------------------------------------------------------------------------------+----------------------------------------|
-| context-navigator-project-nonfile-modes | list of modes  | (gptel-mode comint-mode … dired-mode …)        | Non‑file modes that can represent real project context                                     | project/context-navigator-project.el   |
-| context-navigator-project-stick-to-last-root | boolean   | t                                              | Stick to last known root instead of transient switches to global                           | project/context-navigator-project.el   |
+| Variable                                     | Type          | Default                                 | Description                                                      | Module/File                          |
+|----------------------------------------------+---------------+-----------------------------------------+------------------------------------------------------------------+--------------------------------------|
+| context-navigator-project-nonfile-modes      | list of modes | (gptel-mode comint-mode … dired-mode …) | Non‑file modes that can represent real project context           | project/context-navigator-project.el |
+| context-navigator-project-stick-to-last-root | boolean       | t                                       | Stick to last known root instead of transient switches to global | project/context-navigator-project.el |
 
 ** Path add / masks (context-navigator-path-add.el)
 
-| Variable                                    | Type                          | Default | Description                                                           | Module/File                          |
-|---------------------------------------------+-------------------------------+---------+-----------------------------------------------------------------------+---------------------------------------|
-| context-navigator-path-add-limit            | integer                       | 50      | Max files to add in a single operation                                | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-index-cache-ttl  | number                        | 30.0    | TTL (s) for project file index cache                                  | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-case-sensitive   | choice (auto|on|off)          | on      | Case sensitivity policy for basename matching                         | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-ignore-gitignored| boolean                       | t       | Prefer sources that respect .gitignore                                | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-exclude-dotdirs  | boolean                       | t       | Exclude dot-directories in fallback recursion                         | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-fallback-exclude | list of strings               | (node_modules dist build target) | Directory names excluded in fallback recursion                    | path-add/context-navigator-path-add.el |
-| context-navigator-mask-include-dotfiles     | boolean                       | nil     | Include dotfiles without explicit dot component                       | path-add/context-navigator-path-add.el |
-| context-navigator-mask-enable-remote        | boolean                       | nil     | Allow TRAMP mask expansion                                            | path-add/context-navigator-path-add.el |
-| context-navigator-mask-globstar             | boolean                       | t       | Enable ** (globstar)                                                  | path-add/context-navigator-path-add.el |
+| Variable                                     | Type            | Default                          | Description                                     | Module/File                            |                                               |                                        |
+|----------------------------------------------+-----------------+----------------------------------+-------------------------------------------------+----------------------------------------+-----------------------------------------------+----------------------------------------|
+| context-navigator-path-add-limit             | integer         | 50                               | Max files to add in a single operation          | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-path-add-index-cache-ttl   | number          | 30.0                             | TTL (s) for project file index cache            | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-path-add-case-sensitive    | choice (auto    | on                               | off)                                            | on                                     | Case sensitivity policy for basename matching | path-add/context-navigator-path-add.el |
+| context-navigator-path-add-ignore-gitignored | boolean         | t                                | Prefer sources that respect .gitignore          | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-path-add-exclude-dotdirs   | boolean         | t                                | Exclude dot-directories in fallback recursion   | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-path-add-fallback-exclude  | list of strings | (node_modules dist build target) | Directory names excluded in fallback recursion  | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-mask-include-dotfiles      | boolean         | nil                              | Include dotfiles without explicit dot component | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-mask-enable-remote         | boolean         | nil                              | Allow TRAMP mask expansion                      | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-mask-globstar              | boolean         | t                                | Enable ** (globstar)                            | path-add/context-navigator-path-add.el |                                               |                                        |
 
 ** Transient add (max file size) (context-navigator-transient.el)
 
@@ -383,8 +383,8 @@ Manual project switch at any time: =M-x context-navigator-switch-to-current-buff
 
 - The menu/keys don’t work?
   - Ensure =context-navigator-mode= is enabled and set =context-navigator-global-key= (or call =M-x context-navigator-transient=).
-- Sidebar doesn’t open?
-  - Try =M-x context-navigator-start= or =M-x context-navigator-view-open=.
+- Navigator doesn’t open?
+  - Try =M-x context-navigator-start= or =M-x context-navigator-open=.
 - Icons are missing?
   - Install =all-the-icons= and run =M-x all-the-icons-install-fonts=, then restart Emacs.
 - GPTel is not installed?

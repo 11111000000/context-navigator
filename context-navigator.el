@@ -61,6 +61,14 @@
 (autoload 'context-navigator-view-show-groups "context-navigator-view" "Open the sidebar and show groups list." t)
 ;;;###autoload
 (autoload 'context-navigator-transient "context-navigator-transient" "Open Context Navigator transient." t)
+;;;###autoload
+(autoload 'context-navigator-open "context-navigator-core" "Open Navigator in current display mode." t)
+;;;###autoload
+(autoload 'context-navigator-close "context-navigator-core" "Close Navigator in current display mode." t)
+;;;###autoload
+(autoload 'context-navigator-toggle "context-navigator-core" "Toggle Navigator in current display mode." t)
+;;;###autoload
+(autoload 'context-navigator-display-mode-toggle "context-navigator-core" "Toggle display mode (buffer/sidebar) and reopen." t)
 
 ;;;###autoload
 (defun context-navigator-version ()
@@ -71,11 +79,11 @@
 
 ;;;###autoload
 (defun context-navigator-start ()
-  "Enable the mode, refresh model, and open the sidebar."
+  "Enable the mode, refresh model, and open Navigator (buffer or sidebar) per current display mode."
   (interactive)
   (context-navigator-mode 1)     ;; autoloads core
   (context-navigator-refresh)    ;; autoloads core if needed
-  (ignore-errors (context-navigator-view-open))) ;; autoloads sidebar
+  (ignore-errors (context-navigator-open)))
 
 (provide 'context-navigator)
 ;;; context-navigator.el ends here

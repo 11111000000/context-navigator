@@ -168,12 +168,13 @@ When LEFT-WIDTH is non-nil, align left column to that width."
                     items))))
 
 (defun context-navigator-render-apply-to-buffer (buffer lines)
-  "Replace BUFFER text with LINES when different, preserving point/column and window start best-effort.
+  "Replace BUFFER text with LINES when different, preserving point/column, mark and window start best-effort.
 
 This function now:
 - preserves the exact column within the restored line
 - restores the point for the window showing BUFFER (window-point), not only the buffer's point
-so that re-renders triggered by timers do not cause the cursor to jump to BOL or to the top."
+- preserves the active region (mark position and mark-active) across re-renders
+so that re-renders triggered by timers do not cause the cursor/selection to jump."
   (with-current-buffer buffer
     (let* ((inhibit-read-only t)
            (win (get-buffer-window buffer 'visible))
@@ -182,6 +183,11 @@ so that re-renders triggered by timers do not cause the cursor to jump to BOL or
            (old-line  (save-excursion (goto-char old-point) (line-number-at-pos)))
            (old-col   (save-excursion (goto-char old-point) (current-column)))
            (old-start (and (window-live-p win) (window-start win)))
+           ;; Also capture mark/region so selection works normally across renders
+           (old-mark (mark t))
+           (old-mark-line (when old-mark (save-excursion (goto-char old-mark) (line-number-at-pos))))
+           (old-mark-col  (when old-mark (save-excursion (goto-char old-mark) (current-column))))
+           (old-mark-active mark-active)
            ;; Compute plain text for hashing (strip properties) to avoid false misses
            (text-plain (concat
                         (mapconcat (lambda (s)
@@ -199,16 +205,28 @@ so that re-renders triggered by timers do not cause the cursor to jump to BOL or
           (insert "\n"))
         (setq context-navigator-render--last-hash new-hash)
         ;; Compute target position from saved line/column
-        (let ((target
-               (save-excursion
-                 (goto-char (point-min))
-                 (forward-line (1- (max 1 old-line)))
-                 (move-to-column (max 0 old-col))
-                 (point))))
+        (let* ((target
+                (save-excursion
+                  (goto-char (point-min))
+                  (forward-line (1- (max 1 old-line)))
+                  (move-to-column (max 0 old-col))
+                  (point)))
+               ;; Compute restored mark position (line/col) if previously set
+               (mark-target
+                (when old-mark
+                  (save-excursion
+                    (goto-char (point-min))
+                    (forward-line (1- (max 1 (or old-mark-line 1))))
+                    (move-to-column (max 0 (or old-mark-col 0)))
+                    (point)))))
           ;; Restore buffer point (for the selected window) and the sidebar window's point
           (goto-char target)
           (when (window-live-p win)
             (set-window-point win target))
+          ;; Restore mark (and active state) to keep user's selection intact
+          (when old-mark
+            (set-marker (mark-marker) (or mark-target (point-min)) (current-buffer))
+            (setq mark-active old-mark-active))
           ;; Restore window-start for smooth scrolling restoration
           (when (and (window-live-p win) old-start)
             (set-window-start win old-start t)))))))

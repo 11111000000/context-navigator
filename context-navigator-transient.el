@@ -43,7 +43,8 @@ Files larger than this threshold are skipped."
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
   [["Panel/Project"
-    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-view-toggle)
+    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-toggle)
+    ("M" "Display Mode" context-navigator-display-mode-toggle)
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
