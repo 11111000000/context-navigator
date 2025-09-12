@@ -1646,7 +1646,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "r")   #'context-navigator-view-group-rename)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
     (define-key m (kbd "q")   #'context-navigator-view-quit)
-    (define-key m (kbd "?")   #'context-navigator-view-help)
+    (define-key m (kbd "?")   #'context-navigator-view-transient)
     m)
   "Keymap for =context-navigator-view-mode'.")
 
@@ -1668,7 +1668,8 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map
               [remap delete-other-windows]   #'context-navigator-delete-other-windows)
   ;; New binding sync after reloads
-  (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group))
+  (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
+  (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
 
 (defun context-navigator-view--hl-line-range ()
   "Return region to highlight for the current line.

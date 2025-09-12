@@ -62,6 +62,8 @@
 ;;;###autoload
 (autoload 'context-navigator-transient "context-navigator-transient" "Open Context Navigator transient." t)
 ;;;###autoload
+(autoload 'context-navigator-view-transient "context-navigator-transient" "Open Navigator view transient." t)
+;;;###autoload
 (autoload 'context-navigator-open "context-navigator-core" "Open Navigator in current display mode." t)
 ;;;###autoload
 (autoload 'context-navigator-close "context-navigator-core" "Close Navigator in current display mode." t)

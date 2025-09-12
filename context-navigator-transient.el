@@ -66,6 +66,60 @@ Files larger than this threshold are skipped."
     ("V" "Set level" context-navigator-log-set-level)
     ("F" "Toggle file log" context-navigator-log-toggle-file-persistence)]])
 
+;;;###autoload
+(transient-define-prefix context-navigator-view-transient ()
+  "Navigator menu"
+  [[:description (lambda () "Navigate")
+                 ("RET" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate)
+                 ("SPC" (lambda () (context-navigator-i18n :help-preview))  context-navigator-view-preview)
+                 ("n"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
+                 ("p"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
+                 ("j"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
+                 ("k"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
+                 ("h"   (lambda ()
+                          (if (eq context-navigator-view--mode 'groups)
+                              (context-navigator-i18n :groups-help-back)
+                            (context-navigator-i18n :items-help-view-groups)))
+                  context-navigator-view-go-up)]
+   [:description (lambda () "Items")
+                 :if (lambda () (eq context-navigator-view--mode 'items))
+                 ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
+                 ("d" (lambda () (context-navigator-i18n :help-delete))       context-navigator-view-delete-dispatch)
+                 ("g" (lambda () (context-navigator-i18n :help-refresh))      context-navigator-view-refresh-dispatch)
+                 ("o" (lambda ()
+                        (cl-destructuring-bind (n . plus) (context-navigator-view--openable-count-get)
+                          (format "%s (%d%s)" (context-navigator-i18n :open-buffers) n (if plus "+" ""))))
+                  context-navigator-view-open-all-buffers)
+                 ("K" (lambda ()
+                        (let ((n (length (context-navigator-view--collect-closable-buffers))))
+                          (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
+                  context-navigator-view-close-all-buffers)]
+   [:description (lambda () "Groups")
+                 :if (lambda () (eq context-navigator-view--mode 'groups))
+                 ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate)
+                 ("a"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
+                 ("r"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
+                 ("c"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
+                 ("d"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
+                 ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
+   ["Session"
+    ("G" (lambda ()
+           (format "Push→gptel: %s"
+                   (if (and (boundp 'context-navigator--push-to-gptel)
+                            context-navigator--push-to-gptel) "ON" "OFF")))
+     context-navigator-view-toggle-push)
+    ("A" (lambda ()
+           (format "Auto-project: %s"
+                   (if (and (boundp 'context-navigator--auto-project-switch)
+                            context-navigator--auto-project-switch) "ON" "OFF")))
+     context-navigator-view-toggle-auto-project)
+    ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
+    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-view-clear-gptel)
+    ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-view-clear-group)
+    ("X" (lambda () (context-navigator-i18n :tr-unload))   context-navigator-context-unload)]
+   ["Help/Exit"
+    ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
+    ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)]])
 
 (defun context-navigator-transient--maybe-apply-to-gptel ()
   "Apply current model to gptel when push is ON."
