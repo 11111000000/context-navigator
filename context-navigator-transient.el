@@ -48,7 +48,7 @@ Files larger than this threshold are skipped."
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
-    ("X" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]
+    ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-context-clear-current-group)]
    ["Actions"
     ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
     ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
