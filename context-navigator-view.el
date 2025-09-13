@@ -209,7 +209,8 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
                              (when gptel-available
-                               (define-key km [mouse-1] #'context-navigator-view-toggle-push))
+                               (define-key km [mouse-1] #'context-navigator-view-toggle-push)
+                               (define-key km [header-line mouse-1] #'context-navigator-view-toggle-push))
                              km))
                         (fg (if (and push-on gptel-available) "green4" "gray"))
                         (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
@@ -219,6 +220,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                                              (context-navigator-i18n :toggle-push)
                                                            "gptel not available")
                                               'keymap m
+                                              'local-map m
                                               'context-navigator-toggle 'push
                                               'face (if gptel-available
                                                         (list :foreground fg)
@@ -228,6 +230,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
            (seg2 (let* ((s (copy-sequence lbl-auto))
                         (m (let ((km (make-sparse-keymap)))
                              (define-key km [mouse-1] #'context-navigator-view-toggle-auto-project)
+                             (define-key km [header-line mouse-1] #'context-navigator-view-toggle-auto-project)
                              km))
                         (fg (if auto-on "green4" "gray"))
                         (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
@@ -235,6 +238,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                         (list 'mouse-face 'highlight
                                               'help-echo (context-navigator-i18n :toggle-auto)
                                               'keymap m
+                                              'local-map m
                                               'context-navigator-toggle 'auto
                                               'face (list :foreground fg))
                                         s)
@@ -467,11 +471,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                            (format "Open %d context buffer(s) in background (o)" openable)))
                    (m (let ((km (make-sparse-keymap)))
                         (define-key km [mouse-1] #'context-navigator-view-open-all-buffers)
+                        (define-key km [header-line mouse-1] #'context-navigator-view-open-all-buffers)
                         km)))
               (add-text-properties beg (length s)
                                    (list 'mouse-face 'highlight
                                          'help-echo disp
-                                         'keymap m)
+                                         'keymap m
+                                         'local-map m)
                                    s))
           (add-text-properties beg (length s)
                                (list 'face 'shadow
@@ -492,11 +498,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
       (if (> closable 0)
           (let ((m (let ((km (make-sparse-keymap)))
                      (define-key km [mouse-1] #'context-navigator-view-close-all-buffers)
+                     (define-key km [header-line mouse-1] #'context-navigator-view-close-all-buffers)
                      km)))
             (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
                                        'help-echo (format "Close %d context buffer(s)" closable)
-                                       'keymap m)
+                                       'keymap m
+                                       'local-map m)
                                  s))
         (add-text-properties beg (length s)
                              (list 'face 'shadow
@@ -515,11 +523,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
       (if have-items
           (let ((m (let ((km (make-sparse-keymap)))
                      (define-key km [mouse-1] #'context-navigator-view-clear-group)
+                     (define-key km [header-line mouse-1] #'context-navigator-view-clear-group)
                      km)))
             (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
                                        'help-echo (context-navigator-i18n :clear-group-tip)
-                                       'keymap m)
+                                       'keymap m
+                                       'local-map m)
                                  s))
         (add-text-properties beg (length s)
                              (list 'face 'shadow
@@ -555,11 +565,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
        (t
         (let ((m (let ((km (make-sparse-keymap)))
                    (define-key km [mouse-1] #'context-navigator-view-push-now)
+                   (define-key km [header-line mouse-1] #'context-navigator-view-push-now)
                    km)))
           (add-text-properties beg (length s)
                                (list 'mouse-face 'highlight
                                      'help-echo (context-navigator-i18n :push-tip)
-                                     'keymap m)
+                                     'keymap m
+                                     'local-map m)
                                s))))
       (push s segs))
     ;; [Clear gptel] — inactive (shadowed) when no entries available. Use a distinct icon in icons-style.
@@ -573,11 +585,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
       (if has-gptel
           (let ((m (let ((km (make-sparse-keymap)))
                      (define-key km [mouse-1] #'context-navigator-view-clear-gptel)
+                     (define-key km [header-line mouse-1] #'context-navigator-view-clear-gptel)
                      km)))
             (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
                                        'help-echo (context-navigator-i18n :clear-tip)
-                                       'keymap m)
+                                       'keymap m
+                                       'local-map m)
                                  s))
         (add-text-properties beg (length s)
                              (list 'face 'shadow
@@ -622,6 +636,7 @@ lines so rendering layout remains stable."
                                        'context-navigator-group-display disp
                                        'mouse-face 'highlight
                                        'keymap context-navigator-view--group-line-keymap
+                                       'local-map context-navigator-view--group-line-keymap
                                        'help-echo (context-navigator-i18n :mouse-open-group))
                                  s)
             (when (and context-navigator-highlight-active-group
@@ -2028,6 +2043,7 @@ Do not highlight header/separator lines."
 (defun context-navigator-view-toggle-push ()
   "Toggle push-to-gptel session flag and refresh header immediately."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: toggle-push (event=%S)" last-input-event))
   (ignore-errors (context-navigator-toggle-push-to-gptel))
   ;; Immediately refresh cached keys from gptel so indicators reflect actual presence,
   ;; regardless of push flag.
@@ -2052,6 +2068,7 @@ Do not highlight header/separator lines."
 (defun context-navigator-view-toggle-auto-project ()
   "Toggle auto-project-switch session flag and refresh header immediately."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: toggle-auto (event=%S)" last-input-event))
   (ignore-errors (context-navigator-toggle-auto-project-switch))
   ;; Force immediate redraw for visible sidebar
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
@@ -2064,6 +2081,7 @@ Do not highlight header/separator lines."
 (defun context-navigator-view-push-now ()
   "Manually push current items to gptel (reset + add) and redraw immediately."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: push-now (event=%S)" last-input-event))
   (ignore-errors (context-navigator-push-to-gptel-now))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -2072,6 +2090,7 @@ Do not highlight header/separator lines."
         (setq-local context-navigator-view--last-render-key nil))))
   (context-navigator-view--render-if-visible))
 
+;;;###autoload
 (defun context-navigator-view-open-all-buffers ()
   "Open all file/buffer/selection items from current model in background (no window selection).
 
@@ -2079,6 +2098,7 @@ This opens file-backed buffers (via `find-file-noselect') for items of
 type `file', `buffer' and `selection' when they reference an existing file.
 Buffers are opened in background; we do not change window focus."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: open-all-buffers (event=%S)" last-input-event))
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (context-navigator-state-items st)))
          (count 0))
@@ -2111,6 +2131,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-view-close-all-buffers ()
   "Close all live buffers that belong to items in the current model."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: close-all-buffers (event=%S)" last-input-event))
   (let* ((bufs (context-navigator-view--collect-closable-buffers))
          (count 0))
     (dolist (b bufs)
@@ -2123,6 +2144,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-view-clear-group ()
   "Clear current group's items and redraw immediately."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-group (event=%S)" last-input-event))
   (ignore-errors (context-navigator-context-clear-current-group))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -2134,6 +2156,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-view-clear-gptel ()
   "Manually clear gptel context without touching the model; redraw immediately."
   (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-gptel (event=%S)" last-input-event))
   (ignore-errors (context-navigator-clear-gptel-now))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
