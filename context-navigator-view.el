@@ -57,7 +57,7 @@
   :type '(choice (const lazy) (const strict) (const off))
   :group 'context-navigator)
 
-(defcustom context-navigator-gptel-indicator-poll-interval 1.0
+(defcustom context-navigator-gptel-indicator-poll-interval 0
   "Polling interval (seconds) to refresh gptel indicators while the sidebar is visible.
 
 Set to 0 or nil to disable polling (event-based refresh still works)."
@@ -1454,40 +1454,37 @@ Order of operations:
   "Subscribe to gptel changes and keep cached keys in sync."
   (push (context-navigator-events-subscribe
          :gptel-change
-         (lambda (&rest _)
-           ;; Prefer raw keys (fast, read-only) to avoid triggering gptel collectors.
-           (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
-                                 (ignore-errors (context-navigator-gptel--raw-keys))))
-                  (pulled-keys
-                   (and (or (null raw-keys) (= (length raw-keys) 0))
-                        (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-                          (and (listp lst)
-                               (mapcar #'context-navigator-model-item-key lst)))))
-                  ;; Last-resort fallback: enabled items in model only if both pulled and raw are empty
-                  (fallback-keys
-                   (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                              (or (null raw-keys) (= (length raw-keys) 0)))
-                     (let* ((st (ignore-errors (context-navigator--state-get)))
-                            (items (and st (context-navigator-state-items st))))
-                       (and (listp items)
-                            (mapcar #'context-navigator-model-item-key
-                                    (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                  (keys (or raw-keys pulled-keys fallback-keys '()))
-                  (h (sxhash-equal keys))
-                  (n (length keys))
-                  (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                     (or (null raw-keys) (= (length raw-keys) 0))))
-                  (sample (mapconcat (lambda (s) s)
-                                     (cl-subseq keys 0 (min 5 n))
-                                     ", ")))
-             (setq context-navigator-view--gptel-keys keys
-                   context-navigator-view--gptel-keys-hash h)
-             (ignore-errors
-               (context-navigator-debug :debug :ui
-                                        "gptel-change: pulled %d keys, hash=%s, sample=[%s]%s"
-                                        n h sample
-                                        (if use-fallback " (fallback)" ""))))
-           (context-navigator-view--schedule-render)))
+         (lambda (&rest args)
+           ;; Ignore noisy variable-watcher events to avoid feedback loop.
+           (let ((src (car args)))
+             (unless (memq src '(gptel-context gptel-context--alist gptel--context))
+               ;; Prefer raw keys (read-only). Pull only as fallback.
+               (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
+                                     (ignore-errors (context-navigator-gptel--raw-keys))))
+                      (pulled-keys
+                       (and (or (null raw-keys) (= (length raw-keys) 0))
+                            (let ((lst (ignore-errors (context-navigator-gptel-pull))))
+                              (and (listp lst)
+                                   (mapcar #'context-navigator-model-item-key lst)))))
+                      (fallback-keys
+                       (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
+                                  (or (null raw-keys) (= (length raw-keys) 0)))
+                         (let* ((st (ignore-errors (context-navigator--state-get)))
+                                (items (and st (context-navigator-state-items st))))
+                           (and (listp items)
+                                (mapcar #'context-navigator-model-item-key
+                                        (cl-remove-if-not #'context-navigator-item-enabled items))))))
+                      (keys (or raw-keys pulled-keys fallback-keys '()))
+                      (h (sxhash-equal keys)))
+                 ;; Обновлять только при реальном изменении
+                 (unless (equal h context-navigator-view--gptel-keys-hash)
+                   (setq context-navigator-view--gptel-keys keys
+                         context-navigator-view--gptel-keys-hash h)
+                   (ignore-errors
+                     (context-navigator-debug :debug :ui
+                                              "gptel-change: keys=%d hash=%s"
+                                              (length keys) h))
+                   (context-navigator-view--schedule-render)))))))
         context-navigator-view--subs))
 
 (defun context-navigator-view--init-gptel-cache ()

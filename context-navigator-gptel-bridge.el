@@ -51,20 +51,19 @@ Attempts to soft-require gptel on first call."
 (defun context-navigator-gptel--context-list ()
   "Return raw gptel context entries or nil if unavailable.
 
-Prefer robust sources that reflect the actual current context:
-- gptel-context--collect (function) — authoritative, normalized list
-- gptel-context--alist (variable)   — internal storage used by gptel
-Fallbacks:
-- public variables/APIs (gptel-context, gptel-context-list, gptel--context)
+Important: prefer read-only sources (variables/APIs) to avoid triggering
+internal writes in gptel (e.g. `gptel-context--collect' may rewrite
+`gptel-context--alist' and fire variable watchers).
 
-Return the first non-empty sequence among candidates; when all are empty,
-return the first available sequence (possibly empty)."
+Order of preference:
+- gptel-context--alist (variable)
+- gptel-context (public variable)
+- gptel--context (private variable)
+- gptel-context-list (public API)
+- gptel-context--collect (function, last resort)"
   (context-navigator-gptel--ensure-loaded)
   (let* ((seqs
-          ;; Order matters: prefer collect → alist → public var → private var → public API
           (list
-           (cons 'collect (and (fboundp 'gptel-context--collect)
-                               (ignore-errors (gptel-context--collect))))
            (cons 'alist   (and (boundp 'gptel-context--alist)
                                (ignore-errors (symbol-value 'gptel-context--alist))))
            (cons 'public  (and (boundp 'gptel-context)
@@ -72,7 +71,9 @@ return the first available sequence (possibly empty)."
            (cons 'priv    (and (boundp 'gptel--context)
                                (ignore-errors (symbol-value 'gptel--context))))
            (cons 'api     (and (fboundp 'gptel-context-list)
-                               (ignore-errors (gptel-context-list))))))
+                               (ignore-errors (gptel-context-list))))
+           (cons 'collect (and (fboundp 'gptel-context--collect)
+                               (ignore-errors (gptel-context--collect)))))) ;; last-resort
          (nonempty
           (cl-find-if (lambda (cell)
                         (let ((v (cdr cell)))
@@ -80,12 +81,11 @@ return the first available sequence (possibly empty)."
                       seqs))
          (chosen (or (and nonempty (cdr nonempty))
                      (let ((first (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))
-                       (and first (cdr first))))))
+                       (and first (cdr first)))))
+         (src (car (or nonempty (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))))
     (ignore-errors
       (context-navigator-debug :debug :gptel
-                               "context-list source=%s size=%s"
-                               (car (or nonempty (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))
-                               (length (or chosen '()))))
+                               "context-list source=%s size=%s" src (length (or chosen '()))))
     chosen))
 
 (defun context-navigator-gptel--raw-keys ()
@@ -313,83 +313,77 @@ Return a single item or a list of items, or nil."
       (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
       nil))))
 
+(defvar context-navigator-gptel--pull-in-progress nil
+  "Non-nil while `context-navigator-gptel-pull' is running (reentrancy guard).")
+
 (defun context-navigator-gptel-pull ()
   "Return list<context-navigator-item> reflecting current gptel context.
 
-This function is tolerant: it flattens nested results from the
-entry->item converter and returns a unique list of items.
-
-Robustness improvements:
-- Accept a single item, a list/vector of items, or mixed lists and extract valid items.
-- When `context-navigator-debug' is non-nil, log unexpected conversions."
-  (context-navigator-gptel--ensure-loaded)
-  (let* ((raw (or (context-navigator-gptel--context-list)
-                  ;; Fallback for tests/older gptel shapes using a plain variable
-                  (and (boundp 'gptel--context)
-                       (ignore-errors (symbol-value 'gptel--context)))))
-         ;; Normalize RAW to a proper sequence of entries:
-         ;; - vector -> list
-         ;; - single plist entry -> wrap into a list
-         ;; - list of entries -> keep as-is
-         (seq (cond
-               ((null raw) nil)
-               ((vectorp raw) (append raw nil))
-               ;; already a list of entries (heuristic: first element is a plist/alist)
-               ((and (listp raw)
-                     (or (null raw)
-                         (and (listp (car raw))
-                              (or (plist-member (car raw) :type)
-                                  (plist-member (car raw) 'type)))))
-                raw)
-               ;; single plist-like entry
-               ((and (listp raw)
-                     (or (plist-member raw :type)
-                         (plist-member raw 'type)))
-                (list raw))
-               (t raw)))
-         (flat
-          (and seq
-               (mapcan
-                (lambda (entry)
-                  (let ((it (ignore-errors (context-navigator-gptel--entry->item entry))))
-                    (cond
-                     ((null it) nil)
-                     ((context-navigator-item-p it) (list it))
-                     ((and (listp it) (cl-every #'context-navigator-item-p it)) it)
-                     ((and (vectorp it))
-                      (let (res)
-                        (dotimes (i (length it))
-                          (let ((elt (aref it i)))
-                            (when (context-navigator-item-p elt)
-                              (push elt res))))
-                        (nreverse res)))
-                     ((and (listp it) (context-navigator-item-p (car it))) it)
-                     ((listp it)
-                      (let (res)
-                        (dolist (el it)
-                          (when (context-navigator-item-p el) (push el res)))
-                        (nreverse res)))
-                     (t
-                      (context-navigator-debug :debug :gptel
-                                               "Ignored entry->item result for entry=%S -> %S"
-                                               entry it)
-                      nil))))
-                seq)))
-         (uniq (and flat (context-navigator-model-uniq flat))))
-    ;; Fallback: if conversion yielded no items but raw context is non-empty,
-    ;; construct coarse items from raw to reflect actual gptel presence.
-    (when (and (or (null uniq) (= (length uniq) 0))
-               (sequencep raw) (> (length raw) 0))
-      (setq uniq (ignore-errors (context-navigator-gptel--raw-items-fallback))))
-    (let* ((count (lambda (pred lst)
-                    (cl-count-if pred lst)))
-           (files (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'file)) uniq)))
-           (bufs  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'buffer)) uniq)))
-           (sels  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'selection)) uniq))))
-      (context-navigator-debug :debug :gptel
-                               "pull -> items total=%s files=%s buffers=%s selections=%s"
-                               (length (or uniq '())) (or files 0) (or bufs 0) (or sels 0)))
-    uniq))
+Reentrancy is guarded to avoid feedback loops when variable watchers
+publish :gptel-change and handlers try to pull immediately."
+  (when context-navigator-gptel--pull-in-progress
+    (context-navigator-debug :trace :gptel "pull: reentry — skipping")
+    (cl-return-from context-navigator-gptel-pull nil))
+  (let ((context-navigator-gptel--pull-in-progress t))
+    (context-navigator-gptel--ensure-loaded)
+    (let* ((raw (or (context-navigator-gptel--context-list)
+                    (and (boundp 'gptel--context)
+                         (ignore-errors (symbol-value 'gptel--context)))))
+           (seq (cond
+                 ((null raw) nil)
+                 ((vectorp raw) (append raw nil))
+                 ((and (listp raw)
+                       (or (null raw)
+                           (and (listp (car raw))
+                                (or (plist-member (car raw) :type)
+                                    (plist-member (car raw) 'type)))))
+                  raw)
+                 ((and (listp raw)
+                       (or (plist-member raw :type)
+                           (plist-member raw 'type)))
+                  (list raw))
+                 (t raw)))
+           (flat
+            (and seq
+                 (mapcan
+                  (lambda (entry)
+                    (let ((it (ignore-errors (context-navigator-gptel--entry->item entry))))
+                      (cond
+                       ((null it) nil)
+                       ((context-navigator-item-p it) (list it))
+                       ((and (listp it) (cl-every #'context-navigator-item-p it)) it)
+                       ((and (vectorp it))
+                        (let (res)
+                          (dotimes (i (length it))
+                            (let ((elt (aref it i)))
+                              (when (context-navigator-item-p elt)
+                                (push elt res))))
+                          (nreverse res)))
+                       ((and (listp it) (context-navigator-item-p (car it))) it)
+                       ((listp it)
+                        (let (res)
+                          (dolist (el it)
+                            (when (context-navigator-item-p el) (push el res)))
+                          (nreverse res)))
+                       (t
+                        (context-navigator-debug :debug :gptel
+                                                 "Ignored entry->item result for entry=%S -> %S"
+                                                 entry it)
+                        nil))))
+                  seq)))
+           (uniq (and flat (context-navigator-model-uniq flat))))
+      (when (and (or (null uniq) (= (length uniq) 0))
+                 (sequencep raw) (> (length raw) 0))
+        (setq uniq (ignore-errors (context-navigator-gptel--raw-items-fallback))))
+      (let* ((count (lambda (pred lst)
+                      (cl-count-if pred lst)))
+             (files (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'file)) uniq)))
+             (bufs  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'buffer)) uniq)))
+             (sels  (and uniq (funcall count (lambda (x) (eq (context-navigator-item-type x) 'selection)) uniq))))
+        (context-navigator-debug :debug :gptel
+                                 "pull -> items total=%s files=%s buffers=%s selections=%s"
+                                 (length (or uniq '())) (or files 0) (or bufs 0) (or sels 0)))
+      uniq)))
 
 (defun context-navigator-gptel--can-add-file () (fboundp 'gptel-context-add-file))
 (defun context-navigator-gptel--can-add-region () (fboundp 'gptel-context--add-region))

@@ -352,11 +352,18 @@ TOPIC is a short symbol/keyword (e.g. :core, :persist, :gptel, :events)."
                                       "group-switch done: %s (%s) -> %s"
                                       (or slug "?") (or root "~") (if ok "ok" "failed"))))
           context-navigator-log--subs)
-    (push (context-navigator-events-subscribe
-           :gptel-change
-           (lambda (&rest args)
-             (context-navigator-debug :debug :gptel "gptel-change: %s"
-                                      (mapconcat (lambda (x) (format "%s" x)) args " "))))
+    (push (let ((last-ts 0.0))
+            (context-navigator-events-subscribe
+             :gptel-change
+             (lambda (&rest args)
+               ;; Rate-limit noisy logs and ignore variable-watcher pings
+               (let ((src (car args))
+                     (now (float-time)))
+                 (unless (memq src '(gptel-context gptel-context--alist gptel--context))
+                   (when (> (- now last-ts) 0.4)
+                     (setq last-ts now)
+                     (context-navigator-debug :debug :gptel "gptel-change: %s"
+                                              (mapconcat (lambda (x) (format "%s" x)) args " "))))))))
           context-navigator-log--subs)
     (push (context-navigator-events-subscribe
            :model-refreshed
