@@ -37,27 +37,13 @@
 (defun context-navigator-headerline-format ()
   "Return header-line content for Navigator buffers.
 
-Format:
- - project/group title (from view helper) in `mode-line-emphasis' face
- - two spaces
- - controls segments produced by `context-navigator-view--footer-control-segments'
-
-The per-point status is intentionally omitted from the header-line (it's shown
-in the dedicated modeline)."
+Shows only control toggles and action segments; the project/group title is
+rendered inside the buffer itself (above the \"..\" line)."
   (when (eq major-mode 'context-navigator-view-mode)
-    (let* ((st (and (fboundp 'context-navigator--state-get)
-                    (ignore-errors (context-navigator--state-get))))
-           (title (and (fboundp 'context-navigator-view--header)
-                       (ignore-errors (context-navigator-view--header st))))
-           (title-str (when (and (stringp title) (> (length (string-trim title)) 0))
-                        (propertize (concat " " title) 'face 'mode-line-emphasis)))
-           (controls (and (fboundp 'context-navigator-view--footer-control-segments)
+    (let* ((controls (and (fboundp 'context-navigator-view--footer-control-segments)
                           (ignore-errors (context-navigator-view--footer-control-segments)))))
-      ;; Compose parts into a single propertized string so header-line preserves
-      ;; text properties (keymaps/local-maps) reliably and mouse clicks work.
-      (let ((parts (append (if title-str (list title-str "  ") (list ""))
-                           (or controls '()))))
-        (apply #'concat parts)))))
+      ;; Compose only control segments so text properties (keymaps) are preserved.
+      (apply #'concat (or controls '())))))
 
 (defun context-navigator-headerline--apply (buffer)
   "Apply or remove header-line controls in BUFFER based on the feature flag."

@@ -121,6 +121,24 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--last-mode nil)              ;; last rendered mode: 'items or 'groups
 (defvar-local context-navigator-view--sorted-root nil)            ;; root used for cached items sort
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
+(defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
+
+(defvar context-navigator-view--title-line-keymap
+  (let ((m (make-sparse-keymap)))
+    ;; Mouse click toggles collapse/expand
+    (define-key m [mouse-1] #'context-navigator-view-toggle-collapse)
+    ;; TAB on title behaves like in Magit: toggle collapse
+    (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse)
+    (define-key m [tab]             #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse)
+    ;; RET on title also toggles collapse/expand
+    (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse)
+    (define-key m [return]          #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse)
+    m)
+  "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
 
 (defcustom context-navigator-view-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -627,12 +645,10 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 
 (defun context-navigator-view--groups-header-lines (header total-width)
-  "Return list of header lines for groups view using HEADER and TOTAL-WIDTH.
+  "Return list with a single clickable title line for groups view.
 
-Header (project/group) is rendered in the header-line now; do not render
-a long title or separator inside the main buffer. Return two empty
-lines so rendering layout remains stable."
-  (list "" ""))
+Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
+  (list (context-navigator-view--title-line header)))
 
 
 (defun context-navigator-view--groups-body-lines (state)
@@ -689,10 +705,14 @@ and the transient/help command can be invoked explicitly."
 (defun context-navigator-view--render-groups (state header total-width)
   "Render groups view using STATE, HEADER and TOTAL-WIDTH.
 Returns the list of lines that were rendered."
-  (let* ((lines (append
-                 (context-navigator-view--groups-header-lines header total-width)
-                 (context-navigator-view--groups-body-lines state)
-                 (context-navigator-view--groups-footer-lines total-width))))
+  (let* ((hl-lines (context-navigator-view--groups-header-lines header total-width))
+         (hl (car hl-lines))
+         (body (append
+                (context-navigator-view--groups-body-lines state)
+                (context-navigator-view--groups-footer-lines total-width)))
+         (lines (if context-navigator-view--collapsed-p
+                    (list hl)
+                  (cons hl body))))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
@@ -700,28 +720,29 @@ Returns the list of lines that were rendered."
     ;; - entering the groups view (first render in this mode), or
     ;; - the active group changed since last render.
     ;; Do not steal point when user moves to footer/help with TAB/Shift-TAB.
-    (let* ((active (and (context-navigator-state-p state)
-                        (context-navigator-state-current-group-slug state)))
-           (here (point))
-           (on-group (get-text-property here 'context-navigator-group-slug))
-           (need-focus (or (not (eq context-navigator-view--last-mode 'groups))
-                           (not (equal context-navigator-view--last-active-group active)))))
-      (when need-focus
-        (let (pos)
-          (when (and (stringp active) (not (string-empty-p active)))
-            (let ((p (point-min)) (found nil))
-              (while (and (not found)
-                          (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
-                (when (equal (get-text-property p 'context-navigator-group-slug) active)
-                  (setq found p))
-                (setq p (1+ p)))
-              (setq pos found)))
-          (unless pos
-            (setq pos (text-property-not-all (point-min) (point-max)
-                                             'context-navigator-group-slug nil)))
-          (when pos
-            (goto-char pos)
-            (beginning-of-line))))
+    (unless context-navigator-view--collapsed-p
+      (let* ((active (and (context-navigator-state-p state)
+                          (context-navigator-state-current-group-slug state)))
+             (here (point))
+             (on-group (get-text-property here 'context-navigator-group-slug))
+             (need-focus (or (not (eq context-navigator-view--last-mode 'groups))
+                             (not (equal context-navigator-view--last-active-group active)))))
+        (when need-focus
+          (let (pos)
+            (when (and (stringp active) (not (string-empty-p active)))
+              (let ((p (point-min)) (found nil))
+                (while (and (not found)
+                            (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
+                  (when (equal (get-text-property p 'context-navigator-group-slug) active)
+                    (setq found p))
+                  (setq p (1+ p)))
+                (setq pos found)))
+            (unless pos
+              (setq pos (text-property-not-all (point-min) (point-max)
+                                               'context-navigator-group-slug nil)))
+            (when pos
+              (goto-char pos)
+              (beginning-of-line)))))
       (setq context-navigator-view--last-active-group active
             context-navigator-view--last-mode 'groups))
     lines))
@@ -730,10 +751,34 @@ Returns the list of lines that were rendered."
   "Return header toggle lines for items view wrapped to TOTAL-WIDTH."
   (context-navigator-view--header-toggle-lines total-width))
 
+(defun context-navigator-view-toggle-collapse ()
+  "Toggle collapse/expand of the items section under the title line."
+  (interactive)
+  (setq context-navigator-view--collapsed-p (not context-navigator-view--collapsed-p))
+  (context-navigator-view--schedule-render))
+
+(defun context-navigator-view--title-line (header)
+  "Return a single interactive title line built from HEADER with a disclosure triangle.
+TAB or mouse-1 on this line toggles collapsing the section below."
+  (let* ((arrow (if context-navigator-view--collapsed-p "▸" "▾"))
+         (txt (format " %s %s" arrow (or header "Context")))
+         (s (copy-sequence txt)))
+    (add-text-properties 0 (length s)
+                         (list 'context-navigator-title t
+                               'mouse-face 'highlight
+                               'help-echo "TAB: collapse/expand"
+                               'keymap context-navigator-view--title-line-keymap
+                               'local-map context-navigator-view--title-line-keymap
+                               'face 'mode-line-emphasis)
+                         s)
+    s))
+
 (defun context-navigator-view--items-base-lines (state header total-width)
   "Return a list: (hl sep up rest...) for items view base lines.
-The result already includes header line (HL), separator (SEP), the \"..\" line (UP),
-and the item lines (REST...)."
+HL is the clickable [project[: group]] title line placed above \"..\".
+SEP is currently empty (no extra separator in the buffer).
+UP is the \"..\" line.
+REST is a list of item lines."
   (let* ((items (context-navigator-state-items state))
          ;; generation-aware cached sort: avoid re-sorting identical model generation
          (gen (or (and (context-navigator-state-p state)
@@ -859,13 +904,15 @@ and the item lines (REST...)."
                  (context-navigator-render-build-lines sorted-items header
                                                        #'context-navigator-icons-for-item
                                                        left-width)))
-         ;; Title/header moved to header-line; keep buffer compact by not rendering header/sep here.
-         (hl "")
+         ;; Title/header is rendered inside the buffer (interactive, collapsible).
+         (hl (context-navigator-view--title-line header))
          (sep "")
          (rest (cddr base))
          (up (let ((s (copy-sequence "..")))
                (add-text-properties 0 (length s)
                                     (list 'context-navigator-groups-up t
+                                          'mouse-face 'highlight
+                                          'help-echo (context-navigator-i18n :status-up-to-groups)
                                           'face 'shadow)
                                     s)
                s)))
@@ -874,11 +921,15 @@ and the item lines (REST...)."
 
 (defun context-navigator-view--status-text-at-point ()
   "Return status text for the current point:
+- title line → show the header text (project[: group])
 - item line → relative path to project root (or absolute when no root)
 - \"..\" line → localized \"<to groups>\"
 - footer action/toggle → their help-echo
 - otherwise → empty string."
   (cond
+   ;; On title/header line
+   ((get-text-property (point) 'context-navigator-title)
+    (or context-navigator-view--header ""))
    ;; On an item: show relative path (dirs + basename), or buffer name when no path
    ((get-text-property (point) 'context-navigator-item)
     (let* ((it (get-text-property (point) 'context-navigator-item))
@@ -921,10 +972,13 @@ buffer footer. Also remove the single-key help (\"? for help\") from the footer.
 (defun context-navigator-view--render-items (state header total-width)
   "Render items view using STATE, HEADER and TOTAL-WIDTH.
 Returns the list of lines that were rendered."
-  (cl-destructuring-bind (_hl _sep up rest)
+  (cl-destructuring-bind (hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
-    (let* ((lines (append (list up) rest
-                          (context-navigator-view--items-footer-lines total-width))))
+    (let* ((body (append (list up) rest
+                         (context-navigator-view--items-footer-lines total-width)))
+           (lines (if context-navigator-view--collapsed-p
+                      (list hl)
+                    (cons hl body))))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)
@@ -1011,7 +1065,7 @@ background."
            (auto-on (and (boundp 'context-navigator--auto-project-switch)
                          context-navigator--auto-project-switch))
            ;; Compose key (include session flags so toggles force a refresh)
-           (key (list gen mode total gptel-hash openable plus header push-on auto-on)))
+           (key (list gen mode total gptel-hash openable plus header push-on auto-on context-navigator-view--collapsed-p)))
       (unless (equal key context-navigator-view--last-render-key)
         (setq context-navigator-view--last-render-key key)
         ;; Fast path: show minimal preloader when loading or when progress is reported by events.
@@ -1173,7 +1227,8 @@ hard to restore the sidebar afterward."
   "Return the nearest position >= START (or point) with an interactive property.
 Searches for known interactive properties used in the sidebar."
   (let* ((start (or start (point)))
-         (props '(context-navigator-item
+         (props '(context-navigator-title
+                  context-navigator-item
                   context-navigator-group-slug
                   context-navigator-action
                   context-navigator-toggle
@@ -1219,36 +1274,43 @@ Searches for known interactive properties used in the sidebar."
     best))
 
 (defun context-navigator-view-tab-next ()
-  "Move point to the next interactive element (items, groups, toggles, actions).
+  "Move point to the next interactive element (title, items, groups, toggles, actions).
+
+Special case: when on the title line, TAB toggles collapse/expand (magit-like).
 
 Wraps to the top when no further element is found after point."
   (interactive)
-  (let* ((here (point))
-         (props '(context-navigator-item
-                  context-navigator-group-slug
-                  context-navigator-action
-                  context-navigator-toggle
-                  context-navigator-groups-up))
-         ;; If we are inside an interactive segment, skip to its end first,
-         ;; so repeated TAB moves to the next segment (not within the same one).
-         (cur-end
-          (if (cl-some (lambda (p) (get-text-property here p)) props)
-              (cl-reduce #'max
-                         (mapcar (lambda (p)
-                                   (if (get-text-property here p)
-                                       (or (next-single-property-change here p nil (point-max))
-                                           (point-max))
-                                     (1+ here)))
-                                 props)
-                         :initial-value (1+ here))
-            (1+ here)))
-         (pos (context-navigator-view--find-next-interactive-pos cur-end)))
-    (unless pos
-      ;; wrap
-      (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
-    (if pos
-        (progn (goto-char pos))
-      (message "No interactive elements"))))
+  (let* ((here (point)))
+    ;; On title line: toggle collapse and do not move
+    (when (get-text-property here 'context-navigator-title)
+      (context-navigator-view-toggle-collapse)
+      (cl-return-from context-navigator-view-tab-next))
+    (let* ((props '(context-navigator-title
+                    context-navigator-item
+                    context-navigator-group-slug
+                    context-navigator-action
+                    context-navigator-toggle
+                    context-navigator-groups-up))
+           ;; If we are inside an interactive segment, skip to its end first,
+           ;; so repeated TAB moves to the next segment (not within the same one).
+           (cur-end
+            (if (cl-some (lambda (p) (get-text-property here p)) props)
+                (cl-reduce #'max
+                           (mapcar (lambda (p)
+                                     (if (get-text-property here p)
+                                         (or (next-single-property-change here p nil (point-max))
+                                             (point-max))
+                                       (1+ here)))
+                                   props)
+                           :initial-value (1+ here))
+              (1+ here)))
+           (pos (context-navigator-view--find-next-interactive-pos cur-end)))
+      (unless pos
+        ;; wrap
+        (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
+      (if pos
+          (progn (goto-char pos))
+        (message "No interactive elements")))))
 
 (defun context-navigator-view-tab-previous ()
   "Move point to the previous interactive element (items, groups, toggles, actions).
@@ -1850,8 +1912,12 @@ MAP is a keymap to search for COMMAND bindings."
 (defvar context-navigator-view-mode-map
   (let ((m (make-sparse-keymap)))
     ;; Dispatch RET depending on mode
-    (define-key m (kbd "RET") #'context-navigator-view-activate)
-    (define-key m (kbd "SPC") #'context-navigator-view-preview)
+    (define-key m (kbd "RET")       #'context-navigator-view-activate)
+    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
+    (define-key m [return]          #'context-navigator-view-activate)
+    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
+    (define-key m [kp-enter]        #'context-navigator-view-activate)
+    (define-key m (kbd "SPC")       #'context-navigator-view-preview)
     (define-key m (kbd "n")   #'context-navigator-view-next-item)
     (define-key m (kbd "p")   #'context-navigator-view-previous-item)
     ;; Vim-like navigation keys
@@ -1910,6 +1976,12 @@ MAP is a keymap to search for COMMAND bindings."
 (when (keymapp context-navigator-view-mode-map)
   ;; Keep legacy binding in sync
   (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-toggle-enabled)
+  ;; Ensure RET variants are bound across terminals/tty/GUI
+  (define-key context-navigator-view-mode-map (kbd "RET")       #'context-navigator-view-activate)
+  (define-key context-navigator-view-mode-map (kbd "C-m")       #'context-navigator-view-activate)
+  (define-key context-navigator-view-mode-map [return]          #'context-navigator-view-activate)
+  (define-key context-navigator-view-mode-map (kbd "<return>")  #'context-navigator-view-activate)
+  (define-key context-navigator-view-mode-map [kp-enter]        #'context-navigator-view-activate)
   ;; Make TAB robust across reloads/terminals/minor-modes
   (define-key context-navigator-view-mode-map (kbd "TAB")       #'context-navigator-view-tab-next)
   (define-key context-navigator-view-mode-map (kbd "<tab>")     #'context-navigator-view-tab-next)
@@ -1934,17 +2006,27 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
+;; Ensure group line keymap inherits major mode map so keyboard works on group lines
+(when (and (keymapp context-navigator-view--group-line-keymap)
+           (keymapp context-navigator-view-mode-map))
+  (set-keymap-parent context-navigator-view--group-line-keymap context-navigator-view-mode-map))
+(when (and (boundp 'context-navigator-view--title-line-keymap)
+           (keymapp context-navigator-view--title-line-keymap)
+           (keymapp context-navigator-view-mode-map))
+  (set-keymap-parent context-navigator-view--title-line-keymap context-navigator-view-mode-map))
 
 (defun context-navigator-view--hl-line-range ()
   "Return region to highlight for the current line.
 
 Highlight:
+- title line (has 'context-navigator-title)
 - item lines (have 'context-navigator-item)
 - group lines (have 'context-navigator-group-slug)
 - the \"..\" line (has 'context-navigator-groups-up)
 
 Do not highlight header/separator lines."
-  (when (or (get-text-property (point) 'context-navigator-item)
+  (when (or (get-text-property (point) 'context-navigator-title)
+            (get-text-property (point) 'context-navigator-item)
             (get-text-property (point) 'context-navigator-group-slug)
             (get-text-property (point) 'context-navigator-groups-up))
     (cons (line-beginning-position)
@@ -2243,11 +2325,16 @@ Buffers are opened in background; we do not change window focus."
 
 (defun context-navigator-view-activate ()
   "RET action:
+- On title line: toggle collapse/expand
 - On toggle segments in header: toggle push/auto flags
 - On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/clear gptel)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
+  ;; Title line: collapse/expand
+  (when (get-text-property (point) 'context-navigator-title)
+    (context-navigator-view-toggle-collapse)
+    (cl-return-from context-navigator-view-activate))
   (let ((act (get-text-property (point) 'context-navigator-action))
         (tgl (get-text-property (point) 'context-navigator-toggle)))
     (cond
