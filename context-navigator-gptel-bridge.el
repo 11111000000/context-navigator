@@ -84,7 +84,7 @@ Order of preference:
                        (and first (cdr first)))))
          (src (car (or nonempty (cl-find-if (lambda (cell) (sequencep (cdr cell))) seqs)))))
     (ignore-errors
-      (context-navigator-debug :debug :gptel
+      (context-navigator-debug :trace :gptel
                                "context-list source=%s size=%s" src (length (or chosen '()))))
     chosen))
 

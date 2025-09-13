@@ -41,7 +41,7 @@
   :type '(choice (const auto) (const icons) (const text))
   :group 'context-navigator)
 
-(defcustom context-navigator-openable-count-ttl 0.3
+(defcustom context-navigator-openable-count-ttl 1.0
   "TTL (seconds) for cached openable buffers count in the sidebar footer."
   :type 'number :group 'context-navigator)
 
@@ -1013,7 +1013,7 @@ background."
         (setq-local context-navigator-render--last-hash nil)
         (setq-local context-navigator-view--last-render-key nil))))
   (context-navigator-events-debounce
-   :sidebar-render 0.06
+   :sidebar-render 0.12
    #'context-navigator-view--render-if-visible))
 
 (defun context-navigator-view--at-item ()
@@ -1530,7 +1530,7 @@ Note: only applies to sidebar windows; normal buffer-mode windows are not auto-c
                 (context-navigator-view--schedule-render))))
           ;; Debounced scan for windows that were marked as sidebar but now show a foreign buffer.
           (context-navigator-events-debounce
-           :sidebar-hijack-check 0.08
+           :sidebar-hijack-check 0.25
            (lambda ()
              (let ((our (get-buffer context-navigator-view--buffer-name)))
                (when (buffer-live-p our)
