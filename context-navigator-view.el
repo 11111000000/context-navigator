@@ -7,7 +7,7 @@
 ;; - Opens in a left side window with configurable width
 ;; - Subscribes to :model-refreshed and :context-load-(start|done)
 ;; - Renders via context-navigator-render, optional icons
-;; - Minimal keymap: RET/SPC to visit/preview, d delete, g refresh, q quit
+;; - Minimal keymap: RET to visit, d delete, g refresh, q quit
 ;;
 ;; Functional by design: no state mutation outside buffer-local vars for UI.
 
@@ -26,6 +26,7 @@
 (require 'context-navigator-log)
 (require 'context-navigator-modeline)
 (require 'context-navigator-headerline)
+(require 'context-navigator-stats)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -956,13 +957,17 @@ REST is a list of item lines."
   "Return footer lines for items view wrapped to TOTAL-WIDTH (controls moved to header-line).
 
 Per-point status is shown in the modeline now; do not render it inside the
-buffer footer. Also remove the single-key help (\"? for help\") from the footer."
+buffer footer. Also remove the single-key help (\"? for help\") from the footer.
+
+Additionally, append the Stats block (collapsible) when enabled."
   (let* ((help-segments '()) ;; no short inline help any more
-         (help-lines
+         (_help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; No extra blank lines at the bottom of the items view.
-    '()))
+                  (context-navigator-view--wrap-segments help-segments total-width)))
+         (stats-lines (and (fboundp 'context-navigator-stats-footer-lines)
+                           (context-navigator-stats-footer-lines total-width))))
+    ;; Add one empty line above the stats block (when present)
+    (if stats-lines (cons "" stats-lines) '())))
 
 
 (defun context-navigator-view--render-items (state header total-width)
@@ -1470,6 +1475,8 @@ Order of operations:
              (when (buffer-live-p buf)
                (with-current-buffer buf
                  (context-navigator-view--invalidate-openable)
+                 (when (fboundp 'context-navigator-stats-invalidate)
+                   (context-navigator-stats-invalidate))
                  (let ((st (ignore-errors (context-navigator--state-get))))
                    (if (and (context-navigator-state-p st)
                             (context-navigator-state-loading-p st))
@@ -1487,6 +1494,8 @@ Order of operations:
                (with-current-buffer buf
                  (setq context-navigator-view--load-progress (cons 0 0))
                  (context-navigator-view--invalidate-openable)
+                 (when (fboundp 'context-navigator-stats-invalidate)
+                   (context-navigator-stats-invalidate))
                  ;; На старте не крутим спиннер — показываем статический индикатор.
                  (context-navigator-view--spinner-stop)
                  (context-navigator-view--render-if-visible))))))
@@ -1510,6 +1519,8 @@ Order of operations:
                (with-current-buffer buf
                  (setq context-navigator-view--load-progress nil)
                  (context-navigator-view--invalidate-openable)
+                 (when (fboundp 'context-navigator-stats-invalidate)
+                   (context-navigator-stats-invalidate))
                  (context-navigator-view--spinner-stop)
                  (unless ok-p
                    (let* ((st (ignore-errors (context-navigator--state-get)))
@@ -1913,7 +1924,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m [return]          #'context-navigator-view-activate)
     (define-key m (kbd "<return>")  #'context-navigator-view-activate)
     (define-key m [kp-enter]        #'context-navigator-view-activate)
-    (define-key m (kbd "SPC")       #'context-navigator-view-preview)
+    (define-key m (kbd "v")       #'context-navigator-view-preview)
     (define-key m (kbd "n")   #'context-navigator-view-next-item)
     (define-key m (kbd "p")   #'context-navigator-view-previous-item)
     ;; Vim-like navigation keys
@@ -1922,7 +1933,8 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "<down>") #'context-navigator-view-next-item)
     (define-key m (kbd "<up>")   #'context-navigator-view-previous-item)
     (define-key m (kbd "l")   #'context-navigator-view-activate)
-    (define-key m (kbd "e")   #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "SPC")   #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
 
     ;; TAB navigation between interactive elements
     ;; Bind several TAB event representations to be robust across terminals/minor-modes.
@@ -1945,6 +1957,8 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-view-push-now)
+    ;; Stats toggle
+    (define-key m (kbd "s")   #'context-navigator-stats-toggle)
 
     ;; Align with transient: U → unload context
     (define-key m (kbd "U")   #'context-navigator-context-unload)
@@ -1972,7 +1986,8 @@ MAP is a keymap to search for COMMAND bindings."
 ;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
 (when (keymapp context-navigator-view-mode-map)
   ;; Keep legacy binding in sync
-  (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-toggle-enabled)
+  (define-key context-navigator-view-mode-map (kbd "SPC") #'context-navigator-view-toggle-enabled)
+  (define-key context-navigator-view-mode-map (kbd "t") #'context-navigator-view-toggle-enabled)
   ;; Ensure RET variants are bound across terminals/tty/GUI
   (define-key context-navigator-view-mode-map (kbd "RET")       #'context-navigator-view-activate)
   (define-key context-navigator-view-mode-map (kbd "C-m")       #'context-navigator-view-activate)
@@ -2002,6 +2017,7 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map (kbd "x") #'context-navigator-view-toggle-push)
   (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
   (define-key context-navigator-view-mode-map (kbd "K") #'context-navigator-view-close-all-buffers)
+  (define-key context-navigator-view-mode-map (kbd "s") #'context-navigator-stats-toggle)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
@@ -2121,7 +2137,7 @@ Do not highlight header/separator lines."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                                   (not (eq w (selected-window)))))
+                                              (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -2368,6 +2384,7 @@ Buffers are opened in background; we do not change window focus."
 (defun context-navigator-view-activate ()
   "RET action:
 - On title line: toggle collapse/expand
+- On Stats header line: toggle stats
 - On toggle segments in header: toggle push/auto flags
 - On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/toggle-all-gptel)
 - In groups mode: open group at point
@@ -2376,6 +2393,11 @@ Buffers are opened in background; we do not change window focus."
   ;; Title line: collapse/expand
   (when (get-text-property (point) 'context-navigator-title)
     (context-navigator-view-toggle-collapse)
+    (cl-return-from context-navigator-view-activate))
+  ;; Stats header toggle
+  (when (get-text-property (point) 'context-navigator-stats-toggle)
+    (when (fboundp 'context-navigator-stats-toggle)
+      (context-navigator-stats-toggle))
     (cl-return-from context-navigator-view-activate))
   (let ((act (get-text-property (point) 'context-navigator-action))
         (tgl (get-text-property (point) 'context-navigator-toggle)))
