@@ -546,7 +546,7 @@ Changes:
                      km)))
             (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
-                                       'help-echo (format "Close %d context buffer(s)" closable)
+                                       'help-echo (format "Close %d context buffer(s) (K)" closable)
                                        'keymap m
                                        'local-map m)
                                  s))
@@ -1955,6 +1955,7 @@ MAP is a keymap to search for COMMAND bindings."
     ;; Additional action: open all context buffers in background
     (define-key m (kbd "O")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
+    (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
     ;; Clear group (explicit shortcut matching UI hint)
     (define-key m (kbd "E")   #'context-navigator-view-clear-group)
     ;; Groups-specific keys
@@ -2000,6 +2001,7 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map (kbd "G") #'context-navigator-view-show-groups)
   (define-key context-navigator-view-mode-map (kbd "x") #'context-navigator-view-toggle-push)
   (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
+  (define-key context-navigator-view-mode-map (kbd "K") #'context-navigator-view-close-all-buffers)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
