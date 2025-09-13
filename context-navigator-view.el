@@ -475,8 +475,12 @@ Degrades to a static indicator when timer slippage exceeds threshold."
 
 
 (defun context-navigator-view--footer-control-segments ()
-  "Build footer control segments: toggles + [Open buffers], [Close buffers], [Push now], [Clear group] and [Clear gptel].
-Respects `context-navigator-controls-style' for compact icon/text labels."
+  "Build footer control segments: toggles + [Open buffers], [Close buffers], [Clear group] and a gptel mass toggle.
+
+Changes:
+- Hide [Push now] when auto-push is ON
+- Rename [Clear gptel] to \"Выключить все в gptel\"
+- When all items are disabled, replace it with \"Включить все gptel\""
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
          ;; use cached keys from gptel (do not pull during render)
@@ -484,10 +488,13 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                          (> (length context-navigator-view--gptel-keys) 0)))
          (style (or context-navigator-controls-style 'auto))
          ;; current items presence for [Clear group]
-         (have-items
-          (let* ((st (ignore-errors (context-navigator--state-get)))
-                 (items (and st (context-navigator-state-items st))))
-            (and (listp items) (> (length items) 0))))
+         (st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (have-items (and (listp items) (> (length items) 0)))
+         (all-disabled
+          (and (listp items)
+               (or (= (length items) 0)
+                   (cl-every (lambda (it) (not (context-navigator-item-enabled it))) items))))
          (segs '()))
     ;; Toggles first (push → gptel, auto-project)
     (setq segs (append segs (context-navigator-view--make-toggle-segments)))
@@ -573,67 +580,56 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                    'help-echo (context-navigator-i18n :clear-group-tip))
                              s))
       (push s segs))
-    ;; [Push now] — shown when there are items to push. When auto-push is ON it is inactive
-    ;; (visually and without keymap). When there are no items, show as shadowed/inactive.
-    (let* ((label (pcase style
-                    ((or 'icons 'auto) " [⇪]")
-                    (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
-           (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0))
-           (st (ignore-errors (context-navigator--state-get)))
-           (items (and st (context-navigator-state-items st)))
-           (have-items (and (listp items) (> (length items) 0))))
-      ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
-      (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
-      (cond
-       ;; No items to push — render inactive (shadow) with explanatory hint.
-       ((not have-items)
-        (add-text-properties beg (length s)
-                             (list 'face 'shadow
-                                   'help-echo (context-navigator-i18n :push-tip))
-                             s))
-       ;; Auto-push is enabled — manual push is inactive (shadow).
-       (push-on
-        (add-text-properties beg (length s)
-                             (list 'face 'shadow
-                                   'help-echo (context-navigator-i18n :push-tip))
-                             s))
-       ;; Otherwise active: attach mouse keymap and help.
-       (t
-        (let ((m (let ((km (make-sparse-keymap)))
-                   (define-key km [mouse-1] #'context-navigator-view-push-now)
-                   (define-key km [header-line mouse-1] #'context-navigator-view-push-now)
-                   km)))
-          (add-text-properties beg (length s)
-                               (list 'mouse-face 'highlight
-                                     'help-echo (context-navigator-i18n :push-tip)
-                                     'keymap m
-                                     'local-map m)
-                               s))))
-      (push s segs))
-    ;; [Clear gptel] — inactive (shadowed) when no entries available. Use a distinct icon in icons-style.
-    (let* ((label (pcase style
-                    ((or 'icons 'auto) " [⌦]")
-                    (_ (concat " [" (context-navigator-i18n :clear-gptel) "]"))))
-           (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-      ;; Always expose an action property so RET can activate/attempt the command.
-      (add-text-properties beg (length s) (list 'context-navigator-action 'clear-gptel) s)
-      (if has-gptel
+    ;; [Push now] — only when auto-push is OFF and there are items.
+    (when (not push-on)
+      (let* ((label (pcase style
+                      ((or 'icons 'auto) " [⇪]")
+                      (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
+             (s (copy-sequence label))
+             (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+        (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
+        (if (not have-items)
+            (add-text-properties beg (length s)
+                                 (list 'face 'shadow
+                                       'help-echo (context-navigator-i18n :push-tip))
+                                 s)
           (let ((m (let ((km (make-sparse-keymap)))
-                     (define-key km [mouse-1] #'context-navigator-view-clear-gptel)
-                     (define-key km [header-line mouse-1] #'context-navigator-view-clear-gptel)
+                     (define-key km [mouse-1] #'context-navigator-view-push-now)
+                     (define-key km [header-line mouse-1] #'context-navigator-view-push-now)
                      km)))
             (add-text-properties beg (length s)
                                  (list 'mouse-face 'highlight
-                                       'help-echo (context-navigator-i18n :clear-tip)
+                                       'help-echo (context-navigator-i18n :push-tip)
                                        'keymap m
                                        'local-map m)
-                                 s))
-        (add-text-properties beg (length s)
-                             (list 'face 'shadow
-                                   'help-echo (context-navigator-i18n :clear-tip))
-                             s))
+                                 s)))
+        (push s segs)))
+    ;; [Toggle all gptel]: \"Выключить все в gptel\" vs \"Включить все gptel\"
+    (let* ((label (pcase style
+                    ((or 'icons 'auto) " [⌦]")
+                    (_ (concat " " (if all-disabled "[Включить все gptel]" "[Выключить все в gptel]")))))
+           (s (copy-sequence label))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+      ;; Mark with a dedicated action so RET can dispatch appropriately.
+      (add-text-properties beg (length s) (list 'context-navigator-action 'toggle-all-gptel) s)
+      (let ((m (let ((km (make-sparse-keymap)))
+                 (define-key km [mouse-1] #'context-navigator-view-toggle-all-gptel)
+                 (define-key km [header-line mouse-1] #'context-navigator-view-toggle-all-gptel)
+                 km)))
+        (if (and all-disabled (not have-items))
+            ;; nothing to enable — keep visible but inactive
+            (add-text-properties beg (length s)
+                                 (list 'face 'shadow
+                                       'help-echo "No items to enable")
+                                 s)
+          (add-text-properties beg (length s)
+                               (list 'mouse-face 'highlight
+                                     'help-echo (if all-disabled
+                                                    "Enable all items and push to gptel"
+                                                  (context-navigator-i18n :clear-tip))
+                                     'keymap m
+                                     'local-map m)
+                               s)))
       (push s segs))
     (nreverse segs)))
 
@@ -2321,13 +2317,57 @@ Buffers are opened in background; we do not change window focus."
         (setq-local context-navigator-view--gptel-keys-hash (sxhash-equal '())))))
   (context-navigator-view--render-if-visible))
 
+(defun context-navigator-view-enable-all-gptel ()
+  "Enable all items in the model and push them to gptel immediately."
+  (interactive)
+  (ignore-errors (context-navigator-debug :debug :ui "UI action: enable-all-gptel (event=%S)" last-input-event))
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st))))
+    (when (listp items)
+      (let ((all-on
+             (mapcar (lambda (it)
+                       (context-navigator-item-create
+                        :type (context-navigator-item-type it)
+                        :name (context-navigator-item-name it)
+                        :path (context-navigator-item-path it)
+                        :buffer (context-navigator-item-buffer it)
+                        :beg (context-navigator-item-beg it)
+                        :end (context-navigator-item-end it)
+                        :size (context-navigator-item-size it)
+                        :enabled t
+                        :meta (context-navigator-item-meta it)))
+                     items)))
+        (ignore-errors (context-navigator-set-items all-on))
+        ;; Push now (reset + add), regardless of auto-push flag
+        (ignore-errors (context-navigator-push-to-gptel-now)))))
+  ;; Refresh cached indicators and UI
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-view--last-render-key nil))))
+  (context-navigator-view--render-if-visible))
+
+(defun context-navigator-view-toggle-all-gptel ()
+  "Disable all in gptel (and items) or enable all and push, depending on current state."
+  (interactive)
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (all-disabled
+          (and (listp items)
+               (or (= (length items) 0)
+                   (cl-every (lambda (it) (not (context-navigator-item-enabled it))) items)))))
+    (if all-disabled
+        (context-navigator-view-enable-all-gptel)
+      (context-navigator-view-clear-gptel))))
+
 ;;; Dispatchers and commands
 
 (defun context-navigator-view-activate ()
   "RET action:
 - On title line: toggle collapse/expand
 - On toggle segments in header: toggle push/auto flags
-- On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/clear gptel)
+- On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/toggle-all-gptel)
 - In groups mode: open group at point
 - In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
@@ -2343,7 +2383,7 @@ Buffers are opened in background; we do not change window focus."
      ((eq act 'open-buffers) (context-navigator-view-open-all-buffers))
      ((eq act 'close-buffers) (context-navigator-view-close-all-buffers))
      ((eq act 'clear-group) (context-navigator-view-clear-group))
-     ((eq act 'clear-gptel) (context-navigator-view-clear-gptel))
+     ((eq act 'toggle-all-gptel) (context-navigator-view-toggle-all-gptel))
      ;; Header toggles
      ((eq tgl 'push) (context-navigator-view-toggle-push))
      ((eq tgl 'auto) (context-navigator-view-toggle-auto-project))
