@@ -215,7 +215,7 @@ Returns a list of line strings."
 
 
 (defun context-navigator-view--make-toggle-segments ()
-  "Build header toggle segments for push→gptel and auto-project with mouse keymaps.
+  "Build header toggle segments for push→gptel, auto-project and Undo/Redo with mouse keymaps.
 Respects `context-navigator-controls-style' for compact icon/text labels."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
@@ -231,7 +231,15 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
          (lbl-auto
           (pcase style
             ((or 'icons 'auto) " [A]")
-            (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off"))))))
+            (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off")))))
+         (lbl-redo
+          (pcase style
+            ((or 'icons 'auto) " [↷]")
+            (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
+         (lbl-undo
+          (pcase style
+            ((or 'icons 'auto) " [↶]")
+            (_ (concat " [" (context-navigator-i18n :razor-undo) "]")))))
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
                              (when gptel-available
@@ -268,8 +276,41 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                               'context-navigator-toggle 'auto
                                               'face (list :foreground fg))
                                         s)
-                   s)))
-      (list seg1 seg2))))
+                   s))
+
+           (seg3 (let* ((s (copy-sequence lbl-redo))
+                        (m (let ((km (make-sparse-keymap)))
+                             (when (fboundp 'context-navigator-redo)
+                               (define-key km [mouse-1] #'context-navigator-redo)
+                               (define-key km [header-line mouse-1] #'context-navigator-redo))
+                             km))
+                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                   (add-text-properties beg (length s)
+                                        (list 'mouse-face 'highlight
+                                              'help-echo (context-navigator-i18n :razor-redo)
+                                              'keymap m
+                                              'local-map m
+                                              'context-navigator-toggle 'redo)
+                                        s)
+                   s))
+
+           (seg4 (let* ((s (copy-sequence lbl-undo))
+                        (m (let ((km (make-sparse-keymap)))
+                             (when (fboundp 'context-navigator-undo)
+                               (define-key km [mouse-1] #'context-navigator-undo)
+                               (define-key km [header-line mouse-1] #'context-navigator-undo))
+                             km))
+                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                   (add-text-properties beg (length s)
+                                        (list 'mouse-face 'highlight
+                                              'help-echo (context-navigator-i18n :razor-undo)
+                                              'keymap m
+                                              'local-map m
+                                              'context-navigator-toggle 'undo)
+                                        s)
+                   s))
+           )
+      (list seg1 seg2 seg3 seg4))))
 
 
 (defun context-navigator-view--header-toggle-lines (total-width)
@@ -1371,6 +1412,9 @@ existing debounced autosave."
   (when-let* ((item (context-navigator-view--at-item)))
     (let* ((key (context-navigator-model-item-key item))
            (name (or (context-navigator-item-name item) key)))
+      ;; Push snapshot for Undo/Redo (global) before changing the model
+      (when (fboundp 'context-navigator-snapshot-push)
+        (ignore-errors (context-navigator-snapshot-push)))
       ;; Toggle model
       (ignore-errors (context-navigator-toggle-item key))
       ;; Apply to gptel immediately when auto-push is ON and refresh indicators snapshot
@@ -1444,6 +1488,9 @@ Order of operations:
   "Delete the item at point from the model permanently and apply to gptel."
   (interactive)
   (when-let* ((item (context-navigator-view--at-item)))
+    ;; Push snapshot for Undo/Redo prior to deletion
+    (when (fboundp 'context-navigator-razor-snapshot-push)
+      (ignore-errors (context-navigator-razor-snapshot-push)))
     (let* ((key (context-navigator-model-item-key item))
            (st (ignore-errors (context-navigator-remove-item-by-key key)))
            (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
@@ -2137,7 +2184,7 @@ Do not highlight header/separator lines."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                              (not (eq w (selected-window)))))
+                                                   (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -2311,6 +2358,9 @@ Buffers are opened in background; we do not change window focus."
   "Clear current group's items and redraw immediately."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-group (event=%S)" last-input-event))
+  ;; Push snapshot for Undo/Redo before clearing the group
+  (when (fboundp 'context-navigator-snapshot-push)
+    (ignore-errors (context-navigator-snapshot-push)))
   (ignore-errors (context-navigator-context-clear-current-group))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -2323,6 +2373,9 @@ Buffers are opened in background; we do not change window focus."
   "Clear gptel context, disable all items in the model, and redraw immediately."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-gptel (event=%S)" last-input-event))
+  ;; Push snapshot for Undo/Redo before clearing gptel (disables items)
+  (when (fboundp 'context-navigator-razor-snapshot-push)
+    (ignore-errors (context-navigator-razor-snapshot-push)))
   (ignore-errors (context-navigator-clear-gptel-now))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -2339,6 +2392,9 @@ Buffers are opened in background; we do not change window focus."
   "Enable all items in the model and push them to gptel immediately."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: enable-all-gptel (event=%S)" last-input-event))
+  ;; Push snapshot for Undo/Redo before enabling all
+  (when (fboundp 'context-navigator-razor-snapshot-push)
+    (ignore-errors (context-navigator-razor-snapshot-push)))
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (context-navigator-state-items st))))
     (when (listp items)

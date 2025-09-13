@@ -301,6 +301,124 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 ;; Backwards-compatible alias used in some call sites/tests.
 (defalias 'copy-context-navigator-state #'context-navigator--state-copy)
 
+;;; Undo/Redo history (global, per-group) ------------------------------------
+
+(defcustom context-navigator-undo-depth 10
+  "Max history depth per group for Undo/Redo."
+  :type 'integer :group 'context-navigator)
+
+;; Internal history: group-key -> plist (:past list<snapshot> :future list<snapshot>)
+(defvar context-navigator--history (make-hash-table :test 'equal))
+
+(defun context-navigator--history-group-key ()
+  "Return stable group key as ROOT|SLUG (or ~|<none>)."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (slug (and st (context-navigator-state-current-group-slug st))))
+    (format "%s|%s" (or root "~") (or slug "<none>"))))
+
+(defun context-navigator--history-snapshot ()
+  "Build a shallow copy snapshot of current items for history."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st))))
+    (mapcar (lambda (it)
+              (context-navigator-item-create
+               :type (context-navigator-item-type it)
+               :name (context-navigator-item-name it)
+               :path (context-navigator-item-path it)
+               :buffer (context-navigator-item-buffer it)
+               :beg (context-navigator-item-beg it)
+               :end (context-navigator-item-end it)
+               :size (context-navigator-item-size it)
+               :enabled (context-navigator-item-enabled it)
+               :meta (context-navigator-item-meta it)))
+            (or items '()))))
+
+(defun context-navigator--history-get (key)
+  "Return history cell for KEY, creating it if missing."
+  (or (gethash key context-navigator--history)
+      (let ((cell (list :past '() :future '())))
+        (puthash key cell context-navigator--history)
+        cell)))
+
+(defun context-navigator--history-push (key snapshot)
+  "Push SNAPSHOT to history for KEY; trim past and clear future."
+  (let* ((cell (context-navigator--history-get key))
+         (past (plist-get cell :past)))
+    (setq past (cons snapshot past))
+    (when (> (length past) (max 1 context-navigator-undo-depth))
+      (setq past (cl-subseq past 0 context-navigator-undo-depth)))
+    (setf (plist-get cell :past) past)
+    (setf (plist-get cell :future) '())
+    (puthash key cell context-navigator--history)))
+
+(defun context-navigator-snapshot-push ()
+  "Push current items snapshot into global history for this group."
+  (interactive)
+  (let* ((key (context-navigator--history-group-key))
+         (snap (context-navigator--history-snapshot)))
+    (context-navigator--history-push key snap)
+    key))
+
+(defun context-navigator--apply-snapshot (snapshot)
+  "Apply SNAPSHOT to the model and push to gptel when auto-push is ON."
+  (ignore-errors (context-navigator-set-items (or snapshot '())))
+  (when (and (boundp 'context-navigator--push-to-gptel)
+             context-navigator--push-to-gptel)
+    (ignore-errors (context-navigator-gptel-apply snapshot))))
+
+(defun context-navigator--history-undo (key)
+  "Return previous snapshot and move current to future; nil when empty."
+  (let* ((cell (context-navigator--history-get key))
+         (past (plist-get cell :past)))
+    (when (consp past)
+      (let* ((prev (car past))
+             (rest (cdr past))
+             (cur (context-navigator--history-snapshot))
+             (future (cons cur (plist-get cell :future))))
+        (setf (plist-get cell :past) rest)
+        (setf (plist-get cell :future) future)
+        (puthash key cell context-navigator--history)
+        prev))))
+
+(defun context-navigator--history-redo (key)
+  "Return next snapshot from future and push current to past; nil when empty."
+  (let* ((cell (context-navigator--history-get key))
+         (future (plist-get cell :future)))
+    (when (consp future)
+      (let* ((next (car future))
+             (rest (cdr future))
+             (cur (context-navigator--history-snapshot))
+             (past (cons cur (plist-get cell :past))))
+        (setf (plist-get cell :future) rest)
+        (setf (plist-get cell :past) past)
+        (puthash key cell context-navigator--history)
+        next))))
+
+;;;###autoload
+(defun context-navigator-undo ()
+  "Undo last change for the current group's model items."
+  (interactive)
+  (let* ((key (context-navigator--history-group-key))
+         (prev (context-navigator--history-undo key)))
+    (if prev
+        (progn
+          (context-navigator--apply-snapshot prev)
+          (message "%s" (context-navigator-i18n :razor-undo)))
+      (message "Nothing to undo"))))
+
+;;;###autoload
+(defun context-navigator-redo ()
+  "Redo previously undone change for the current group's model items."
+  (interactive)
+  (let* ((key (context-navigator--history-group-key))
+         (next (context-navigator--history-redo key)))
+    (if next
+        (progn
+          (context-navigator--apply-snapshot next)
+          (message "%s" (context-navigator-i18n :razor-redo)))
+      (message "Nothing to redo"))))
+
 (defun context-navigator--log (fmt &rest args)
   "Log via centralized logger at :info level under :core topic."
   (apply #'context-navigator-debug (append (list :info :core fmt) args)))
