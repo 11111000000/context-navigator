@@ -24,6 +24,8 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-i18n)
 (require 'context-navigator-log)
+(require 'context-navigator-modeline)
+(require 'context-navigator-headerline)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -106,6 +108,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--openable-timer nil)          ;; pending timer for recompute
 (defvar-local context-navigator-view--buflist-fn nil)              ;; function added to buffer-list-update-hook
 (defvar-local context-navigator-view--gptel-poll-timer nil)        ;; polling timer for gptel indicators (or nil)
+(defvar-local context-navigator-view--status-post-cmd-fn nil)      ;; post-command hook to update inline status line
 (defvar-local context-navigator-view--last-render-key nil)        ;; cached render key to skip redundant renders
 (defvar-local context-navigator-view--last-active-group nil)      ;; last active group cached to avoid jumping cursor in groups view
 (defvar-local context-navigator-view--last-mode nil)              ;; last rendered mode: 'items or 'groups
@@ -317,7 +320,10 @@ PLUS is non-nil when CAP was reached."
   (let* ((res (context-navigator-view--compute-openable context-navigator-openable-soft-cap))
          (n (car res))
          (plus (cdr res))
-         (changed (not (equal context-navigator-view--openable-count n))))
+         ;; Guard against void-variable when timers fire outside the sidebar buffer/loading order
+         (old (and (boundp 'context-navigator-view--openable-count)
+                   context-navigator-view--openable-count))
+         (changed (not (equal old n))))
     (setq context-navigator-view--openable-count n
           context-navigator-view--openable-plus plus
           context-navigator-view--openable-stamp (float-time))
@@ -328,15 +334,23 @@ PLUS is non-nil when CAP was reached."
 (defun context-navigator-view--openable-count-get ()
   "Return cons (COUNT . PLUS) from cache; schedule a debounced refresh when stale."
   (let* ((now (float-time))
-         (ttl (or context-navigator-openable-count-ttl 0.3)))
-    (when (or (null context-navigator-view--openable-count)
-              (> (- now context-navigator-view--openable-stamp) (max 0 ttl)))
+         (ttl (or context-navigator-openable-count-ttl 0.3))
+         ;; Robust when variables are not yet bound in the running buffer/timer context
+         (count (and (boundp 'context-navigator-view--openable-count)
+                     context-navigator-view--openable-count))
+         (stamp (if (boundp 'context-navigator-view--openable-stamp)
+                    context-navigator-view--openable-stamp
+                  0.0))
+         (plus  (and (boundp 'context-navigator-view--openable-plus)
+                     context-navigator-view--openable-plus)))
+    (when (or (null count)
+              (> (- now stamp) (max 0 ttl)))
       (context-navigator-events-debounce
        :sidebar-openable 0.18
        #'context-navigator-view--openable-count-refresh))
-    (cons (or context-navigator-view--openable-count 0)
-          (and context-navigator-view--openable-plus
-               (> (or context-navigator-view--openable-count 0) 0)))))
+    (cons (or count 0)
+          (and plus
+               (> (or count 0) 0)))))
 
 ;; Closable count helpers (footer [∅]) ---------------------------------------
 
@@ -512,20 +526,33 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                    'help-echo (context-navigator-i18n :clear-group-tip))
                              s))
       (push s segs))
-    ;; [Push now] — always shown; when auto-push is ON it is inactive (visually and without keymap).
+    ;; [Push now] — shown when there are items to push. When auto-push is ON it is inactive
+    ;; (visually and without keymap). When there are no items, show as shadowed/inactive.
     (let* ((label (pcase style
                     ((or 'icons 'auto) " [⇪]")
                     (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
            (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0))
+           (st (ignore-errors (context-navigator--state-get)))
+           (items (and st (context-navigator-state-items st)))
+           (have-items (and (listp items) (> (length items) 0))))
       ;; Always mark footer segments with an explicit action property so RET handler can invoke them.
       (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
-      (if push-on
-          ;; Inactive representation: shadowed, no keymap, hint explaining why it's disabled.
-          (add-text-properties beg (length s)
-                               (list 'face 'shadow
-                                     'help-echo (context-navigator-i18n :push-tip))
-                               s)
+      (cond
+       ;; No items to push — render inactive (shadow) with explanatory hint.
+       ((not have-items)
+        (add-text-properties beg (length s)
+                             (list 'face 'shadow
+                                   'help-echo (context-navigator-i18n :push-tip))
+                             s))
+       ;; Auto-push is enabled — manual push is inactive (shadow).
+       (push-on
+        (add-text-properties beg (length s)
+                             (list 'face 'shadow
+                                   'help-echo (context-navigator-i18n :push-tip))
+                             s))
+       ;; Otherwise active: attach mouse keymap and help.
+       (t
         (let ((m (let ((km (make-sparse-keymap)))
                    (define-key km [mouse-1] #'context-navigator-view-push-now)
                    km)))
@@ -533,7 +560,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                (list 'mouse-face 'highlight
                                      'help-echo (context-navigator-i18n :push-tip)
                                      'keymap m)
-                               s)))
+                               s))))
       (push s segs))
     ;; [Clear gptel] — inactive (shadowed) when no entries available. Use a distinct icon in icons-style.
     (let* ((label (pcase style
@@ -567,12 +594,12 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 
 (defun context-navigator-view--groups-header-lines (header total-width)
-  "Return list of header lines for groups view using HEADER and TOTAL-WIDTH."
-  (let* ((title (or header (context-navigator-i18n :groups)))
-         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         ;; Use full-width textual separator across the sidebar (box-drawing).
-         (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow)))
-    (list hl sep)))
+  "Return list of header lines for groups view using HEADER and TOTAL-WIDTH.
+
+Header (project/group) is rendered in the header-line now; do not render
+a long title or separator inside the main buffer. Return two empty
+lines so rendering layout remains stable."
+  (list "" ""))
 
 
 (defun context-navigator-view--groups-body-lines (state)
@@ -605,9 +632,11 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 
 
 (defun context-navigator-view--groups-footer-lines (total-width)
-  "Return footer lines for groups view wrapped to TOTAL-WIDTH."
-  (let* ((ctrl-lines (context-navigator-view--footer-control-lines total-width))
-         (help-segments
+  "Return footer lines for groups view wrapped to TOTAL-WIDTH (controls moved to header-line).
+
+Remove the single-key \"? for help\" hint; the header-line contains controls
+and the transient/help command can be invoked explicitly."
+  (let* ((help-segments
           (list (context-navigator-i18n :groups-help-open)
                 (context-navigator-i18n :groups-help-add)
                 (context-navigator-i18n :groups-help-rename)
@@ -615,14 +644,12 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                 (context-navigator-i18n :groups-help-copy)
                 (context-navigator-i18n :groups-help-refresh)
                 (context-navigator-i18n :groups-help-back)
-                (context-navigator-i18n :groups-help-quit)
-                (context-navigator-i18n :groups-help-help)))
+                (context-navigator-i18n :groups-help-quit)))
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
                   (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Insert a blank separator line between body and controls, then controls,
-    ;; then an empty line before help lines to satisfy the requested layout.
-    (append (list "") ctrl-lines (cons "" help-lines))))
+    ;; Controls/toggles are shown in the header-line. Keep a blank line, then help lines.
+    (append (list "") help-lines)))
 
 
 (defun context-navigator-view--render-groups (state header total-width)
@@ -798,9 +825,9 @@ and the item lines (REST...)."
                  (context-navigator-render-build-lines sorted-items header
                                                        #'context-navigator-icons-for-item
                                                        left-width)))
-         (hl (car base))
-         ;; Replace short separator generated by render with a full-width textual separator (box-drawing), unobtrusive.
-         (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow))
+         ;; Title/header moved to header-line; keep buffer compact by not rendering header/sep here.
+         (hl "")
+         (sep "")
          (rest (cddr base))
          (up (let ((s (copy-sequence "..")))
                (add-text-properties 0 (length s)
@@ -842,47 +869,19 @@ and the item lines (REST...)."
     (or (get-text-property (point) 'help-echo) ""))
    (t "")))
 
-(defun context-navigator-view--status-refresh-inline ()
-  "Update the status line under footer in-place when present."
-  (let ((buf (current-buffer)))
-    (when (buffer-live-p buf)
-      (let ((inhibit-read-only t))
-        (save-excursion
-          (goto-char (point-min))
-          (let ((pos (text-property-not-all (point-min) (point-max)
-                                            'context-navigator-status-line nil)))
-            (when pos
-              (goto-char pos)
-              (let* ((beg (line-beginning-position))
-                     (end (line-end-position))
-                     (txt (context-navigator-view--status-text-at-point))
-                     (line (propertize (concat " " (or txt ""))
-                                       'face 'shadow
-                                       'context-navigator-status-line t)))
-                (delete-region beg end)
-                (insert line)))))))))
+
 
 (defun context-navigator-view--items-footer-lines (total-width)
-  "Return footer lines for items view wrapped to TOTAL-WIDTH."
-  (let* ((ctrl-lines (context-navigator-view--footer-control-lines total-width))
-         (status-line
-          (let* ((txt (context-navigator-view--status-text-at-point))
-                 (line (propertize (concat " " (or txt ""))
-                                   'face 'shadow
-                                   'context-navigator-status-line t)))
-            (list line)))
-         (help-segments (list (context-navigator-i18n :items-help-view-groups)
-                              (context-navigator-i18n :items-help-help)))
+  "Return footer lines for items view wrapped to TOTAL-WIDTH (controls moved to header-line).
+
+Per-point status is shown in the modeline now; do not render it inside the
+buffer footer. Also remove the single-key help (\"? for help\") from the footer."
+  (let* ((help-segments '()) ;; no short inline help (\"? for help\") any more
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
                   (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Layout:
-    ;; - blank line
-    ;; - controls (one or more lines)
-    ;; - status line (one line)
-    ;; - blank line
-    ;; - help lines
-    (append (list "") ctrl-lines status-line (cons "" help-lines))))
+    ;; Layout: blank line, then help lines (none -> effectively a single blank line).
+    (append (list "") (cons "" help-lines))))
 
 
 (defun context-navigator-view--render-items (state header total-width)
@@ -903,10 +902,10 @@ Returns the list of lines that were rendered."
 (defun context-navigator-view--render-loading (state header total-width)
   "Render a lightweight loading/preloader view into the sidebar buffer.
 
-When spinner degrades or we have no meaningful progress yet, show a static
-\"Loading…\" text (localized) with optional percentage."
-  (let* ((hl (propertize (format " %s" header) 'face 'mode-line-emphasis))
-         (sep (propertize (make-string (max 1 total-width) ?─) 'face 'shadow))
+Header is displayed in the header-line now; do not render a long title or
+separator at the top of the buffer. Keep a small centered spinner/loading line."
+  (let* ((hl "") ;; no header in buffer
+         (sep "") ;; no separator
          (pct (when (and context-navigator-view--load-progress
                          (numberp (car context-navigator-view--load-progress))
                          (numberp (cdr context-navigator-view--load-progress))
@@ -915,26 +914,22 @@ When spinner degrades or we have no meaningful progress yet, show a static
                                    (max 1 (cdr context-navigator-view--load-progress)))))))
          (use-spinner (and (not context-navigator-view--spinner-degraded)
                            (timerp context-navigator-view--spinner-timer)
-                           pct)) ;; крутим только когда пошли step-события
+                           pct))
          (frames (or context-navigator-view-spinner-frames
                      '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
          (len (length frames))
          (idx (or context-navigator-view--spinner-index 0))
          (ch (if (and use-spinner (> len 0))
                  (nth (mod idx (max 1 len)) frames)
-               "")) ;; без шагов или при деградации — без анимации
+               ""))
          (label (if pct
-                    (format "%s%s %d%%"
-                            (if use-spinner ch "")
-                            (if use-spinner "" "") ;; визуально без лишних пробелов
-                            pct)
+                    (format "%s%d%%" (if use-spinner ch "") pct)
                   (context-navigator-i18n :loading)))
-         ;; центрируем строку
          (spin-w (max 0 (string-width label)))
          (left-pad (max 0 (floor (/ (max 0 (- total-width spin-w)) 2))))
          (spin-line (concat (make-string left-pad ? ) label))
          (sline (propertize (concat " " spin-line) 'face 'shadow))
-         (lines (list hl sep "" sline "")))
+         (lines (list "" "" "" sline "")))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
@@ -1112,8 +1107,7 @@ hard to restore the sidebar afterward."
                     (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))))
     (when pos
       (goto-char pos)
-      (beginning-of-line)
-      (context-navigator-view--status-refresh-inline))))
+      (beginning-of-line))))
 
 (defun context-navigator-view-previous-item ()
   "Move point to the previous item line or \"..\" or group line."
@@ -1137,8 +1131,7 @@ hard to restore the sidebar afterward."
                       best))))
     (when pos
       (goto-char pos)
-      (beginning-of-line)
-      (context-navigator-view--status-refresh-inline))))
+      (beginning-of-line))))
 
 ;; TAB navigation helpers ----------------------------------------------------
 
@@ -1220,8 +1213,7 @@ Wraps to the top when no further element is found after point."
       ;; wrap
       (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
     (if pos
-        (progn (goto-char pos)
-               (context-navigator-view--status-refresh-inline))
+        (progn (goto-char pos))
       (message "No interactive elements"))))
 
 (defun context-navigator-view-tab-previous ()
@@ -1253,8 +1245,7 @@ Wraps to the bottom when no previous element is found before point."
       ;; wrap to last interactive element
       (setq pos (context-navigator-view--find-prev-interactive-pos (point-max))))
     (if pos
-        (progn (goto-char pos)
-               (context-navigator-view--status-refresh-inline))
+        (progn (goto-char pos))
       (message "No interactive elements"))))
 
 (defun context-navigator-view--remove-at-point ()
@@ -1623,6 +1614,14 @@ Guard against duplicate subscriptions."
     ;; Hooks and initial compute
     (context-navigator-view--install-buffer-list-hook)
     (context-navigator-view--install-window-select-hook)
+    ;; Update modeline status as point moves inside the buffer
+    (setq context-navigator-view--status-post-cmd-fn
+          (lambda ()
+            (when (and (eq major-mode 'context-navigator-view-mode)
+                       (boundp 'context-navigator-view-modeline-enable)
+                       context-navigator-view-modeline-enable)
+              (force-mode-line-update nil))))
+    (add-hook 'post-command-hook context-navigator-view--status-post-cmd-fn nil t)
     (context-navigator-view--initial-compute-counters)
     ;; Optional polling
     (context-navigator-view--start-gptel-poll-timer)
@@ -1645,6 +1644,10 @@ Guard against duplicate subscriptions."
   (when context-navigator-view--winselect-fn
     (remove-hook 'window-selection-change-functions context-navigator-view--winselect-fn)
     (setq context-navigator-view--winselect-fn nil))
+  ;; Remove post-command status updater if installed.
+  (when context-navigator-view--status-post-cmd-fn
+    (remove-hook 'post-command-hook context-navigator-view--status-post-cmd-fn t)
+    (setq context-navigator-view--status-post-cmd-fn nil))
   ;; Cancel gptel poll timer if running.
   (when (timerp context-navigator-view--gptel-poll-timer)
     (cancel-timer context-navigator-view--gptel-poll-timer)
@@ -1776,6 +1779,8 @@ MAP is a keymap to search for COMMAND bindings."
     ;; Vim-like navigation keys
     (define-key m (kbd "j")   #'context-navigator-view-next-item)
     (define-key m (kbd "k")   #'context-navigator-view-previous-item)
+    (define-key m (kbd "<down>") #'context-navigator-view-next-item)
+    (define-key m (kbd "<up>")   #'context-navigator-view-previous-item)
     (define-key m (kbd "l")   #'context-navigator-view-activate)
     (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
 
@@ -1838,6 +1843,9 @@ MAP is a keymap to search for COMMAND bindings."
               [remap indent-for-tab-command] #'context-navigator-view-tab-next)
   (define-key context-navigator-view-mode-map
               [remap delete-other-windows]   #'context-navigator-delete-other-windows)
+  ;; Arrow keys
+  (define-key context-navigator-view-mode-map (kbd "<down>") #'context-navigator-view-next-item)
+  (define-key context-navigator-view-mode-map (kbd "<up>")   #'context-navigator-view-previous-item)
   ;; New binding sync after reloads
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
@@ -1861,8 +1869,15 @@ Do not highlight header/separator lines."
   "Major mode for context-navigator sidebar buffer."
   (buffer-disable-undo)
   (setq truncate-lines t
-        cursor-type t
-        mode-line-format nil)
+        cursor-type t)
+  ;; Install modeline/header-line for the sidebar buffer.
+  ;; Use the dedicated helper so we show the status even when the global
+  ;; mode-line is disabled (fallback to header-line).
+  (when (fboundp 'context-navigator-modeline--apply)
+    (context-navigator-modeline--apply (current-buffer)))
+  ;; Apply header-line controls (toggles and actions) for Navigator.
+  (when (fboundp 'context-navigator-headerline--apply)
+    (context-navigator-headerline--apply (current-buffer)))
   (setq-local hl-line-range-function #'context-navigator-view--hl-line-range)
   (hl-line-mode 1))
 
@@ -2123,8 +2138,12 @@ Buffers are opened in background; we do not change window focus."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
+        ;; Force fresh render and reset cached indicators so UI reflects cleared gptel.
         (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (setq-local context-navigator-view--last-render-key nil)
+        ;; Clear the cached gptel keys snapshot so lamps update immediately.
+        (setq-local context-navigator-view--gptel-keys nil)
+        (setq-local context-navigator-view--gptel-keys-hash (sxhash-equal '())))))
   (context-navigator-view--render-if-visible))
 
 ;;; Dispatchers and commands

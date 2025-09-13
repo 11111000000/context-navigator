@@ -476,6 +476,8 @@ Graceful when gptel is absent: show an informative message and do nothing."
   (if (fboundp 'gptel-context-remove-all)
       (ignore-errors (gptel-context-remove-all))
     (ignore-errors (context-navigator-gptel-apply '())))
+  ;; Notify listeners that gptel was cleared so UI and other adapters can refresh.
+  (ignore-errors (context-navigator-events-publish :gptel-change :cleared))
   (message "gptel context cleared"))
 
 (defun context-navigator-switch-to-current-buffer-project ()
