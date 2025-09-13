@@ -28,6 +28,20 @@
 (require 'context-navigator-headerline)
 (require 'context-navigator-stats)
 (require 'context-navigator-view-controls)
+;; Controls/items/groups are split into dedicated modules to reduce coupling.
+;; Require controls (toolbar) and the items/groups renderers so the view can
+;; call their implementations directly without leaving thin wrappers behind.
+(require 'context-navigator-view-controls)
+(require 'context-navigator-view-items)
+(require 'context-navigator-view-groups)
+
+;; Split helpers (indicators / counters / spinner) — thin wrappers live in
+;; separate modules to reduce coupling and make incremental extraction easier.
+;; Implementations currently delegate to existing functions in context-navigator-view.el
+;; and therefore are safe to require here.
+(require 'context-navigator-view-indicators)
+(require 'context-navigator-view-counters)
+(require 'context-navigator-view-spinner)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -214,6 +228,44 @@ Returns a list of line strings."
       (push cur acc))
     (nreverse acc)))
 
+;; Lightweight buffer/window hook installers used by the view buffer.
+;; These are minimal, safe implementations that avoid void-function errors
+;; during incremental extraction. They intentionally do small, local work:
+;; install buffer-list/window-selection hooks that trigger counters/refresh.
+(defun context-navigator-view--install-buffer-list-hook ()
+  "Install a per-sidebar buffer-list update hook (idempotent).
+
+When the global buffer list changes, we recompute openable counters
+for the sidebar buffer. This is installed buffer-locally so removal
+is straightforward in `context-navigator-view--remove-subs'."
+  (unless context-navigator-view--buflist-fn
+    (setq context-navigator-view--buflist-fn
+          (lambda ()
+            (let ((buf (get-buffer context-navigator-view--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (ignore-errors (context-navigator-view--invalidate-openable)))))))
+    ;; Add buffer-local hook so it runs only while the sidebar buffer exists.
+    (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn nil t)))
+
+(defun context-navigator-view--install-window-select-hook ()
+  "Install a per-sidebar window-selection-change hook (idempotent).
+
+When the selected window changes, schedule a render of the sidebar so
+it can become responsive to focus changes."
+  (unless context-navigator-view--winselect-fn
+    (setq context-navigator-view--winselect-fn
+          (lambda (_frame)
+            (let ((buf (get-buffer context-navigator-view--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (ignore-errors (context-navigator-view--schedule-render)))))))
+    (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn nil t)))
+
+(defun context-navigator-view--initial-compute-counters ()
+  "Perform initial computation of openable counters (safe no-op when modules missing)."
+  (ignore-errors (context-navigator-view-counters-refresh-openable)))
+
 
 (defun context-navigator-view--make-toggle-segments ()
   "Build header toggle segments for push→gptel, auto-project and Undo/Redo with mouse keymaps.
@@ -314,7 +366,7 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
       (list seg1 seg2 seg3 seg4))))
 
 
-(defun context-navigator-view--header-toggle-lines (total-width)
+(defun context-navigator-view-controls-lines (total-width)
   "Return header toggle lines wrapped to TOTAL-WIDTH."
   (let ((toggles (context-navigator-view--make-toggle-segments)))
     (context-navigator-view--wrap-segments toggles total-width)))
@@ -327,177 +379,67 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 (declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
 
 ;; Naming cleanup wrappers (non-breaking).
+;; Wrappers removed: implementations live in dedicated modules (view-items, view-groups).
+;; The view.el declares these symbols via `declare-function' above so the byte-compiler is satisfied.
 
-(defun context-navigator-view--items-extra-lines (total-width)
-  "Return additional lines under items view (stats etc.)."
-  (context-navigator-view--items-footer-lines total-width))
+;; Compatibility: provide legacy aliases for old API names and mark them obsolete.
+;; We alias old symbols to the new canonical implementations (old -> new),
+;; then call `make-obsolete' so callers see a clear warning but code continues to work.
 
-(defun context-navigator-view--groups-help-lines (total-width)
-  "Return help lines for groups view."
-  (context-navigator-view--groups-footer-lines total-width))
+;; Controls (header/footer) aliases
+(defalias 'context-navigator-view--footer-control-segments
+  'context-navigator-view-controls-segments)
+(make-obsolete 'context-navigator-view--footer-control-segments
+               'context-navigator-view-controls-segments
+               "0.2.2")
 
-;; Compatibility: mark old APIs obsolete to encourage new names (no aliasing to avoid recursion).
-(make-obsolete 'context-navigator-view--footer-control-segments 'context-navigator-view-controls-segments "0.2.1")
-(make-obsolete 'context-navigator-view--footer-control-lines 'context-navigator-view-controls-lines "0.2.1")
-(make-obsolete 'context-navigator-view--header-toggle-lines 'context-navigator-view-controls-lines "0.2.1")
-(make-obsolete 'context-navigator-view--items-footer-lines 'context-navigator-view--items-extra-lines "0.2.1")
-(make-obsolete 'context-navigator-view--groups-footer-lines 'context-navigator-view--groups-help-lines "0.2.1")
+(defalias 'context-navigator-view--footer-control-lines
+  'context-navigator-view-controls-lines)
+(make-obsolete 'context-navigator-view--footer-control-lines
+               'context-navigator-view-controls-lines
+               "0.2.2")
 
-;; Openable count helpers (footer [O]) ---------------------------------------
+(defalias 'context-navigator-view--header-toggle-lines
+  'context-navigator-view-controls-lines)
+(make-obsolete 'context-navigator-view--header-toggle-lines
+               'context-navigator-view-controls-lines
+               "0.2.2")
+
+;; Items / Groups footer -> canonical names (items already provides alias)
+(defalias 'context-navigator-view--groups-footer-lines
+  'context-navigator-view--groups-help-lines)
+(make-obsolete 'context-navigator-view--groups-footer-lines
+               'context-navigator-view--groups-help-lines
+               "0.2.2")
+
+;; Note: context-navigator-view--items-footer-lines is already aliased inside
+;; context-navigator-view-items.el to context-navigator-view--items-extra-lines
+;; and is marked obsolete there.
+
+;; Openable/Closable counters moved to context-navigator-view-counters.el
+;; Implementations live in that module; the view calls thin wrappers so the API
+;; remains stable while the implementation is extracted.
+
+(declare-function context-navigator-view-counters-get-openable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-refresh-openable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-collect-closable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-invalidate "context-navigator-view-counters" ())
 
 (defun context-navigator-view--invalidate-openable ()
-  "Invalidate cached openable counters and cancel pending timers (safe outside the view buffer)."
-  (let ((buf (get-buffer context-navigator-view--buffer-name)))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (setq context-navigator-view--openable-count nil
-              context-navigator-view--openable-plus nil
-              context-navigator-view--openable-stamp 0.0)
-        (let ((tm (and (boundp 'context-navigator-view--openable-timer)
-                       context-navigator-view--openable-timer)))
-          (when (timerp tm)
-            (cancel-timer tm))
-          (setq context-navigator-view--openable-timer nil))))))
-
-(defun context-navigator-view--openable--candidate-p (item)
-  "Return non-nil if ITEM can be opened in background (file-backed).
-Respects `context-navigator-openable-remote-mode' for remote paths and
-counts only enabled items."
-  (let ((enabled (and (context-navigator-item-enabled item) t)))
-    (when enabled
-      (pcase (context-navigator-item-type item)
-        ('buffer
-         (let* ((buf (context-navigator-item-buffer item))
-                (p (context-navigator-item-path item)))
-           (and (stringp p)
-                ;; already open: skip
-                (not (and buf (buffer-live-p buf)))
-                (let ((remote (file-remote-p p)))
-                  (cond
-                   ;; ignore remotes
-                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
-                   ;; lazy: do not hit file-exists-p on remote
-                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
-                    (not (get-file-buffer p)))
-                   ;; local or strict remote
-                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
-        ('selection
-         (let ((p (context-navigator-item-path item)))
-           (and (stringp p)
-                (let ((remote (file-remote-p p)))
-                  (cond
-                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
-                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
-                    (not (get-file-buffer p)))
-                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
-        ('file
-         (let ((p (context-navigator-item-path item)))
-           (and (stringp p)
-                (let ((remote (file-remote-p p)))
-                  (cond
-                   ((and remote (eq context-navigator-openable-remote-mode 'off)) nil)
-                   ((and remote (eq context-navigator-openable-remote-mode 'lazy))
-                    (not (get-file-buffer p)))
-                   (t (and (file-exists-p p) (not (get-file-buffer p)))))))))
-        (_ nil)))))
-
-(defun context-navigator-view--compute-openable (cap)
-  "Return cons (COUNT . PLUS) for openable items, short-circuiting at CAP.
-PLUS is non-nil when CAP was reached."
-  (let* ((st (ignore-errors (context-navigator--state-get)))
-         (items (and st (context-navigator-state-items st)))
-         (n 0)
-         (limit (or cap most-positive-fixnum)))
-    (catch 'done
-      (dolist (it (or items '()))
-        (when (context-navigator-view--openable--candidate-p it)
-          (setq n (1+ n))
-          (when (>= n limit)
-            (throw 'done t)))))
-    (cons n (and (numberp cap) (>= n (or cap 0))))))
+  "Invalidate cached openable counters (delegates to counters module)."
+  (ignore-errors (context-navigator-view-counters-invalidate)))
 
 (defun context-navigator-view--openable-count-refresh ()
-  "Recompute openable count synchronously with soft-cap; update cache and schedule UI refresh if changed."
-  (let* ((res (context-navigator-view--compute-openable context-navigator-openable-soft-cap))
-         (n (car res))
-         (plus (cdr res))
-         ;; Guard against void-variable when timers fire outside the sidebar buffer/loading order
-         (old (and (boundp 'context-navigator-view--openable-count)
-                   context-navigator-view--openable-count))
-         (changed (not (equal old n))))
-    (setq context-navigator-view--openable-count n
-          context-navigator-view--openable-plus plus
-          context-navigator-view--openable-stamp (float-time))
-    (when changed
-      (context-navigator-view--schedule-render))
-    n))
+  "Delegate refresh to counters module."
+  (ignore-errors (context-navigator-view-counters-refresh-openable)))
 
 (defun context-navigator-view--openable-count-get ()
-  "Return cons (COUNT . PLUS) from cache; schedule a debounced refresh when stale."
-  (let* ((now (float-time))
-         (ttl (or context-navigator-openable-count-ttl 0.3))
-         ;; Robust when variables are not yet bound in the running buffer/timer context
-         (count (and (boundp 'context-navigator-view--openable-count)
-                     context-navigator-view--openable-count))
-         (stamp (if (boundp 'context-navigator-view--openable-stamp)
-                    context-navigator-view--openable-stamp
-                  0.0))
-         (plus  (and (boundp 'context-navigator-view--openable-plus)
-                     context-navigator-view--openable-plus)))
-    (when (or (null count)
-              (> (- now stamp) (max 0 ttl)))
-      (context-navigator-events-debounce
-       :sidebar-openable 0.18
-       (lambda ()
-         (let ((buf (get-buffer context-navigator-view--buffer-name)))
-           (when (buffer-live-p buf)
-             (with-current-buffer buf
-               (context-navigator-view--openable-count-refresh)))))))
-    (cons (or count 0)
-          (and plus
-               (> (or count 0) 0)))))
-
-;; Closable count helpers (footer [∅]) ---------------------------------------
+  "Return cached openable count from counters module (COUNT . PLUS)."
+  (ignore-errors (context-navigator-view-counters-get-openable)))
 
 (defun context-navigator-view--collect-closable-buffers ()
-  "Collect unique live buffers corresponding to current model items.
-Returns a list of buffer objects; excludes the sidebar buffer itself."
-  (let* ((st (ignore-errors (context-navigator--state-get)))
-         (items (and st (context-navigator-state-items st)))
-         (seen (make-hash-table :test 'eq))
-         (res '())
-         (sidebar-buf (get-buffer context-navigator-view--buffer-name)))
-    (dolist (it (or items '()))
-      (let ((type (context-navigator-item-type it)))
-        (cond
-         ((eq type 'buffer)
-          (let ((buf (or (context-navigator-item-buffer it)
-                         (and (context-navigator-item-path it)
-                              (get-file-buffer (context-navigator-item-path it))))))
-            (when (and (bufferp buf) (buffer-live-p buf)
-                       (not (eq buf sidebar-buf))
-                       (not (gethash buf seen)))
-              (puthash buf t seen)
-              (push buf res))))
-         ((eq type 'selection)
-          (let ((p (context-navigator-item-path it)))
-            (when (and (stringp p) (get-file-buffer p))
-              (let ((buf (get-file-buffer p)))
-                (when (and (buffer-live-p buf)
-                           (not (eq buf sidebar-buf))
-                           (not (gethash buf seen)))
-                  (puthash buf t seen)
-                  (push buf res))))))
-         ((eq type 'file)
-          (let ((p (context-navigator-item-path it)))
-            (when (and (stringp p) (get-file-buffer p))
-              (let ((buf (get-file-buffer p)))
-                (when (and (buffer-live-p buf)
-                           (not (eq buf sidebar-buf))
-                           (not (gethash buf seen)))
-                  (puthash buf t seen)
-                  (push buf res)))))))))
-    (nreverse res)))
+  "Delegate closable-buffers collection to counters module."
+  (ignore-errors (context-navigator-view-counters-collect-closable)))
 
 ;; Loading spinner helpers ----------------------------------------------------
 
@@ -541,515 +483,27 @@ Degrades to a static indicator when timer slippage exceeds threshold."
   (setq context-navigator-view--spinner-degraded nil))
 
 
-(defun context-navigator-view--footer-control-segments ()
-  "Build footer control segments: toggles + [Open buffers], [Close buffers], [Clear group] and a gptel mass toggle.
-
-Changes:
-- Hide [Push now] when auto-push is ON
-- Rename [Clear gptel] to \"Выключить все в gptel\"
-- When all items are disabled, replace it with \"Включить все gptel\""
-  (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
-                       context-navigator--push-to-gptel))
-         ;; use cached keys from gptel (do not pull during render)
-         (has-gptel (and (listp context-navigator-view--gptel-keys)
-                         (> (length context-navigator-view--gptel-keys) 0)))
-         (style (or context-navigator-controls-style 'auto))
-         ;; current items presence for [Clear group]
-         (st (ignore-errors (context-navigator--state-get)))
-         (items (and st (context-navigator-state-items st)))
-         (have-items (and (listp items) (> (length items) 0)))
-         (all-disabled
-          (and (listp items)
-               (or (= (length items) 0)
-                   (cl-every (lambda (it) (not (context-navigator-item-enabled it))) items))))
-         (segs '()))
-    ;; Toggles first (push → gptel, auto-project)
-    (setq segs (append segs (context-navigator-view--make-toggle-segments)))
-    ;; [Open buffers] — open file-backed buffers/selections/files in background (lazy/strict remote)
-    (cl-destructuring-bind (openable . plus)
-        (context-navigator-view--openable-count-get)
-      (let* ((label (pcase style
-                      ((or 'icons 'auto) " [O]")
-                      (_ (format " [%s]" (context-navigator-i18n :open-buffers)))))
-             (s (copy-sequence label))
-             (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-        ;; Mark as an action so RET handler can attempt it.
-        (add-text-properties beg (length s)
-                             (list 'context-navigator-action 'open-buffers)
-                             s)
-        (if (> openable 0)
-            (let* ((disp (if plus (format "Open %d+ context buffer(s) in background (o)" openable)
-                           (format "Open %d context buffer(s) in background (o)" openable)))
-                   (m (let ((km (make-sparse-keymap)))
-                        (define-key km [mouse-1] #'context-navigator-view-open-all-buffers)
-                        (define-key km [header-line mouse-1] #'context-navigator-view-open-all-buffers)
-                        km)))
-              (add-text-properties beg (length s)
-                                   (list 'mouse-face 'highlight
-                                         'help-echo disp
-                                         'keymap m
-                                         'local-map m)
-                                   s))
-          (add-text-properties beg (length s)
-                               (list 'face 'shadow
-                                     'help-echo "No buffers to open")
-                               s))
-        (push s segs)))
-    ;; [Close buffers] — close all live buffers that belong to the current group items
-    (let* ((closable-bufs (context-navigator-view--collect-closable-buffers))
-           (closable (length closable-bufs))
-           (label (pcase style
-                    ((or 'icons 'auto) " [∅]")
-                    (_ (format " [%s]" (context-navigator-i18n :close-buffers)))))
-           (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-      (add-text-properties beg (length s)
-                           (list 'context-navigator-action 'close-buffers)
-                           s)
-      (if (> closable 0)
-          (let ((m (let ((km (make-sparse-keymap)))
-                     (define-key km [mouse-1] #'context-navigator-view-close-all-buffers)
-                     (define-key km [header-line mouse-1] #'context-navigator-view-close-all-buffers)
-                     km)))
-            (add-text-properties beg (length s)
-                                 (list 'mouse-face 'highlight
-                                       'help-echo (format "Close %d context buffer(s) (K)" closable)
-                                       'keymap m
-                                       'local-map m)
-                                 s))
-        (add-text-properties beg (length s)
-                             (list 'face 'shadow
-                                   'help-echo "No context buffers are open")
-                             s))
-      (push s segs))
-    ;; [Clear group] — clears current group's items; inactive when no items present.
-    (let* ((label (pcase style
-                    ((or 'icons 'auto) " [✖]")
-                    (_ (concat " [" (context-navigator-i18n :clear-group) "]"))))
-           (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-      (add-text-properties beg (length s)
-                           (list 'context-navigator-action 'clear-group)
-                           s)
-      (if have-items
-          (let ((m (let ((km (make-sparse-keymap)))
-                     (define-key km [mouse-1] #'context-navigator-view-clear-group)
-                     (define-key km [header-line mouse-1] #'context-navigator-view-clear-group)
-                     km)))
-            (add-text-properties beg (length s)
-                                 (list 'mouse-face 'highlight
-                                       'help-echo (context-navigator-i18n :clear-group-tip)
-                                       'keymap m
-                                       'local-map m)
-                                 s))
-        (add-text-properties beg (length s)
-                             (list 'face 'shadow
-                                   'help-echo (context-navigator-i18n :clear-group-tip))
-                             s))
-      (push s segs))
-    ;; [Push now] — only when auto-push is OFF and there are items.
-    (when (not push-on)
-      (let* ((label (pcase style
-                      ((or 'icons 'auto) " [⇪]")
-                      (_ (concat " [" (context-navigator-i18n :push-now) "]"))))
-             (s (copy-sequence label))
-             (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-        (add-text-properties beg (length s) (list 'context-navigator-action 'push-now) s)
-        (if (not have-items)
-            (add-text-properties beg (length s)
-                                 (list 'face 'shadow
-                                       'help-echo (context-navigator-i18n :push-tip))
-                                 s)
-          (let ((m (let ((km (make-sparse-keymap)))
-                     (define-key km [mouse-1] #'context-navigator-view-push-now)
-                     (define-key km [header-line mouse-1] #'context-navigator-view-push-now)
-                     km)))
-            (add-text-properties beg (length s)
-                                 (list 'mouse-face 'highlight
-                                       'help-echo (context-navigator-i18n :push-tip)
-                                       'keymap m
-                                       'local-map m)
-                                 s)))
-        (push s segs)))
-    ;; [Toggle all gptel]: \"Выключить все в gptel\" vs \"Включить все gptel\"
-    (let* ((label (pcase style
-                    ((or 'icons 'auto) " [⌦]")
-                    (_ (concat " " (if all-disabled "[Включить все gptel]" "[Выключить все в gptel]")))))
-           (s (copy-sequence label))
-           (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-      ;; Mark with a dedicated action so RET can dispatch appropriately.
-      (add-text-properties beg (length s) (list 'context-navigator-action 'toggle-all-gptel) s)
-      (let ((m (let ((km (make-sparse-keymap)))
-                 (define-key km [mouse-1] #'context-navigator-view-toggle-all-gptel)
-                 (define-key km [header-line mouse-1] #'context-navigator-view-toggle-all-gptel)
-                 km)))
-        (if (and all-disabled (not have-items))
-            ;; nothing to enable — keep visible but inactive
-            (add-text-properties beg (length s)
-                                 (list 'face 'shadow
-                                       'help-echo "No items to enable")
-                                 s)
-          (add-text-properties beg (length s)
-                               (list 'mouse-face 'highlight
-                                     'help-echo (if all-disabled
-                                                    "Enable all items and push to gptel"
-                                                  (context-navigator-i18n :clear-tip))
-                                     'keymap m
-                                     'local-map m)
-                               s)))
-      (push s segs))
-    (nreverse segs)))
+;; Controls API (implemented in context-navigator-view-controls.el)
+(declare-function context-navigator-view-controls--build-toggles "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls--build-actions "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
 
 
-(defun context-navigator-view--footer-control-lines (total-width)
-  "Return footer control lines wrapped to TOTAL-WIDTH."
-  (let ((controls (context-navigator-view--footer-control-segments)))
-    (context-navigator-view--wrap-segments controls total-width)))
+;; Groups rendering helpers moved to context-navigator-view-groups.el
+;; Keep declarations so byte-compiler & callers in other modules are happy.
+(declare-function context-navigator-view--groups-header-lines "context-navigator-view-groups" (header total-width))
+(declare-function context-navigator-view--groups-body-lines "context-navigator-view-groups" (state))
+(declare-function context-navigator-view--groups-help-lines "context-navigator-view-groups" (total-width))
+(declare-function context-navigator-view--render-groups "context-navigator-view-groups" (state header total-width))
 
-
-(defun context-navigator-view--groups-header-lines (header total-width)
-  "Return list with a single clickable title line for groups view.
-
-Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
-  (list (context-navigator-view--title-line header)))
-
-
-(defun context-navigator-view--groups-body-lines (state)
-  "Return list of lines for groups body using STATE."
-  (let* ((active (and (context-navigator-state-p state)
-                      (context-navigator-state-current-group-slug state))))
-    (cond
-     ((not (listp context-navigator-view--groups))
-      (list (propertize (context-navigator-i18n :no-groups) 'face 'shadow)))
-     (t
-      (let (lines)
-        (dolist (pl context-navigator-view--groups)
-          (let* ((slug (or (plist-get pl :slug) ""))
-                 (disp (or (plist-get pl :display) slug))
-                 (ic (or (ignore-errors (context-navigator-icons-for-group)) "📁"))
-                 (txt (concat ic " " disp))
-                 (s (copy-sequence txt)))
-            (add-text-properties 0 (length s)
-                                 (list 'context-navigator-group-slug slug
-                                       'context-navigator-group-display disp
-                                       'mouse-face 'highlight
-                                       'keymap context-navigator-view--group-line-keymap
-                                       'local-map context-navigator-view--group-line-keymap
-                                       'help-echo (context-navigator-i18n :mouse-open-group))
-                                 s)
-            (when (and context-navigator-highlight-active-group
-                       active (string= active slug))
-              (add-text-properties 0 (length s) (list 'face 'mode-line-emphasis) s))
-            (setq lines (append lines (list s)))))
-        lines)))))
-
-
-(defun context-navigator-view--groups-footer-lines (total-width)
-  "Return footer lines for groups view wrapped to TOTAL-WIDTH (controls moved to header-line).
-
-Remove the single-key \"? for help\" hint; the header-line contains controls
-and the transient/help command can be invoked explicitly."
-  (let* ((help-segments
-          (list (context-navigator-i18n :groups-help-open)
-                (context-navigator-i18n :groups-help-add)
-                (context-navigator-i18n :groups-help-rename)
-                (context-navigator-i18n :groups-help-delete)
-                (context-navigator-i18n :groups-help-copy)
-                (context-navigator-i18n :groups-help-refresh)
-                (context-navigator-i18n :groups-help-back)
-                (context-navigator-i18n :groups-help-quit)))
-         (help-lines
-          (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Controls/toggles are shown in the header-line. Keep a blank line, then help lines.
-    (append (list "") help-lines)))
-
-
-(defun context-navigator-view--render-groups (state header total-width)
-  "Render groups view using STATE, HEADER and TOTAL-WIDTH.
-Returns the list of lines that were rendered."
-  (let* ((hl-lines (context-navigator-view--groups-header-lines header total-width))
-         (hl (car hl-lines))
-         (body (append
-                (context-navigator-view--groups-body-lines state)
-                (context-navigator-view--groups-footer-lines total-width)))
-         (lines (if context-navigator-view--collapsed-p
-                    (list "" hl)
-                  (cons "" (cons hl body)))))
-    (setq context-navigator-view--last-lines lines
-          context-navigator-view--header header)
-    (context-navigator-render-apply-to-buffer (current-buffer) lines)
-    ;; Keep point where user navigated with n/p; only auto-focus when:
-    ;; - entering the groups view (first render in this mode), or
-    ;; - the active group changed since last render.
-    ;; Do not steal point when user moves to footer/help with TAB/Shift-TAB.
-    (unless context-navigator-view--collapsed-p
-      (let* ((active (and (context-navigator-state-p state)
-                          (context-navigator-state-current-group-slug state)))
-             (here (point))
-             (on-group (get-text-property here 'context-navigator-group-slug))
-             (need-focus (or (not (eq context-navigator-view--last-mode 'groups))
-                             (not (equal context-navigator-view--last-active-group active)))))
-        (when need-focus
-          (let (pos)
-            (when (and (stringp active) (not (string-empty-p active)))
-              (let ((p (point-min)) (found nil))
-                (while (and (not found)
-                            (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
-                  (when (equal (get-text-property p 'context-navigator-group-slug) active)
-                    (setq found p))
-                  (setq p (1+ p)))
-                (setq pos found)))
-            (unless pos
-              (setq pos (text-property-not-all (point-min) (point-max)
-                                               'context-navigator-group-slug nil)))
-            (when pos
-              (goto-char pos)
-              (beginning-of-line)))))
-      (setq context-navigator-view--last-active-group active
-            context-navigator-view--last-mode 'groups))
-    lines))
-
-(defun context-navigator-view--items-header-toggle-lines (total-width)
-  "Return header toggle lines for items view wrapped to TOTAL-WIDTH."
-  (context-navigator-view--header-toggle-lines total-width))
-
-(defun context-navigator-view-toggle-collapse ()
-  "Toggle collapse/expand of the items section under the title line."
-  (interactive)
-  (setq context-navigator-view--collapsed-p (not context-navigator-view--collapsed-p))
-  (context-navigator-view--schedule-render))
-
-(defun context-navigator-view--title-line (header)
-  "Return a single interactive title line built from HEADER with a disclosure triangle.
-TAB or mouse-1 on this line toggles collapsing the section below."
-  (let* ((arrow (if context-navigator-view--collapsed-p "▸" "▾"))
-         (txt (format " %s %s" arrow (or header "Context")))
-         (s (copy-sequence txt)))
-    (add-text-properties 0 (length s)
-                         (list 'context-navigator-title t
-                               'mouse-face 'highlight
-                               'help-echo "TAB: collapse/expand"
-                               'keymap context-navigator-view--title-line-keymap
-                               'local-map context-navigator-view--title-line-keymap
-                               'face 'mode-line-emphasis)
-                         s)
-    s))
-
-(defun context-navigator-view--items-base-lines (state header total-width)
-  "Return a list: (hl sep up rest...) for items view base lines.
-HL is the clickable [project[: group]] title line placed above \"..\".
-SEP is currently empty (no extra separator in the buffer).
-UP is the \"..\" line.
-REST is a list of item lines."
-  (let* ((items (context-navigator-state-items state))
-         ;; generation-aware cached sort: avoid re-sorting identical model generation
-         (gen (or (and (context-navigator-state-p state)
-                       (context-navigator-state-generation state))
-                  0))
-         (root (and (context-navigator-state-p state)
-                    (context-navigator-state-last-project-root state)))
-         ;; relpath cache per generation/root
-         (_ (unless (and context-navigator-view--relpaths-hash
-                         (= gen (or context-navigator-view--sorted-gen -1))
-                         (equal root context-navigator-view--sorted-root))
-              (setq context-navigator-view--relpaths-hash (make-hash-table :test 'equal))))
-         (relpath-of
-          (lambda (it)
-            (let* ((key (context-navigator-model-item-key it))
-                   (cached (and context-navigator-view--relpaths-hash
-                                (gethash key context-navigator-view--relpaths-hash)))
-                   (p (and (stringp (context-navigator-item-path it))
-                           (context-navigator-item-path it))))
-              (or cached
-                  (let* ((rel (condition-case _err
-                                  (if (and p root)
-                                      (file-relative-name (expand-file-name p)
-                                                          (file-name-as-directory (expand-file-name root)))
-                                    p)
-                                (error p))))
-                    (when (hash-table-p context-navigator-view--relpaths-hash)
-                      (puthash key rel context-navigator-view--relpaths-hash))
-                    rel)))))
-         ;; natural-lessp (case-insensitive with numeric chunks)
-         (natural-lessp
-          (lambda (a b)
-            (cl-labels
-                ((chunks (s)
-                   (let ((i 0) (n (length s)) (cur "") (res '()))
-                     (while (< i n)
-                       (let ((c (aref s i)))
-                         (if (and (>= c ?0) (<= c ?9))
-                             ;; flush cur then read number
-                             (progn
-                               (when (> (length cur) 0)
-                                 (push (cons :str (downcase cur)) res)
-                                 (setq cur ""))
-                               (let ((j i))
-                                 (while (and (< j n)
-                                             (let ((d (aref s j))) (and (>= d ?0) (<= d ?9))))
-                                   (setq j (1+ j)))
-                                 (push (cons :num (string-to-number (substring s i j))) res)
-                                 (setq i (1- j))))
-                           (setq cur (concat cur (string c)))))
-                       (setq i (1+ i)))
-                     (when (> (length cur) 0)
-                       (push (cons :str (downcase cur)) res))
-                     (nreverse res)))
-                 (cmp (xa xb)
-                   (cond
-                    ((and (null xa) (null xb)) nil)
-                    ((null xa) t)
-                    ((null xb) nil)
-                    (t
-                     (let* ((a1 (car xa)) (b1 (car xb)))
-                       (cond
-                        ((and (eq (car a1) :num) (eq (car b1) :num))
-                         (if (/= (cdr a1) (cdr b1))
-                             (< (cdr a1) (cdr b1))
-                           (cmp (cdr xa) (cdr xb))))
-                        ((and (eq (car a1) :str) (eq (car b1) :str))
-                         (let ((sa (cdr a1)) (sb (cdr b1)))
-                           (if (string= sa sb)
-                               (cmp (cdr xa) (cdr xb))
-                             (string-lessp sa sb))))
-                        ((eq (car a1) :num) t)
-                        (t nil)))))))
-              (cmp (chunks (or a "")) (chunks (or b ""))))))
-         (in-subdir-p
-          (lambda (rel)
-            (and (stringp rel)
-                 (not (string-prefix-p ".." rel))
-                 (string-match-p "/" rel))))
-         (basename-of
-          (lambda (rel-or-path)
-            (file-name-nondirectory (or rel-or-path ""))))
-         (sorted-items
-          (if (and (listp context-navigator-view--sorted-items)
-                   (integerp context-navigator-view--sorted-gen)
-                   (= gen context-navigator-view--sorted-gen)
-                   (equal root context-navigator-view--sorted-root))
-              context-navigator-view--sorted-items
-            (let ((s (sort (copy-sequence (or items '()))
-                           (lambda (a b)
-                             (let* ((ra (funcall relpath-of a))
-                                    (rb (funcall relpath-of b))
-                                    (pa (and (stringp (context-navigator-item-path a))
-                                             (context-navigator-item-path a)))
-                                    (pb (and (stringp (context-navigator-item-path b))
-                                             (context-navigator-item-path b)))
-                                    (has-pa (and (stringp pa) (> (length pa) 0)))
-                                    (has-pb (and (stringp pb) (> (length pb) 0)))
-                                    (sa (and has-pa (funcall in-subdir-p ra)))
-                                    (sb (and has-pb (funcall in-subdir-p rb))))
-                               (cond
-                                ;; Items with paths first; without paths at the bottom
-                                ((and (not has-pa) (not has-pb))
-                                 ;; both without paths -> natural by name
-                                 (funcall natural-lessp
-                                          (downcase (or (context-navigator-item-name a) ""))
-                                          (downcase (or (context-navigator-item-name b) ""))))
-                                ((and (not has-pa) has-pb) nil)
-                                ((and has-pa (not has-pb)) t)
-                                ;; Both have paths: subdirs first
-                                ((and sa (not sb)) t)
-                                ((and (not sa) sb) nil)
-                                ;; Same group: natural sort by relpath (dir/base)
-                                (t (funcall natural-lessp
-                                            (downcase (or ra ""))
-                                            (downcase (or rb ""))))))))))
-              (setq context-navigator-view--sorted-items s
-                    context-navigator-view--sorted-gen gen
-                    context-navigator-view--sorted-root root)
-              s)))
-         (left-width (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
-         (base (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
-                 (context-navigator-render-build-lines sorted-items header
-                                                       #'context-navigator-icons-for-item
-                                                       left-width)))
-         ;; Title/header is rendered inside the buffer (interactive, collapsible).
-         (hl (context-navigator-view--title-line header))
-         (sep "")
-         (rest (cddr base))
-         (up (let ((s (copy-sequence "..")))
-               (add-text-properties 0 (length s)
-                                    (list 'context-navigator-groups-up t
-                                          'mouse-face 'highlight
-                                          'help-echo (context-navigator-i18n :status-up-to-groups)
-                                          'face 'shadow)
-                                    s)
-               s)))
-    (list hl sep up rest)))
-
-
-(defun context-navigator-view--status-text-at-point ()
-  "Return status text for the current point:
-- title line → show the header text (project[: group])
-- item line → relative path to project root (or absolute when no root)
-- \"..\" line → localized \"<to groups>\"
-- footer action/toggle → their help-echo
-- otherwise → empty string."
-  (cond
-   ;; On title/header line
-   ((get-text-property (point) 'context-navigator-title)
-    (or context-navigator-view--header ""))
-   ;; On an item: show relative path (dirs + basename), or buffer name when no path
-   ((get-text-property (point) 'context-navigator-item)
-    (let* ((it (get-text-property (point) 'context-navigator-item))
-           (p  (context-navigator-item-path it))
-           (st (ignore-errors (context-navigator--state-get)))
-           (root (and st (ignore-errors (context-navigator-state-last-project-root st)))))
-      (cond
-       ((and (stringp p) (> (length p) 0))
-        (condition-case _err
-            (if (stringp root)
-                (file-relative-name (expand-file-name p)
-                                    (file-name-as-directory (expand-file-name root)))
-              (abbreviate-file-name p))
-          (error (abbreviate-file-name p))))
-       (t (or (context-navigator-item-name it) "")))))
-   ;; On up line
-   ((get-text-property (point) 'context-navigator-groups-up)
-    (context-navigator-i18n :status-up-to-groups))
-   ;; On footer action or header toggle: show help-echo
-   ((or (get-text-property (point) 'context-navigator-action)
-        (get-text-property (point) 'context-navigator-toggle))
-    (or (get-text-property (point) 'help-echo) ""))
-   (t "")))
-
-
-
-(defun context-navigator-view--items-footer-lines (total-width)
-  "Return footer lines for items view wrapped to TOTAL-WIDTH (controls moved to header-line).
-
-Per-point status is shown in the modeline now; do not render it inside the
-buffer footer. Also remove the single-key help (\"? for help\") from the footer.
-
-Additionally, append the Stats block (collapsible) when enabled."
-  (let* ((help-segments '()) ;; no short inline help any more
-         (_help-lines
-          (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-view--wrap-segments help-segments total-width)))
-         (stats-lines (and (fboundp 'context-navigator-stats-footer-lines)
-                           (context-navigator-stats-footer-lines total-width))))
-    ;; Add one empty line above the stats block (when present)
-    (if stats-lines (cons "" stats-lines) '())))
-
-
-(defun context-navigator-view--render-items (state header total-width)
-  "Render items view using STATE, HEADER and TOTAL-WIDTH.
-Returns the list of lines that were rendered."
-  (cl-destructuring-bind (hl _sep up rest)
-      (context-navigator-view--items-base-lines state header total-width)
-    (let* ((body (append (list up) rest
-                         (context-navigator-view--items-footer-lines total-width)))
-           (lines (if context-navigator-view--collapsed-p
-                      (list "" hl)
-                    (cons "" (cons hl body)))))
-      (setq context-navigator-view--last-lines lines
-            context-navigator-view--header header)
-      (context-navigator-render-apply-to-buffer (current-buffer) lines)
-      lines)))
+;; Items rendering & status helpers moved to context-navigator-view-items.el
+;; Keep declarations so byte-compiler & callers in other modules are happy.
+(declare-function context-navigator-view--items-header-toggle-lines "context-navigator-view-items" (total-width))
+(declare-function context-navigator-view--items-base-lines "context-navigator-view-items" (state header total-width))
+(declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
+(declare-function context-navigator-view--items-extra-lines "context-navigator-view-items" (total-width))
+(declare-function context-navigator-view--render-items "context-navigator-view-items" (state header total-width))
 
 
 ;; Entry point
@@ -1633,189 +1087,26 @@ Order of operations:
                    (ignore-errors (context-navigator-groups-open))
                    (context-navigator-view--schedule-render)))))))
         context-navigator-view--subs))
-(defun context-navigator-view--gptel-noisy-src-p (src)
-  "Вернуть t, если событие пришло от шумного источника, который нужно игнорировать.
-Это предотвращает обратную связь от variable-watcher'ов."
-  (memq src '(gptel-context gptel-context--alist gptel--context)))
+;; GPTel indicator helpers moved to context-navigator-view-indicators.el
+;; Implementations live in that module; the view simply requires it at top
+;; so functions like `context-navigator-view--collect-gptel-keys',
+;; `context-navigator-view--update-gptel-keys-if-changed',
+;; `context-navigator-view--maybe-refresh-gptel-keys',
+;; `context-navigator-view--on-gptel-change',
+;; `context-navigator-view--subscribe-gptel-events',
+;; `context-navigator-view--init-gptel-cache' and
+;; `context-navigator-view--start-gptel-poll-timer' are available at runtime.
+;; Declare these symbols to keep the byte-compiler and tooling happy.
+(declare-function context-navigator-view--collect-gptel-keys "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--update-gptel-keys-if-changed "context-navigator-view-indicators" (keys))
+(declare-function context-navigator-view--maybe-refresh-gptel-keys "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--on-gptel-change "context-navigator-view-indicators" (&rest args))
+(declare-function context-navigator-view--subscribe-gptel-events "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--init-gptel-cache "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--start-gptel-poll-timer "context-navigator-view-indicators" ())
 
-(defun context-navigator-view--collect-gptel-keys ()
-  "Собрать список ключей из gptel, предпочитая «сырые» ключи.
-Порядок приоритетов:
-1. Сырые ключи (read-only, если доступны).
-2. Вытянуть из gptel (pull) и преобразовать в ключи.
-3. Фоллбек: включённые элементы из текущего состояния."
-  (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
-                        (ignore-errors (context-navigator-gptel--raw-keys))))
-         (pulled-keys
-          (and (or (null raw-keys) (= (length raw-keys) 0))
-               (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-                 (and (listp lst)
-                      (mapcar #'context-navigator-model-item-key lst)))))
-         (fallback-keys
-          (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                     (or (null raw-keys) (= (length raw-keys) 0)))
-            (let* ((st (ignore-errors (context-navigator--state-get)))
-                   (items (and st (context-navigator-state-items st))))
-              (and (listp items)
-                   (mapcar #'context-navigator-model-item-key
-                           (cl-remove-if-not #'context-navigator-item-enabled items)))))))
-    (or raw-keys pulled-keys fallback-keys '())))
-
-(defun context-navigator-view--update-gptel-keys-if-changed (keys)
-  "Обновить кэшированные ключи и перерисовать вид, если KEYs изменились."
-  (let ((h (sxhash-equal keys)))
-    (unless (equal h context-navigator-view--gptel-keys-hash)
-      (setq context-navigator-view--gptel-keys keys
-            context-navigator-view--gptel-keys-hash h)
-      (ignore-errors
-        (context-navigator-debug :debug :ui
-                                 "gptel-change: keys=%d hash=%s"
-                                 (length keys) h))
-      (context-navigator-view--schedule-render))))
-
-(defun context-navigator-view--maybe-refresh-gptel-keys ()
-  "Собрать ключи и обновить состояние, если они изменились.
-Предполагается, что вызывается из буфера представления."
-  (let ((keys (context-navigator-view--collect-gptel-keys)))
-    (context-navigator-view--update-gptel-keys-if-changed keys)))
-
-(defun context-navigator-view--on-gptel-change (&rest args)
-  "Хэндлер изменений gptel: синхронизировать кэш ключей и перерисовать вид.
-Игнорирует шумные события от variable-watcher'ов."
-  (let ((src (car args)))
-    (unless (context-navigator-view--gptel-noisy-src-p src)
-      (let ((buf (get-buffer context-navigator-view--buffer-name)))
-        (when (buffer-live-p buf)
-          (with-current-buffer buf
-            (context-navigator-view--maybe-refresh-gptel-keys)))))))
-
-(defun context-navigator-view--subscribe-gptel-events ()
-  "Подписаться на изменения gptel и держать кэш ключей в синхронизации."
-  (push (context-navigator-events-subscribe
-         :gptel-change
-         #'context-navigator-view--on-gptel-change)
-        context-navigator-view--subs))
-
-
-(defun context-navigator-view--init-gptel-cache ()
-  "Initialize cached gptel keys once."
-  (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-         (pulled (and (listp lst)
-                      (mapcar #'context-navigator-model-item-key lst)))
-         (raw (and (or (null pulled) (= (length pulled) 0))
-                   (fboundp 'context-navigator-gptel--raw-keys)
-                   (ignore-errors (context-navigator-gptel--raw-keys))))
-         (keys (or pulled raw '()))
-         (h (sxhash-equal keys)))
-    (setq context-navigator-view--gptel-keys keys
-          context-navigator-view--gptel-keys-hash h)
-    (ignore-errors
-      (context-navigator-debug :debug :ui
-                               "gptel-init: pulled %d keys, hash=%s"
-                               (length (or keys '())) h))))
-
-(defun context-navigator-view--close-hijacked-windows ()
-  "Close any windows previously marked as sidebar that now show a foreign buffer.
-
-This helper is safe to call multiple times and is intended to be invoked
-debounced from `buffer-list-update-hook' to avoid UI thrash.
-
-Note: only applies to sidebar windows; normal buffer-mode windows are not auto-closed."
-  (let ((our (get-buffer context-navigator-view--buffer-name)))
-    (when (buffer-live-p our)
-      (dolist (w (window-list nil nil))
-        (when (and (window-live-p w)
-                   (eq (window-parameter w 'context-navigator-view) 'sidebar)
-                   (not (eq (window-buffer w) our)))
-          (ignore-errors (delete-window w)))))))
-
-(defun context-navigator-view--install-buffer-list-hook ()
-  "Install buffer-list-update hook to recompute quick counters and detect hijacked sidebar windows."
-  (setq context-navigator-view--buflist-fn
-        (lambda ()
-          (let ((buf (get-buffer context-navigator-view--buffer-name)))
-            (when (buffer-live-p buf)
-              (with-current-buffer buf
-                (context-navigator-view--invalidate-openable)
-                (context-navigator-view--schedule-render))))
-          ;; Debounced scan for windows that were marked as sidebar but now show a foreign buffer.
-          (context-navigator-events-debounce
-           :sidebar-hijack-check 0.25
-           (lambda ()
-             (let ((our (get-buffer context-navigator-view--buffer-name)))
-               (when (buffer-live-p our)
-                 (dolist (w (window-list nil nil))
-                   (when (and (window-live-p w)
-                              (eq (window-parameter w 'context-navigator-view) 'sidebar)
-                              (not (eq (window-buffer w) our)))
-                     (ignore-errors (delete-window w))))))))))
-  (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn))
-
-(defun context-navigator-view--install-window-select-hook ()
-  "Install window-selection-change hook to re-render on focus and auto-close hijacked sidebar windows.
-
-Only applies to sidebar windows (side-window). Buffer-mode windows are not auto-closed."
-  (setq context-navigator-view--winselect-fn
-        (lambda (_frame)
-          (let ((win (selected-window)))
-            (when (and (window-live-p win)
-                       (eq (window-parameter win 'context-navigator-view) 'sidebar))
-              (let* ((our (get-buffer context-navigator-view--buffer-name))
-                     (cur (and (window-live-p win) (window-buffer win))))
-                (if (not (eq cur our))
-                    ;; Foreign buffer shown in a window that we previously marked
-                    ;; as sidebar — close it to avoid dangling side windows.
-                    (when (window-live-p win)
-                      (delete-window win))
-                  ;; Sidebar window actually shows our buffer — gentle refresh.
-                  (with-selected-window win
-                    (context-navigator-view--schedule-render))))))))
-  (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn))
-
-(defun context-navigator-view--initial-compute-counters ()
-  "Compute quick counters once on install."
-  (context-navigator-view--openable-count-refresh))
-
-(defun context-navigator-view--start-gptel-poll-timer ()
-  "Start lightweight polling for gptel indicators while sidebar is visible."
-  (let ((int (or context-navigator-gptel-indicator-poll-interval 0)))
-    (when (> int 0)
-      (setq context-navigator-view--gptel-poll-timer
-            (run-at-time 0 int
-                         (lambda ()
-                           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-                             (when (buffer-live-p buf)
-                               (with-current-buffer buf
-                                 (when (get-buffer-window buf t)
-                                   ;; Prefer raw keys (read-only) to avoid triggering gptel collectors.
-                                   (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
-                                                         (ignore-errors (context-navigator-gptel--raw-keys))))
-                                          (pulled-keys
-                                           (and (or (null raw-keys) (= (length raw-keys) 0))
-                                                (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-                                                  (and (listp lst)
-                                                       (mapcar #'context-navigator-model-item-key lst)))))
-                                          (fallback-keys
-                                           (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                                      (or (null raw-keys) (= (length raw-keys) 0)))
-                                             (let* ((st (ignore-errors (context-navigator--state-get)))
-                                                    (items (and st (context-navigator-state-items st))))
-                                               (and (listp items)
-                                                    (mapcar #'context-navigator-model-item-key
-                                                            (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                                          (keys (or raw-keys pulled-keys fallback-keys '()))
-                                          (h (sxhash-equal keys))
-                                          (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                                             (or (null raw-keys) (= (length raw-keys) 0)))))
-                                     (unless (equal h context-navigator-view--gptel-keys-hash)
-                                       (setq context-navigator-view--gptel-keys keys
-                                             context-navigator-view--gptel-keys-hash h)
-                                       (ignore-errors
-                                         (context-navigator-debug :debug :ui
-                                                                  "gptel-poll: updated keys=%d hash=%s%s"
-                                                                  (length keys) h
-                                                                  (if use-fallback " (fallback)" "")))
-                                       (context-navigator-view--schedule-render)))))))))))))
+;; Implementations live in context-navigator-view-indicators.el. See that
+;; module for details and further refactoring.
 
 (defun context-navigator-view--install-subs ()
   "Subscribe to relevant events (buffer-local tokens).
@@ -1831,6 +1122,8 @@ Guard against duplicate subscriptions."
     (ignore-errors (context-navigator-gptel-on-change-register))
     (context-navigator-view--init-gptel-cache)
     ;; Hooks and initial compute
+    ;; Install buffer-list and window selection hooks (may be no-ops in tests,
+    ;; implementations are provided below to avoid void-function errors).
     (context-navigator-view--install-buffer-list-hook)
     (context-navigator-view--install-window-select-hook)
     ;; Update modeline status as point moves inside the buffer
@@ -2209,7 +1502,7 @@ Do not highlight header/separator lines."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                                   (not (eq w (selected-window)))))
+                                              (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -2572,6 +1865,8 @@ Buffers are opened in background; we do not change window focus."
       (when-let ((win (get-buffer-window buf t)))
         (select-window win))
       (context-navigator-view--schedule-render))))
+
+(require 'context-navigator-view-title)
 
 (provide 'context-navigator-view)
 ;;; context-navigator-view.el ends here

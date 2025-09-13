@@ -40,11 +40,9 @@
 Shows only control toggles and action segments; the project/group title is
 rendered inside the buffer itself (above the \"..\" line)."
   (when (eq major-mode 'context-navigator-view-mode)
-    (let* ((controls (cond
-                      ((fboundp 'context-navigator-view-controls-segments)
-                       (ignore-errors (context-navigator-view-controls-segments)))
-                      ((fboundp 'context-navigator-view--footer-control-segments)
-                       (ignore-errors (context-navigator-view--footer-control-segments))))))
+    (let ((controls (ignore-errors
+                      (when (fboundp 'context-navigator-view-controls-segments)
+                        (context-navigator-view-controls-segments)))))
       ;; Compose only control segments so text properties (keymaps) are preserved.
       (apply #'concat (or controls '())))))
 
