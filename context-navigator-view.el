@@ -711,8 +711,8 @@ Returns the list of lines that were rendered."
                 (context-navigator-view--groups-body-lines state)
                 (context-navigator-view--groups-footer-lines total-width)))
          (lines (if context-navigator-view--collapsed-p
-                    (list hl)
-                  (cons hl body))))
+                    (list "" hl)
+                  (cons "" (cons hl body)))))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
@@ -977,8 +977,8 @@ Returns the list of lines that were rendered."
     (let* ((body (append (list up) rest
                          (context-navigator-view--items-footer-lines total-width)))
            (lines (if context-navigator-view--collapsed-p
-                      (list hl)
-                    (cons hl body))))
+                      (list "" hl)
+                    (cons "" (cons hl body)))))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)
