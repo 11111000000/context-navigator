@@ -471,14 +471,33 @@ Graceful when gptel is absent: show an informative message and do nothing."
       (message "Pushed %d items to gptel" (length (or items '()))))))
 
 (defun context-navigator-clear-gptel-now ()
-  "Manually clear gptel context (does not touch the model)."
+  "Clear gptel context and disable all items in the current model."
   (interactive)
+  ;; Clear gptel context first (best-effort)
   (if (fboundp 'gptel-context-remove-all)
       (ignore-errors (gptel-context-remove-all))
     (ignore-errors (context-navigator-gptel-apply '())))
-  ;; Notify listeners that gptel was cleared so UI and other adapters can refresh.
+  ;; Disable all items in the model so they are not re-pushed
+  (let* ((st (context-navigator--state-get))
+         (items (and st (context-navigator-state-items st))))
+    (when (listp items)
+      (let ((disabled
+             (mapcar (lambda (it)
+                       (context-navigator-item-create
+                        :type (context-navigator-item-type it)
+                        :name (context-navigator-item-name it)
+                        :path (context-navigator-item-path it)
+                        :buffer (context-navigator-item-buffer it)
+                        :beg (context-navigator-item-beg it)
+                        :end (context-navigator-item-end it)
+                        :size (context-navigator-item-size it)
+                        :enabled nil
+                        :meta (context-navigator-item-meta it)))
+                     items)))
+        (context-navigator-set-items disabled))))
+  ;; Notify listeners and report
   (ignore-errors (context-navigator-events-publish :gptel-change :cleared))
-  (message "gptel context cleared"))
+  (message "gptel context cleared; all items disabled"))
 
 (defun context-navigator-switch-to-current-buffer-project ()
   "Switch Navigator to the project of the current buffer (manual)."

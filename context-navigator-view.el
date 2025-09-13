@@ -2154,7 +2154,7 @@ Buffers are opened in background; we do not change window focus."
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-clear-gptel ()
-  "Manually clear gptel context without touching the model; redraw immediately."
+  "Clear gptel context, disable all items in the model, and redraw immediately."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-gptel (event=%S)" last-input-event))
   (ignore-errors (context-navigator-clear-gptel-now))
