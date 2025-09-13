@@ -1228,6 +1228,57 @@ Also triggers an immediate project switch so header shows actual project."
       (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
         (context-navigator-events-publish :project-switch root)))))
 
+;;;###autoload
+(defun context-navigator-restart ()
+  "Hot-restart Context Navigator:
+- close UI
+- reset the event bus
+- reload modules
+- restore previous mode/UI visibility"
+  (interactive)
+  (let* ((was-mode (bound-and-true-p context-navigator-mode))
+         (sidebar (ignore-errors (context-navigator--sidebar-visible-p)))
+         (buffer  (ignore-errors (context-navigator--buffer-mode-visible-p)))
+         (disp    (and (boundp 'context-navigator-display-mode) context-navigator-display-mode)))
+    ;; Close UI
+    (ignore-errors (context-navigator-view-close))
+    (ignore-errors (context-navigator-buffer-close))
+    ;; Disable mode
+    (when was-mode (ignore-errors (context-navigator-mode -1)))
+    ;; Reset event bus (clears dangling subscribers/timers)
+    (ignore-errors (context-navigator-events-reset))
+    ;; Soft-reload modules (safe order), keep core alive while we run
+    (let ((mods '(context-navigator-events
+                  context-navigator-fp
+                  context-navigator-model
+                  context-navigator-log
+                  context-navigator-persist
+                  context-navigator-project
+                  context-navigator-gptel-bridge
+                  context-navigator-render
+                  context-navigator-icons
+                  context-navigator-i18n
+                  context-navigator-headerline
+                  context-navigator-modeline
+                  context-navigator-path-add
+                  context-navigator-transient
+                  context-navigator-view)))
+      (dolist (m mods)
+        (condition-case _err
+            (let ((lib (locate-library (symbol-name m))))
+              (when lib (load lib t t)))
+          (error nil))))
+    ;; Restore mode
+    (when was-mode (ignore-errors (context-navigator-mode 1)))
+    ;; Restore UI visibility close to previous state
+    (pcase (cond (sidebar 'sidebar)
+                 (buffer  'buffer)
+                 (t       disp))
+      ('sidebar (ignore-errors (context-navigator-view-open)))
+      ('buffer  (ignore-errors (context-navigator-buffer-open)))
+      (_ nil))
+    (message "Context Navigator: restarted")))
+
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
 (context-navigator--reinit-after-reload)
 

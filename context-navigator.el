@@ -71,6 +71,8 @@
 (autoload 'context-navigator-toggle "context-navigator-core" "Toggle Navigator in current display mode." t)
 ;;;###autoload
 (autoload 'context-navigator-display-mode-toggle "context-navigator-core" "Toggle display mode (buffer/sidebar) and reopen." t)
+;;;###autoload
+(autoload 'context-navigator-restart "context-navigator-core" "Hot-restart Context Navigator (reload modules)." t)
 
 ;;;###autoload
 (defun context-navigator-version ()
