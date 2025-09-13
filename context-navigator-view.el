@@ -1797,7 +1797,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "<down>") #'context-navigator-view-next-item)
     (define-key m (kbd "<up>")   #'context-navigator-view-previous-item)
     (define-key m (kbd "l")   #'context-navigator-view-activate)
-    (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "e")   #'context-navigator-view-toggle-enabled)
 
     ;; TAB navigation between interactive elements
     ;; Bind several TAB event representations to be robust across terminals/minor-modes.
@@ -1816,12 +1816,13 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
 
     ;; New global toggles/actions in sidebar
-    (define-key m (kbd "G")   #'context-navigator-view-toggle-push)
+    (define-key m (kbd "G")   #'context-navigator-view-show-groups)
+    (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-view-push-now)
 
-    ;; Align with transient: X → unload context
-    (define-key m (kbd "X")   #'context-navigator-context-unload)
+    ;; Align with transient: U → unload context
+    (define-key m (kbd "U")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-view-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)
@@ -1832,7 +1833,8 @@ MAP is a keymap to search for COMMAND bindings."
     ;; Clear group (explicit shortcut matching UI hint)
     (define-key m (kbd "E")   #'context-navigator-view-clear-group)
     ;; Groups-specific keys
-    (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; show groups from items
+    (define-key m (kbd "u")   #'context-navigator-view-go-up)      ;; show groups from items (Up)
+    (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
     (define-key m (kbd "a")   #'context-navigator-view-group-create)
     (define-key m (kbd "r")   #'context-navigator-view-group-rename)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
@@ -1844,7 +1846,7 @@ MAP is a keymap to search for COMMAND bindings."
 ;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
 (when (keymapp context-navigator-view-mode-map)
   ;; Keep legacy binding in sync
-  (define-key context-navigator-view-mode-map (kbd "t") #'context-navigator-view-toggle-enabled)
+  (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-toggle-enabled)
   ;; Make TAB robust across reloads/terminals/minor-modes
   (define-key context-navigator-view-mode-map (kbd "TAB")       #'context-navigator-view-tab-next)
   (define-key context-navigator-view-mode-map (kbd "<tab>")     #'context-navigator-view-tab-next)
@@ -1861,7 +1863,12 @@ MAP is a keymap to search for COMMAND bindings."
   ;; Arrow keys
   (define-key context-navigator-view-mode-map (kbd "<down>") #'context-navigator-view-next-item)
   (define-key context-navigator-view-mode-map (kbd "<up>")   #'context-navigator-view-previous-item)
-  ;; New binding sync after reloads
+  ;; Groups navigation alias: keep 'h' consistent with help/docs
+  (define-key context-navigator-view-mode-map (kbd "h") #'context-navigator-view-go-up)
+  ;; New binding sync after reloads (keep in sync with primary map)
+  (define-key context-navigator-view-mode-map (kbd "G") #'context-navigator-view-show-groups)
+  (define-key context-navigator-view-mode-map (kbd "x") #'context-navigator-view-toggle-push)
+  (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
 
