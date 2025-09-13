@@ -39,6 +39,14 @@
 Files larger than this threshold are skipped."
   :type 'integer :group 'context-navigator-add)
 
+(defcustom context-navigator-transient-display 'auto
+  "Preferred backend for displaying Context Navigator transients:
+- auto     : use posframe when transient-posframe is available; otherwise a small window
+- posframe : force posframe (requires the transient-posframe package)
+- window   : always use a small fixed-height window below the selected window"
+  :type '(choice (const auto) (const posframe) (const window))
+  :group 'context-navigator-add)
+
 ;;;###autoload
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
@@ -333,6 +341,37 @@ TRAMP/remote: show a warning and confirm before proceeding."
       (context-navigator-transient--apply-items-batched (list it))
       (message "%s" (context-navigator-i18n :added-buffer))))))
 
+
+;; Always show our transients in a small pop-up window, regardless of previous pop-up sizes.
+;; Prefer posframe (via transient-posframe) when available and allowed.
+;; We locally override `transient-display-buffer-action' around our two entry commands.
+(defun context-navigator--with-small-transient (orig-fun &rest args)
+  "Call ORIG-FUN displaying transient via posframe when available/allowed,
+otherwise use a small fixed-height window."
+  (let* ((backend (or context-navigator-transient-display 'auto))
+         (use-posframe (and (memq backend '(auto posframe))
+                            (require 'transient-posframe nil t))))
+    (if use-posframe
+        (progn
+          ;; Enable posframe backend for transient when package is available.
+          (when (fboundp 'transient-posframe-mode)
+            (funcall 'transient-posframe-mode 1))
+          (apply orig-fun args))
+      ;; Fallback: small fixed-height pop-up window below the selected window.
+      (let ((transient-display-buffer-action
+             '(display-buffer-below-selected
+               . ((side . bottom)
+                  (slot . 0)
+                  ;; Use a small fixed height (lines). Tweak to taste.
+                  (window-height . 12)
+                  ;; Keep it from being expanded by other commands.
+                  (preserve-size . (t . nil))
+                  (window-parameters . ((no-other-window . t)
+                                        (no-delete-other-windows . t)))))))
+        (apply orig-fun args)))))
+
+(advice-add 'context-navigator-transient :around #'context-navigator--with-small-transient)
+(advice-add 'context-navigator-view-transient :around #'context-navigator--with-small-transient)
 
 (provide 'context-navigator-transient)
 ;;; context-navigator-transient.el ends here
