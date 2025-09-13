@@ -891,20 +891,20 @@ and the item lines (REST...)."
 
 Per-point status is shown in the modeline now; do not render it inside the
 buffer footer. Also remove the single-key help (\"? for help\") from the footer."
-  (let* ((help-segments '()) ;; no short inline help (\"? for help\") any more
+  (let* ((help-segments '()) ;; no short inline help any more
          (help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
                   (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Layout: blank line, then help lines (none -> effectively a single blank line).
-    (append (list "") (cons "" help-lines))))
+    ;; No extra blank lines at the bottom of the items view.
+    '()))
 
 
 (defun context-navigator-view--render-items (state header total-width)
   "Render items view using STATE, HEADER and TOTAL-WIDTH.
 Returns the list of lines that were rendered."
-  (cl-destructuring-bind (hl sep up rest)
+  (cl-destructuring-bind (_hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
-    (let* ((lines (append (list hl sep up) rest
+    (let* ((lines (append (list up) rest
                           (context-navigator-view--items-footer-lines total-width))))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
