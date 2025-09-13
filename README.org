@@ -9,7 +9,7 @@ Emacs Context Navigator is a lightweight, project‑aware context manager and si
 
 The idea: practice “context engineering”. Instead of keeping task state, open files, buffer selections, and notes in your head, externalize them into clear, reusable context groups per project (or globally). Switch context instantly, reduce cognitive load, and keep your focus on the work.
 
-- View to browse items and groups, with compact controls
+- View to browse items and groups, with a compact header-line toolbar
 - Project‑aware, optional auto‑switch on buffer/project change
 - One‑way integration with GPTel (push current items → GPTel)
 - Async, per‑group persistence with progress and spinner
@@ -112,16 +112,16 @@ Notes:
 * Usage — interface overview
 
 - Sidebar
-  - Items view header shows “[project: group]”; Groups view shows “[project]”.
-  - Header toggles (clickable and TAB‑reachable):
-    - [→]  push→gptel on/off
-    - [A]  auto‑project on/off
-  - Footer actions:
-    - [O] Open buffers (background; shows a dynamic count; remote‑aware)
+  - Title inside the buffer shows “[project: group]” in Items view; Groups view shows “[project]”.
+  - Toolbar under the header-line (clickable and TAB-reachable) contains all toggles and actions:
+    - [→] push→gptel on/off
+    - [A] auto-project on/off
+    - [O] Open buffers (background; dynamic count; remote-aware)
     - [∅] Close buffers (belonging to the current group)
-    - [⇪] Push now (disabled when auto‑push is ON)
+    - [⇪] Push now (hidden when auto-push is ON)
     - [✖] Clear group (remove all items)
-    - [⌦] Clear gptel (model unaffected)
+    - [⌦] Toggle all in gptel (“Enable all gptel” when everything is disabled; otherwise “Disable all in gptel”)
+  - Per-point status is shown in the modeline; the buffer footer is minimal.
   - Indicators (green/gray) show whether an item is present in GPTel (when enabled).
 
 - Transient menu (=C-c n= by default)
@@ -276,6 +276,19 @@ Constants:
 | Variable                      | Type                        | Default | Description                                      | Module/File                        |
 |-------------------------------+-----------------------------+---------+--------------------------------------------------+-------------------------------------|
 | context-navigator-language    | choice (auto en ru fr de es)| auto    | UI language; auto detects from locale            | i18n/context-navigator-i18n.el      |
+
+** Header-line controls (context-navigator-headerline.el)
+
+| Variable                                 | Type    | Default | Description                                       | Module/File                              |
+|------------------------------------------+---------+---------+---------------------------------------------------+------------------------------------------|
+| context-navigator-view-headerline-enable | boolean | t       | Show Navigator controls in the buffer header-line | headerline/context-navigator-headerline.el |
+
+** Modeline (context-navigator-modeline.el)
+
+| Variable                                 | Type    | Default | Description                                   | Module/File                           |
+|------------------------------------------+---------+---------+-----------------------------------------------+---------------------------------------|
+| context-navigator-view-modeline-enable   | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-modeline.el |
+| context-navigator-view-modeline-face     | face    | shadow | Face used for the modeline status text        | modeline/context-navigator-modeline.el |
 
 * Configuration examples
 
