@@ -30,7 +30,7 @@
   :type 'boolean :group 'context-navigator-headerline)
 
 ;; Declarations for byte-compiler friendliness (provided by context-navigator-view).
-(declare-function context-navigator-view--footer-control-segments "context-navigator-view" ())
+(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
 (declare-function context-navigator-view--header "context-navigator-view" (state))
 (declare-function context-navigator--state-get "context-navigator-core" ())
 
@@ -40,8 +40,11 @@
 Shows only control toggles and action segments; the project/group title is
 rendered inside the buffer itself (above the \"..\" line)."
   (when (eq major-mode 'context-navigator-view-mode)
-    (let* ((controls (and (fboundp 'context-navigator-view--footer-control-segments)
-                          (ignore-errors (context-navigator-view--footer-control-segments)))))
+    (let* ((controls (cond
+                      ((fboundp 'context-navigator-view-controls-segments)
+                       (ignore-errors (context-navigator-view-controls-segments)))
+                      ((fboundp 'context-navigator-view--footer-control-segments)
+                       (ignore-errors (context-navigator-view--footer-control-segments))))))
       ;; Compose only control segments so text properties (keymaps) are preserved.
       (apply #'concat (or controls '())))))
 

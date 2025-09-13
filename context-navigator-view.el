@@ -27,6 +27,7 @@
 (require 'context-navigator-modeline)
 (require 'context-navigator-headerline)
 (require 'context-navigator-stats)
+(require 'context-navigator-view-controls)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -317,6 +318,30 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
   "Return header toggle lines wrapped to TOTAL-WIDTH."
   (let ((toggles (context-navigator-view--make-toggle-segments)))
     (context-navigator-view--wrap-segments toggles total-width)))
+
+;; Controls moved to context-navigator-view-controls.el
+;; Keep compiler happy with declarations; actual definitions provided by the module.
+(declare-function context-navigator-view-controls--build-toggles "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls--build-actions "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
+
+;; Naming cleanup wrappers (non-breaking).
+
+(defun context-navigator-view--items-extra-lines (total-width)
+  "Return additional lines under items view (stats etc.)."
+  (context-navigator-view--items-footer-lines total-width))
+
+(defun context-navigator-view--groups-help-lines (total-width)
+  "Return help lines for groups view."
+  (context-navigator-view--groups-footer-lines total-width))
+
+;; Compatibility: mark old APIs obsolete to encourage new names (no aliasing to avoid recursion).
+(make-obsolete 'context-navigator-view--footer-control-segments 'context-navigator-view-controls-segments "0.2.1")
+(make-obsolete 'context-navigator-view--footer-control-lines 'context-navigator-view-controls-lines "0.2.1")
+(make-obsolete 'context-navigator-view--header-toggle-lines 'context-navigator-view-controls-lines "0.2.1")
+(make-obsolete 'context-navigator-view--items-footer-lines 'context-navigator-view--items-extra-lines "0.2.1")
+(make-obsolete 'context-navigator-view--groups-footer-lines 'context-navigator-view--groups-help-lines "0.2.1")
 
 ;; Openable count helpers (footer [O]) ---------------------------------------
 
