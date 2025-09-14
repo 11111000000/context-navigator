@@ -124,25 +124,53 @@ Intended to be safe to call from timers and hooks."
 (defun context-navigator-view-counters-get-openable ()
   "Return cons (COUNT . PLUS) from cache; schedule a debounced refresh when stale.
 
-This is the primary read API used by the view render code."
+This is the primary read API used by the view render code. Reads cache from
+the Navigator sidebar buffer to respect buffer-local cache variables.
+If the cache is empty or zero while there are items in the model, compute
+synchronously once to provide a useful value."
   (let* ((now (float-time))
          (ttl (or context-navigator-openable-count-ttl 0.3))
-         ;; Robust when variables are not yet bound in the running buffer/timer context
-         (count (and (boundp 'context-navigator-view--openable-count)
-                     context-navigator-view--openable-count))
-         (stamp (if (boundp 'context-navigator-view--openable-stamp)
-                    context-navigator-view--openable-stamp
-                  0.0))
-         (plus  (and (boundp 'context-navigator-view--openable-plus)
-                     context-navigator-view--openable-plus)))
+         (buf (get-buffer context-navigator-view--buffer-name))
+         (vals (and (buffer-live-p buf)
+                    (with-current-buffer buf
+                      (list :count (and (boundp 'context-navigator-view--openable-count)
+                                        context-navigator-view--openable-count)
+                            :stamp (if (boundp 'context-navigator-view--openable-stamp)
+                                       context-navigator-view--openable-stamp
+                                     0.0)
+                            :plus  (and (boundp 'context-navigator-view--openable-plus)
+                                        context-navigator-view--openable-plus)))))
+         (count (plist-get vals :count))
+         (stamp (or (plist-get vals :stamp) 0.0))
+         (plus  (plist-get vals :plus)))
+    ;; Compute once now when cache is empty OR zero while model has items,
+    ;; to avoid returning 0 spuriously right after a refresh in tests/UI.
+    (when (and (buffer-live-p buf)
+               (or (null count)
+                   (and (integerp count)
+                        (= count 0)
+                        (let* ((st (ignore-errors (context-navigator--state-get)))
+                               (items (and st (context-navigator-state-items st))))
+                          (and (listp items) (> (length items) 0))))))
+      (let* ((res (context-navigator-view-counters--compute-openable context-navigator-openable-soft-cap))
+             (n (car res))
+             (pl (cdr res)))
+        (with-current-buffer buf
+          (setq context-navigator-view--openable-count n
+                context-navigator-view--openable-plus pl
+                context-navigator-view--openable-stamp (float-time)))
+        (setq count n
+              plus pl
+              stamp (float-time))))
+    ;; Schedule a debounced refresh when stale.
     (when (or (null count)
               (> (- now stamp) (max 0 ttl)))
       (context-navigator-events-debounce
        :sidebar-openable 0.18
        (lambda ()
-         (let ((buf (get-buffer context-navigator-view--buffer-name)))
-           (when (buffer-live-p buf)
-             (with-current-buffer buf
+         (let ((b (get-buffer context-navigator-view--buffer-name)))
+           (when (buffer-live-p b)
+             (with-current-buffer b
                (context-navigator-view-counters-refresh-openable)))))))
     (cons (or count 0)
           (and plus

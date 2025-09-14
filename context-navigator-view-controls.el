@@ -197,8 +197,14 @@ with the view module by not delegating building back to the view."
   "Return wrapped control lines (inline toolbar) for TOTAL-WIDTH.
 
 Wrap segments produced by `context-navigator-view-controls-segments' using
-the view's wrapping helper."
-  (let ((segs (context-navigator-view-controls-segments)))
+the view's wrapping helper. If any single segment is wider than TOTAL-WIDTH
+in the current style, rebuild segments with compact icon labels to ensure
+lines fit into TOTAL-WIDTH."
+  (let* ((segs (context-navigator-view-controls-segments))
+         (too-wide (cl-some (lambda (s) (> (string-width s) total-width)) segs)))
+    (when too-wide
+      (let ((context-navigator-controls-style 'icons))
+        (setq segs (context-navigator-view-controls-segments))))
     (context-navigator-view--wrap-segments segs total-width)))
 
 (provide 'context-navigator-view-controls)

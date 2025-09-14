@@ -51,6 +51,16 @@
 (require 'context-navigator-minibuf-mixed-input-test)
 (require 'context-navigator-buffer-mode-test)
 
+;; New tests after refactor
+(require 'context-navigator-view-controls-unit-test)
+(require 'context-navigator-headerline-test)
+(require 'context-navigator-compat-aliases-test)
+
+;; Additional tests
+(require 'context-navigator-view-counters-test)
+(require 'context-navigator-view-spinner-test)
+(require 'context-navigator-view-indicators-test)
+
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."
   (interactive)

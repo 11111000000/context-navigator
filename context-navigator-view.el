@@ -948,10 +948,23 @@ Order of operations:
   "Subscribe to project switch updates to refresh groups list when needed."
   (push (context-navigator-events-subscribe
          :project-switch
-         (lambda (_root)
+         (lambda (root)
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
+                 ;; cd into the project root (or a sensible global dir) for the Navigator buffer
+                 (let* ((proj-dir (and (stringp root)
+                                       (not (string-empty-p root))
+                                       (expand-file-name root)))
+                        (global-dir (and (boundp 'context-navigator-global-dir)
+                                         (expand-file-name (symbol-value 'context-navigator-global-dir))))
+                        (target
+                         (cond
+                          ((and proj-dir (file-directory-p proj-dir)) (file-name-as-directory proj-dir))
+                          ((and global-dir (file-directory-p global-dir)) (file-name-as-directory global-dir))
+                          ((file-directory-p (expand-file-name "~")) (file-name-as-directory (expand-file-name "~")))
+                          (t default-directory))))
+                   (setq default-directory target))
                  ;; Invalidate cached groups and refresh when groups view is active.
                  (setq context-navigator-view--groups nil)
                  (when (eq context-navigator-view--mode 'groups)

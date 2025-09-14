@@ -42,8 +42,12 @@ rendered inside the buffer itself (above the \"..\" line)."
     (let ((controls (ignore-errors
                       (when (fboundp 'context-navigator-view-controls-segments)
                         (context-navigator-view-controls-segments)))))
-      ;; Compose only control segments so text properties (keymaps) are preserved.
-      (apply #'concat (or controls '())))))
+      ;; Concatenate segments, trimming leading space on all but the first segment
+      ;; so callers can provide space-prefixed segments without doubling spaces.
+      (when (and (listp controls) controls)
+        (let ((first (car controls))
+              (rest  (mapcar #'string-trim-left (cdr controls))))
+          (apply #'concat (append (list (or first "")) rest)))))))
 
 (defun context-navigator-headerline--apply (buffer)
   "Apply or remove header-line controls in BUFFER based on the feature flag."
