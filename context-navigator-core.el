@@ -1294,6 +1294,48 @@ When NO-CONFIRM is non-nil or Emacs runs in batch mode (noninteractive), do not 
     (message "Duplicated group %s → %s (%s)" src new-display dst)
     dst))
 
+;;;###autoload
+(defun context-navigator-group-edit-description (&optional slug new-desc)
+  "Add or edit description for group SLUG in current project/global.
+Prompts for group and description when arguments are nil.
+Empty description clears it."
+  (interactive)
+  (let* ((root (context-navigator--current-root))
+         (cand (ignore-errors (context-navigator--groups-candidates root)))
+         (cur-st (ignore-errors (context-navigator--state-get)))
+         (cur (and cur-st (context-navigator-state-current-group-slug cur-st)))
+         (slug (or slug
+                   (cdr (assoc (completing-read
+                                (if cur
+                                    (format "Edit description (default %s): " cur)
+                                  "Edit description for group: ")
+                                cand nil t nil nil
+                                (car (rassoc cur cand)))
+                               cand))))
+         (_ (when (or (null slug) (string-empty-p slug))
+              (user-error "No group selected")))
+         (st (context-navigator--state-read root))
+         (alist (and (plist-member st :descriptions) (plist-get st :descriptions)))
+         (old (and (listp alist) (cdr (assoc slug alist))))
+         (input (or new-desc
+                    (read-string (format "Description for %s (empty to clear): " slug) old)))
+         (desc (string-trim input))
+         (alist* (let ((clean (and (listp alist)
+                                   (cl-remove-if (lambda (cell) (equal (car-safe cell) slug)) alist))))
+                   (if (string-empty-p desc)
+                       clean
+                     (cons (cons slug desc) clean)))))
+    ;; persist updated descriptions alist
+    (setq st (plist-put (copy-sequence st) :descriptions alist*))
+    (context-navigator--state-write root st)
+    ;; UI refresh: schedule groups list refresh; modeline cache will refresh shortly.
+    (context-navigator-groups-open)
+    (force-mode-line-update t)
+    (message (if (string-empty-p desc)
+                 "Cleared description for %s" "Saved description for %s: %s")
+             slug (unless (string-empty-p desc) desc))
+    desc))
+
 (defun context-navigator--pick-root-for-autoproject ()
   "Return a project root for immediate auto-project activation.
 Strategy:

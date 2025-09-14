@@ -219,13 +219,49 @@ REST is a list of item lines."
 Per-point status is shown in the modeline now; do not render it inside the
 buffer footer. Also remove the single-key help (\"? for help\") from the footer.
 
-Additionally, append the Stats block (collapsible) when enabled."
+Additionally, append the Stats block (collapsible) when enabled, and make its
+header clickable with mouse-1/RET/TAB (magit-like).
+
+Important: keep Stats independent from the main title collapse."
   (let* ((help-segments '()) ;; no short inline help any more
          (_help-lines
           (mapcar (lambda (s) (propertize s 'face 'shadow))
                   (context-navigator-view--wrap-segments help-segments total-width)))
-         (stats-lines (and (fboundp 'context-navigator-stats-footer-lines)
+         ;; Ensure Stats do not depend on the main collapsed flag: bind it to nil during rendering.
+         (raw-stats (and (fboundp 'context-navigator-stats-footer-lines)
+                         (let ((context-navigator-view--collapsed-p nil))
                            (context-navigator-stats-footer-lines total-width))))
+         ;; Post-process stats lines: ensure the header has an interactive keymap and hint.
+         (stats-lines
+          (and raw-stats
+               (let ((first t))
+                 (mapcar
+                  (lambda (s)
+                    (let* ((s (copy-sequence s))
+                           ;; Treat the first line as header; otherwise consider it a header
+                           ;; only if the stats-toggle property is present at position 0.
+                           ;; Using get-text-property avoids args-out-of-range errors seen with text-property-any on some propertized icon strings.
+                           (is-header (or first
+                                          (get-text-property 0 'context-navigator-stats-toggle s))))
+                      (when is-header
+                        (let ((km (make-sparse-keymap)))
+                          (define-key km [mouse-1] #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "RET")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "C-m")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "TAB")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "<tab>")     #'context-navigator-view-stats-toggle)
+                          (define-key km [tab]             #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "C-i")       #'context-navigator-view-stats-toggle)
+                          (add-text-properties 0 (length s)
+                                               (list 'mouse-face 'highlight
+                                                     'help-echo "Click/TAB/RET — toggle stats"
+                                                     'context-navigator-stats-toggle t
+                                                     'keymap km
+                                                     'local-map km)
+                                               s))
+                        (setq first nil))
+                      s))
+                  raw-stats)))))
     ;; Add one empty line above the stats block (when present)
     (if stats-lines (cons "" stats-lines) '())))
 
@@ -244,10 +280,11 @@ Additionally, append the Stats block (collapsible) when enabled."
 Returns the list of lines that were rendered."
   (cl-destructuring-bind (hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
-    (let* ((body (append (list up) rest
-                         (context-navigator-view--items-extra-lines total-width)))
+    (let* ((footer (context-navigator-view--items-extra-lines total-width))
+           (body (append (list up) rest footer))
            (lines (if context-navigator-view--collapsed-p
-                      (list "" hl)
+                      ;; When collapsed, keep the Stats block visible (as a separate header below).
+                      (append (list "" hl) footer)
                     (cons "" (cons hl body)))))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)

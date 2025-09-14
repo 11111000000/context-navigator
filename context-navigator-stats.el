@@ -278,7 +278,7 @@ when an icon name is unavailable in the installed icon set."
            (arrow (if context-navigator-stats--expanded-p "▾" "▸"))
            (hdr-ico (or (context-navigator-stats--icon :header) ""))
            (lbl (context-navigator-i18n :stats))
-           (hdr (format " %s %s %s: %d  ~%s  (~%d %s)"
+           (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
                         arrow
                         hdr-ico
                         lbl

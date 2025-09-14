@@ -49,6 +49,8 @@
 (autoload 'context-navigator-group-delete "context-navigator-core" "Delete a group." t)
 ;;;###autoload
 (autoload 'context-navigator-group-duplicate "context-navigator-core" "Duplicate a group." t)
+;;;###autoload
+(autoload 'context-navigator-group-edit-description "context-navigator-core" "Edit description for a group." t)
 
 ;; Sidebar entry points (autoloaded)
 ;;;###autoload

@@ -669,7 +669,7 @@
      (zh . " RET: 打开分组")
      (ja . " RET: グループを開く"))
     (:groups-help-add
-     (en . " a: add group")
+     (en . " add group")
      (ru . " a: создать группу")
      (fr . " a: ajouter")
      (de . " a: hinzufügen")

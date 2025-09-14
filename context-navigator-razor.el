@@ -30,7 +30,7 @@
   "Occam (AI) context filter for Context Navigator."
   :group 'context-navigator)
 
-(defcustom context-navigator-razor-model "gpt-4.1-mini"
+(defcustom context-navigator-razor-model "deepseek-chat"
   "Default cheap model to use via gptel."
   :type 'string :group 'context-navigator-razor)
 

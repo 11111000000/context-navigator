@@ -98,6 +98,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-group-rename "context-navigator-core" (&optional old-slug new-display))
 (declare-function context-navigator-group-delete "context-navigator-core" (&optional slug))
 (declare-function context-navigator-group-duplicate "context-navigator-core" (&optional src-slug new-display))
+(declare-function context-navigator-group-edit-description "context-navigator-core" (&optional slug new-desc))
 
 (defconst context-navigator-view--buffer-name "*context-navigator*")
 
@@ -624,6 +625,7 @@ Searches for known interactive properties used in the sidebar."
                   context-navigator-group-slug
                   context-navigator-action
                   context-navigator-toggle
+                  context-navigator-stats-toggle
                   context-navigator-groups-up))
          (best nil))
     (dolist (p props)
@@ -669,6 +671,7 @@ Searches for known interactive properties used in the sidebar."
   "Move point to the next interactive element (title, items, groups, toggles, actions).
 
 Special case: when on the title line, TAB toggles collapse/expand (magit-like).
+Special case: when on the Stats header, TAB toggles stats expand/collapse.
 
 Wraps to the top when no further element is found after point."
   (interactive)
@@ -677,11 +680,16 @@ Wraps to the top when no further element is found after point."
     (when (get-text-property here 'context-navigator-title)
       (context-navigator-view-toggle-collapse)
       (cl-return-from context-navigator-view-tab-next))
+    ;; On stats header: toggle stats and do not move
+    (when (get-text-property here 'context-navigator-stats-toggle)
+      (context-navigator-view-stats-toggle)
+      (cl-return-from context-navigator-view-tab-next))
     (let* ((props '(context-navigator-title
                     context-navigator-item
                     context-navigator-group-slug
                     context-navigator-action
                     context-navigator-toggle
+                    context-navigator-stats-toggle
                     context-navigator-groups-up))
            ;; If we are inside an interactive segment, skip to its end first,
            ;; so repeated TAB moves to the next segment (not within the same one).
@@ -714,6 +722,7 @@ Wraps to the bottom when no previous element is found before point."
                   context-navigator-group-slug
                   context-navigator-action
                   context-navigator-toggle
+                  context-navigator-stats-toggle
                   context-navigator-groups-up))
          ;; If we are inside an interactive segment, start from the segment's begin,
          ;; so Shift-TAB moves to the previous segment (not to the start of the same one).
@@ -1207,7 +1216,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-view-push-now)
     ;; Stats toggle
-    (define-key m (kbd "s")   #'context-navigator-stats-toggle)
+    (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     ;; Align with transient: U → unload context
     (define-key m (kbd "U")   #'context-navigator-context-unload)
@@ -1226,6 +1235,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
     (define-key m (kbd "a")   #'context-navigator-view-group-create)
     (define-key m (kbd "r")   #'context-navigator-view-group-rename)
+    (define-key m (kbd "e")   #'context-navigator-view-group-edit-description)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
     (define-key m (kbd "q")   #'context-navigator-view-quit)
     (define-key m (kbd "?")   #'context-navigator-view-transient)
@@ -1266,8 +1276,9 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map (kbd "x") #'context-navigator-view-toggle-push)
   (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
   (define-key context-navigator-view-mode-map (kbd "K") #'context-navigator-view-close-all-buffers)
-  (define-key context-navigator-view-mode-map (kbd "s") #'context-navigator-stats-toggle)
+  (define-key context-navigator-view-mode-map (kbd "s") #'context-navigator-view-stats-toggle)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
+  (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-group-edit-description)
   (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
 (when (and (keymapp context-navigator-view--group-line-keymap)
@@ -1654,8 +1665,7 @@ Buffers are opened in background; we do not change window focus."
     (cl-return-from context-navigator-view-activate))
   ;; Stats header toggle
   (when (get-text-property (point) 'context-navigator-stats-toggle)
-    (when (fboundp 'context-navigator-stats-toggle)
-      (context-navigator-stats-toggle))
+    (context-navigator-view-stats-toggle)
     (cl-return-from context-navigator-view-activate))
   (let ((act (get-text-property (point) 'context-navigator-action))
         (tgl (get-text-property (point) 'context-navigator-toggle)))
@@ -1734,6 +1744,14 @@ Buffers are opened in background; we do not change window focus."
         (ignore-errors (context-navigator-group-duplicate slug)))
     (message "Press h to open groups list first")))
 
+(defun context-navigator-view-group-edit-description ()
+  "Edit description for selected group (groups mode) or current group otherwise."
+  (interactive)
+  (if (eq context-navigator-view--mode 'groups)
+      (let ((slug (car (or (context-navigator-view--at-group) '(nil)))))
+        (ignore-errors (context-navigator-group-edit-description slug)))
+    (ignore-errors (context-navigator-group-edit-description))))
+
 ;;;###autoload
 (defun context-navigator-view-show-groups ()
   "Open sidebar (if needed) and show the groups list for current project/global."
@@ -1752,6 +1770,13 @@ Buffers are opened in background; we do not change window focus."
       (context-navigator-view--schedule-render))))
 
 (require 'context-navigator-view-title)
+
+(defun context-navigator-view-stats-toggle ()
+  "Toggle visibility of the Stats block and refresh the view."
+  (interactive)
+  (when (fboundp 'context-navigator-stats-toggle)
+    (context-navigator-stats-toggle))
+  (context-navigator-view--schedule-render))
 
 (provide 'context-navigator-view)
 ;;; context-navigator-view.el ends here
