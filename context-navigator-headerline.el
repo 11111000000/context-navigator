@@ -42,12 +42,9 @@ rendered inside the buffer itself (above the \"..\" line)."
     (let ((controls (ignore-errors
                       (when (fboundp 'context-navigator-view-controls-segments)
                         (context-navigator-view-controls-segments)))))
-      ;; Concatenate segments, trimming leading space on all but the first segment
-      ;; so callers can provide space-prefixed segments without doubling spaces.
+      ;; Do not trim spaces — segments are responsible for their own spacing.
       (when (and (listp controls) controls)
-        (let ((first (car controls))
-              (rest  (mapcar #'string-trim-left (cdr controls))))
-          (apply #'concat (append (list (or first "")) rest)))))))
+        (apply #'concat controls)))))
 
 (defun context-navigator-headerline--apply (buffer)
   "Apply or remove header-line controls in BUFFER based on the feature flag."

@@ -50,7 +50,7 @@
   "When non-nil, highlight the active group in the groups list."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-controls-style 'text
+(defcustom context-navigator-controls-style 'icons
   "Style for sidebar controls (toggles and footer buttons):
 - auto  : prefer compact icon-like labels when possible
 - icons : force compact icon-like labels

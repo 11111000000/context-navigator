@@ -110,6 +110,10 @@ Files larger than this threshold are skipped."
                  ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate)
                  ("a"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
                  ("r"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
+                 ("e"   (lambda ()
+                          (or (ignore-errors (context-navigator-i18n :groups-help-edit-description))
+                              "Edit description"))
+                  context-navigator-view-group-edit-description)
                  ("c"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
                  ("d"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
                  ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]

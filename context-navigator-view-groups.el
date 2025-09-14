@@ -54,25 +54,10 @@ Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
         lines)))))
 
 ;;;###autoload
-(defun context-navigator-view--groups-help-lines (total-width)
-  "Return help/footer lines for groups view wrapped to TOTAL-WIDTH (controls moved to header-line).
-
-Remove the single-key \"? for help\" hint; the header-line contains controls
-and the transient/help command can be invoked explicitly."
-  (let* ((help-segments
-          (list (context-navigator-i18n :groups-help-open)
-                (context-navigator-i18n :groups-help-add)
-                (context-navigator-i18n :groups-help-rename)
-                (context-navigator-i18n :groups-help-delete)
-                (context-navigator-i18n :groups-help-copy)
-                (context-navigator-i18n :groups-help-refresh)
-                (context-navigator-i18n :groups-help-back)
-                (context-navigator-i18n :groups-help-quit)))
-         (help-lines
-          (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-view--wrap-segments help-segments total-width))))
-    ;; Controls/toggles are shown in the header-line. Keep a blank line, then help lines.
-    (append (list "") help-lines)))
+(defun context-navigator-view--groups-help-lines (_total-width)
+  "Return minimal footer hint for groups view (transient provides full help)."
+  (let* ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
+    (list "" hint)))
 
 ;;;###autoload
 (defun context-navigator-view--render-groups (state header total-width)
@@ -83,9 +68,10 @@ Returns the list of lines that were rendered."
          (body (append
                 (context-navigator-view--groups-body-lines state)
                 (context-navigator-view--groups-help-lines total-width)))
+         ;; Add a blank line after the header line before the list of groups.
          (lines (if context-navigator-view--collapsed-p
                     (list "" hl)
-                  (cons "" (cons hl body)))))
+                  (append (list "" hl "") body))))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
@@ -115,9 +101,10 @@ Returns the list of lines that were rendered."
                                                'context-navigator-group-slug nil)))
             (when pos
               (goto-char pos)
-              (beginning-of-line)))))
-      (setq context-navigator-view--last-active-group active
-            context-navigator-view--last-mode 'groups))
+              (beginning-of-line))))
+        ;; Update last-active and last-mode within the scope where `active' is bound.
+        (setq context-navigator-view--last-active-group active
+              context-navigator-view--last-mode 'groups)))
     lines))
 
 (provide 'context-navigator-view-groups)

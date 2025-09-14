@@ -688,6 +688,16 @@
      (be . " r: перайменаваць")
      (zh . " r: 重命名")
      (ja . " r: 名前変更"))
+    (:groups-help-edit-description
+     (en . " e: edit description")
+     (ru . " e: изменить описание")
+     (fr . " e: modifier la description")
+     (de . " e: Beschreibung bearbeiten")
+     (es . " e: editar descripción")
+     (uk . " e: редагувати опис")
+     (be . " e: рэдагаваць апісанне")
+     (zh . " e: 编辑描述")
+     (ja . " e: 説明を編集"))
     (:groups-help-delete
      (en . " d: delete")
      (ru . " d: удалить")
@@ -748,6 +758,16 @@
      (be . " ?: даведка")
      (zh . " ?: 帮助")
      (ja . " ?: ヘルプ"))
+    (:menu-hint
+     (en . "  [?] - menu")
+     (ru . "  [?] - меню")
+     (fr . "  [?] - menu")
+     (de . "  [?] - Menü")
+     (es . "  [?] - menú")
+     (uk . "  [?] - меню")
+     (be . "  [?] - меню")
+     (zh . "  [?] - 菜单")
+     (ja . "  [?] - メニュー"))
     (:status-up-to-groups
      (en . "<to groups>")
      (ru . "<к группам>")

@@ -214,20 +214,11 @@ REST is a list of item lines."
 
 ;;;###autoload
 (defun context-navigator-view--items-footer-lines (total-width)
-  "Return footer lines for items view wrapped to TOTAL-WIDTH (controls moved to header-line).
-
-Per-point status is shown in the modeline now; do not render it inside the
-buffer footer. Also remove the single-key help (\"? for help\") from the footer.
-
-Additionally, append the Stats block (collapsible) when enabled, and make its
-header clickable with mouse-1/RET/TAB (magit-like).
-
-Important: keep Stats independent from the main title collapse."
-  (let* ((help-segments '()) ;; no short inline help any more
-         (_help-lines
-          (mapcar (lambda (s) (propertize s 'face 'shadow))
-                  (context-navigator-view--wrap-segments help-segments total-width)))
-         ;; Ensure Stats do not depend on the main collapsed flag: bind it to nil during rendering.
+  "Return footer lines for items view (controls moved to header-line).
+- Show collapsible Stats block
+- Add a compact \"[?] - menu\" hint at the very bottom (i18n)
+- Keep Stats independent from the main title collapse"
+  (let* (;; Ensure Stats do not depend on the main collapsed flag: bind it to nil during rendering.
          (raw-stats (and (fboundp 'context-navigator-stats-footer-lines)
                          (let ((context-navigator-view--collapsed-p nil))
                            (context-navigator-stats-footer-lines total-width))))
@@ -240,7 +231,6 @@ Important: keep Stats independent from the main title collapse."
                     (let* ((s (copy-sequence s))
                            ;; Treat the first line as header; otherwise consider it a header
                            ;; only if the stats-toggle property is present at position 0.
-                           ;; Using get-text-property avoids args-out-of-range errors seen with text-property-any on some propertized icon strings.
                            (is-header (or first
                                           (get-text-property 0 'context-navigator-stats-toggle s))))
                       (when is-header
@@ -262,8 +252,12 @@ Important: keep Stats independent from the main title collapse."
                         (setq first nil))
                       s))
                   raw-stats)))))
-    ;; Add one empty line above the stats block (when present)
-    (if stats-lines (cons "" stats-lines) '())))
+    (let ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
+      (if stats-lines
+          ;; Blank line, stats block, blank line, then hint
+          (append (list "") stats-lines (list "" hint))
+        ;; Only the hint with a blank line above
+        (list "" hint)))))
 
 ;; Backward-compatibility: new canonical name is
 ;; `context-navigator-view--items-extra-lines'. Provide it as an alias that
