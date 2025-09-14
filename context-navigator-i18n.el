@@ -430,6 +430,24 @@
      (be . "Брытва Оккама ўжыта: засталося %d з %d")
      (zh . "已应用奥卡姆：保留 %d/%d")
      (ja . "オッカム適用：%d/%d を保持"))
+    (:razor-parse-flex-stats
+     (en . "Matched %d of %d tokens; ambiguous %d; unknown %d")
+     (ru . "Распознано %d из %d токенов; неоднозначных %d; неизвестных %d"))
+    (:razor-ambiguous-policy-skip
+     (en . "Some tokens matched multiple items and were skipped")
+     (ru . "Некоторые токены совпали с несколькими элементами и были пропущены"))
+    (:razor-no-tokens
+     (en . "Could not extract any identifiers from the model response")
+     (ru . "Не удалось извлечь идентификаторы из ответа модели"))
+    (:razor-fallback-json-used
+     (en . "JSON detected inside non-JSON response; using it")
+     (ru . "В ответе обнаружен JSON; используем его"))
+    (:razor-parse-mode
+     (en . "Parse mode: %s")
+     (ru . "Режим парсинга: %s"))
+    (:razor-retry
+     (en . "Retry?")
+     (ru . "Повторить?"))
     (:razor-undo
      (en . "Undo")
      (ru . "Отменить")

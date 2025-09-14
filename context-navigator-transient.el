@@ -68,7 +68,8 @@ Files larger than this threshold are skipped."
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
     ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
-    ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run)]
+    ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
+     :if (lambda () (derived-mode-p 'org-mode)))]
    ["Logs"
     ("D" "Toggle logs" context-navigator-log-toggle)
     ("L" "Open logs" context-navigator-log-open)
