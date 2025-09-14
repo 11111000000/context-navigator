@@ -201,9 +201,6 @@ Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers.
 
 ;; --- Autoproj: Dired + GPTel/org gptel-aibo integration (built-in) ---
 
-(require 'cl-lib)
-(require 'subr-x)
-
 ;; Ensure Dired modes are considered interesting non-file modes
 (when (boundp 'context-navigator-project-nonfile-modes)
   (dolist (m '(dired-mode wdired-mode))

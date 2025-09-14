@@ -7,11 +7,10 @@
 ;; Navigator buffer. Enabled by default and configurable via:
 ;;   - context-navigator-view-headerline-enable
 ;;
-;; The header-line shows:
-;;   [context-navigator: default]  [A] [→] [O] [∅] [✖] [⇪] [⌦]
-;; The project/group title is rendered at the left (mode-line-emphasis), followed
-;; by the interactive control segments produced by the view. The header-line no
-;; longer contains the per-point status (it is shown in the modeline).
+;; The header-line shows only interactive control segments (toggles + actions)
+;; produced by the controls module; the project/group title is rendered inside
+;; the buffer itself (above the \"..\" line). Per-point status is displayed in
+;; the modeline.
 ;;
 ;; This module avoids hard requires on the view module to prevent load cycles:
 ;; it declares the helper functions used and calls them when available.

@@ -266,103 +266,11 @@ it can become responsive to focus changes."
   (ignore-errors (context-navigator-view-counters-refresh-openable)))
 
 
-(defun context-navigator-view--make-toggle-segments ()
-  "Build header toggle segments for push→gptel, auto-project and Undo/Redo with mouse keymaps.
-Respects `context-navigator-controls-style' for compact icon/text labels."
-  (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
-                       context-navigator--push-to-gptel))
-         (auto-on (and (boundp 'context-navigator--auto-project-switch)
-                       context-navigator--auto-project-switch))
-         (gptel-available (ignore-errors (context-navigator-gptel-available-p)))
-         (style (or context-navigator-controls-style 'auto))
-         ;; label builders
-         (lbl-push
-          (pcase style
-            ((or 'icons 'auto) " [→]")
-            (_ (format " [→gptel: %s]" (if push-on "on" "off")))))
-         (lbl-auto
-          (pcase style
-            ((or 'icons 'auto) " [A]")
-            (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off")))))
-         (lbl-redo
-          (pcase style
-            ((or 'icons 'auto) " [↷]")
-            (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
-         (lbl-undo
-          (pcase style
-            ((or 'icons 'auto) " [↶]")
-            (_ (concat " [" (context-navigator-i18n :razor-undo) "]")))))
-    (let* ((seg1 (let* ((s (copy-sequence lbl-push))
-                        (m (let ((km (make-sparse-keymap)))
-                             (when gptel-available
-                               (define-key km [mouse-1] #'context-navigator-view-toggle-push)
-                               (define-key km [header-line mouse-1] #'context-navigator-view-toggle-push))
-                             km))
-                        (fg (if (and push-on gptel-available) "green4" "gray"))
-                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                   (add-text-properties beg (length s)
-                                        (list 'mouse-face 'highlight
-                                              'help-echo (if gptel-available
-                                                             (context-navigator-i18n :toggle-push)
-                                                           "gptel not available")
-                                              'keymap m
-                                              'local-map m
-                                              'context-navigator-toggle 'push
-                                              'face (if gptel-available
-                                                        (list :foreground fg)
-                                                      'shadow))
-                                        s)
-                   s))
-           (seg2 (let* ((s (copy-sequence lbl-auto))
-                        (m (let ((km (make-sparse-keymap)))
-                             (define-key km [mouse-1] #'context-navigator-view-toggle-auto-project)
-                             (define-key km [header-line mouse-1] #'context-navigator-view-toggle-auto-project)
-                             km))
-                        (fg (if auto-on "green4" "gray"))
-                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                   (add-text-properties beg (length s)
-                                        (list 'mouse-face 'highlight
-                                              'help-echo (context-navigator-i18n :toggle-auto)
-                                              'keymap m
-                                              'local-map m
-                                              'context-navigator-toggle 'auto
-                                              'face (list :foreground fg))
-                                        s)
-                   s))
-
-           (seg3 (let* ((s (copy-sequence lbl-redo))
-                        (m (let ((km (make-sparse-keymap)))
-                             (when (fboundp 'context-navigator-redo)
-                               (define-key km [mouse-1] #'context-navigator-redo)
-                               (define-key km [header-line mouse-1] #'context-navigator-redo))
-                             km))
-                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                   (add-text-properties beg (length s)
-                                        (list 'mouse-face 'highlight
-                                              'help-echo (context-navigator-i18n :razor-redo)
-                                              'keymap m
-                                              'local-map m
-                                              'context-navigator-toggle 'redo)
-                                        s)
-                   s))
-
-           (seg4 (let* ((s (copy-sequence lbl-undo))
-                        (m (let ((km (make-sparse-keymap)))
-                             (when (fboundp 'context-navigator-undo)
-                               (define-key km [mouse-1] #'context-navigator-undo)
-                               (define-key km [header-line mouse-1] #'context-navigator-undo))
-                             km))
-                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                   (add-text-properties beg (length s)
-                                        (list 'mouse-face 'highlight
-                                              'help-echo (context-navigator-i18n :razor-undo)
-                                              'keymap m
-                                              'local-map m
-                                              'context-navigator-toggle 'undo)
-                                        s)
-                   s))
-           )
-      (list seg1 seg2 seg3 seg4))))
+(defalias 'context-navigator-view--make-toggle-segments
+  'context-navigator-view-controls--build-toggles)
+(make-obsolete 'context-navigator-view--make-toggle-segments
+               'context-navigator-view-controls--build-toggles
+               "0.2.2")
 
 
 ;; Moved to context-navigator-view-controls.el (provides `context-navigator-view-controls-lines').
@@ -443,41 +351,11 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 (defun context-navigator-view--spinner-start ()
   "Start or restart the lightweight loading spinner timer.
 Degrades to a static indicator when timer slippage exceeds threshold."
-  (when (timerp context-navigator-view--spinner-timer)
-    (cancel-timer context-navigator-view--spinner-timer))
-  (setq context-navigator-view--spinner-index 0)
-  (setq context-navigator-view--spinner-last-time (float-time))
-  (setq context-navigator-view--spinner-degraded nil)
-  (let* ((interval (or context-navigator-view-spinner-interval 0.1))
-         (buf (current-buffer)))
-    (setq context-navigator-view--spinner-timer
-          (run-at-time 0 interval
-                       (lambda ()
-                         (let ((bb (if (buffer-live-p buf) buf (get-buffer context-navigator-view--buffer-name))))
-                           (when (buffer-live-p bb)
-                             (with-current-buffer bb
-                               (let* ((now (float-time))
-                                      (dt (- now (or context-navigator-view--spinner-last-time now)))
-                                      (thr (or context-navigator-view-spinner-degrade-threshold 0.25)))
-                                 (setq context-navigator-view--spinner-last-time now)
-                                 (when (> dt (+ interval thr))
-                                   ;; таймер подтормаживает — больше не дёргаем анимацию
-                                   (setq context-navigator-view--spinner-degraded t)
-                                   (when (timerp context-navigator-view--spinner-timer)
-                                     (cancel-timer context-navigator-view--spinner-timer))
-                                   (setq context-navigator-view--spinner-timer nil))
-                                 (when (not context-navigator-view--spinner-degraded)
-                                   (setq context-navigator-view--spinner-index
-                                         (1+ (or context-navigator-view--spinner-index 0))))
-                                 (context-navigator-view--schedule-render))))))))))
+  (ignore-errors (context-navigator-view-spinner-start)))
+
 (defun context-navigator-view--spinner-stop ()
   "Stop the loading spinner timer and reset index."
-  (when (timerp context-navigator-view--spinner-timer)
-    (cancel-timer context-navigator-view--spinner-timer))
-  (setq context-navigator-view--spinner-timer nil)
-  (setq context-navigator-view--spinner-index 0)
-  (setq context-navigator-view--spinner-last-time 0.0)
-  (setq context-navigator-view--spinner-degraded nil))
+  (ignore-errors (context-navigator-view-spinner-stop)))
 
 
 ;; Controls API declarations are defined earlier to avoid duplication.
