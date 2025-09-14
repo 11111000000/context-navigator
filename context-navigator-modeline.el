@@ -15,7 +15,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-(declare-function context-navigator-view--status-text-at-point "context-navigator-view" ())
+(declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
 
 (defgroup context-navigator-modeline nil
   "Modeline settings for Context Navigator."

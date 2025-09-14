@@ -31,7 +31,6 @@
 ;; Controls/items/groups are split into dedicated modules to reduce coupling.
 ;; Require controls (toolbar) and the items/groups renderers so the view can
 ;; call their implementations directly without leaving thin wrappers behind.
-(require 'context-navigator-view-controls)
 (require 'context-navigator-view-items)
 (require 'context-navigator-view-groups)
 
@@ -366,10 +365,8 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
       (list seg1 seg2 seg3 seg4))))
 
 
-(defun context-navigator-view-controls-lines (total-width)
-  "Return header toggle lines wrapped to TOTAL-WIDTH."
-  (let ((toggles (context-navigator-view--make-toggle-segments)))
-    (context-navigator-view--wrap-segments toggles total-width)))
+;; Moved to context-navigator-view-controls.el (provides `context-navigator-view-controls-lines').
+;; This placeholder avoids a duplicate definition in view.el.
 
 ;; Controls moved to context-navigator-view-controls.el
 ;; Keep compiler happy with declarations; actual definitions provided by the module.
@@ -483,11 +480,7 @@ Degrades to a static indicator when timer slippage exceeds threshold."
   (setq context-navigator-view--spinner-degraded nil))
 
 
-;; Controls API (implemented in context-navigator-view-controls.el)
-(declare-function context-navigator-view-controls--build-toggles "context-navigator-view-controls" ())
-(declare-function context-navigator-view-controls--build-actions "context-navigator-view-controls" ())
-(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
-(declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
+;; Controls API declarations are defined earlier to avoid duplication.
 
 
 ;; Groups rendering helpers moved to context-navigator-view-groups.el
@@ -1502,7 +1495,7 @@ Do not highlight header/separator lines."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                              (not (eq w (selected-window)))))
+                                                   (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -1781,6 +1774,7 @@ Buffers are opened in background; we do not change window focus."
      ((eq act 'open-buffers) (context-navigator-view-open-all-buffers))
      ((eq act 'close-buffers) (context-navigator-view-close-all-buffers))
      ((eq act 'clear-group) (context-navigator-view-clear-group))
+     ((eq act 'clear-gptel) (context-navigator-view-clear-gptel))
      ((eq act 'toggle-all-gptel) (context-navigator-view-toggle-all-gptel))
      ;; Header toggles
      ((eq tgl 'push) (context-navigator-view-toggle-push))
