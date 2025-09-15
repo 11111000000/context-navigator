@@ -60,9 +60,7 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Auto refresh sidebar/model after external changes."
   :type 'boolean :group 'context-navigator)
 
-
-
-(defcustom context-navigator-view-width 33
+(defcustom context-navigator-view-width 42
   "Sidebar window width in columns."
   :type 'integer :group 'context-navigator)
 
