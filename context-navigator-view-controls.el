@@ -67,17 +67,17 @@ falls back to compact labels or text with brackets otherwise."
             (if gicons
                 (concat " " (or ico fallback))
               fallback)))
-         (lbl-redo
-          (let* ((fallback (pcase style
-                             ((or 'icons 'auto) " [↷]")
-                             (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
-                 (ico (and gicons (context-navigator-controls-icon 'redo))))
-            (if gicons (concat " " (or ico fallback)) fallback)))
          (lbl-undo
           (let* ((fallback (pcase style
                              ((or 'icons 'auto) " [↶]")
                              (_ (concat " [" (context-navigator-i18n :razor-undo) "]"))))
                  (ico (and gicons (context-navigator-controls-icon 'undo))))
+            (if gicons (concat " " (or ico fallback)) fallback)))
+         (lbl-redo
+          (let* ((fallback (pcase style
+                             ((or 'icons 'auto) " [↷]")
+                             (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
+                 (ico (and gicons (context-navigator-controls-icon 'redo))))
             (if gicons (concat " " (or ico fallback)) fallback))))
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
@@ -112,12 +112,26 @@ falls back to compact labels or text with brackets otherwise."
                                               'local-map m
                                               'context-navigator-toggle 'auto)
                                         s)
-                   ;; In text fallback, tint color; in icon mode face comes from icon
                    (unless gicons
                      (let ((fg (if auto-on "green4" "gray")))
                        (add-text-properties beg (length s) (list 'face (list :foreground fg)) s)))
                    s))
-           (seg3 (let* ((s (copy-sequence lbl-redo))
+           (seg3 (let* ((s (copy-sequence lbl-undo))
+                        (m (let ((km (make-sparse-keymap)))
+                             (when (fboundp 'context-navigator-undo)
+                               (define-key km [mouse-1] #'context-navigator-undo)
+                               (define-key km [header-line mouse-1] #'context-navigator-undo))
+                             km))
+                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                   (add-text-properties beg (length s)
+                                        (list 'mouse-face 'highlight
+                                              'help-echo (context-navigator-i18n :razor-undo)
+                                              'keymap m
+                                              'local-map m
+                                              'context-navigator-toggle 'undo)
+                                        s)
+                   s))
+           (seg4 (let* ((s (copy-sequence lbl-redo))
                         (m (let ((km (make-sparse-keymap)))
                              (when (fboundp 'context-navigator-redo)
                                (define-key km [mouse-1] #'context-navigator-redo)
@@ -132,21 +146,7 @@ falls back to compact labels or text with brackets otherwise."
                                               'context-navigator-toggle 'redo)
                                         s)
                    s))
-           (seg4 (let* ((s (copy-sequence lbl-undo))
-                        (m (let ((km (make-sparse-keymap)))
-                             (when (fboundp 'context-navigator-undo)
-                               (define-key km [mouse-1] #'context-navigator-undo)
-                               (define-key km [header-line mouse-1] #'context-navigator-undo))
-                             km))
-                        (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                   (add-text-properties beg (length s)
-                                        (list 'mouse-face 'highlight
-                                              'help-echo (context-navigator-i18n :razor-undo)
-                                              'keymap m
-                                              'local-map m
-                                              'context-navigator-toggle 'undo)
-                                        s)
-                   s)))
+           )
       (list seg1 seg2 seg3 seg4))))
 
 (defun context-navigator-view-controls--build-actions ()
@@ -190,12 +190,6 @@ otherwise fall back to compact labels or text in brackets."
                                " [K]"))
                    (ico (and gicons (context-navigator-controls-icon 'close-buffers))))
               (if gicons (concat " " (or ico fallback)) fallback)))
-           (lbl-clear
-            (let* ((fallback (if (eq style 'text)
-                                 (format " [%s]" (capitalize (context-navigator-i18n :clear-gptel)))
-                               " [∅]"))
-                   (ico (and gicons (context-navigator-controls-icon 'clear-gptel))))
-              (if gicons (concat " " (or ico fallback)) fallback)))
            (lbl-toggle-all
             (let* ((fallback (if (eq style 'text)
                                  (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel)))
@@ -209,9 +203,6 @@ otherwise fall back to compact labels or text in brackets."
                 (context-navigator-i18n :open-buffers))
        (funcall mk lbl-close 'close-buffers #'context-navigator-view-close-all-buffers
                 (context-navigator-i18n :close-buffers))
-       ;; Note: show "Clear gptel" action (clears gptel context), not group clear.
-       (funcall mk lbl-clear 'clear-gptel #'context-navigator-view-clear-gptel
-                (context-navigator-i18n :clear-gptel))
        (funcall mk lbl-toggle-all 'toggle-all-gptel #'context-navigator-view-toggle-all-gptel
                 (context-navigator-i18n :toggle-all-gptel))))))
 
