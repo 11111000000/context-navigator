@@ -553,10 +553,15 @@ If no sidebar windows are present, behave like `delete-other-windows'."
 (defun context-navigator-toggle-auto-project-switch ()
   "Toggle session flag for automatic project switching.
 When turning ON, ensure `context-navigator-mode' is enabled so the core subscribes
-to :project-switch events. Then immediately switch Navigator to the project of
-the most recently visited file-backed buffer (if any). If no file buffer has a
-project, fall back to the first \"interesting\" buffer (file/gptel/Dired).
-If still nothing is found, switch to the global context."
+to :project-switch events.
+
+Special case: if the command is invoked while the Navigator buffer/window is
+selected, prefer the first buffer on the current frame (excluding the Navigator)
+that belongs to a project and switch to that project. Otherwise, fall back to
+the generic picker:
+- the most recently visited file-backed buffer's project, or
+- the first \"interesting\" buffer (file/gptel/Dired),
+or global (nil) when nothing is found."
   (interactive)
   (setq context-navigator--auto-project-switch (not context-navigator--auto-project-switch))
   (message "Auto project switch: %s" (if context-navigator--auto-project-switch "on" "off"))
@@ -566,7 +571,31 @@ If still nothing is found, switch to the global context."
   (when context-navigator--auto-project-switch
     (unless (bound-and-true-p context-navigator-mode)
       (context-navigator-mode 1))
-    (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+    (let ((root
+           (ignore-errors
+             (let* ((in-nav
+                     (or (eq major-mode 'context-navigator-view-mode)
+                         (let ((w (selected-window)))
+                           (and (window-live-p w)
+                                (memq (window-parameter w 'context-navigator-view) '(sidebar buffer))))))
+                    (pick-frame-first
+                     (lambda ()
+                       (catch 'found
+                         (dolist (w (window-list (selected-frame) 'no-minibuffer))
+                           (when (window-live-p w)
+                             (let* ((buf (window-buffer w))
+                                    (is-nav
+                                     (or (eq buf (and (boundp 'context-navigator-view--buffer-name)
+                                                      (get-buffer context-navigator-view--buffer-name)))
+                                         (with-current-buffer buf
+                                           (eq major-mode 'context-navigator-view-mode)))))
+                               (unless is-nav
+                                 (let ((rr (ignore-errors (context-navigator-project-current-root buf))))
+                                   (when (and (stringp rr) (not (string-empty-p rr)))
+                                     (throw 'found rr)))))))
+                         nil))))
+               (or (and in-nav (funcall pick-frame-first))
+                   (context-navigator--pick-root-for-autoproject))))))
       (context-navigator-events-publish :project-switch root))))
 
 (defun context-navigator-push-to-gptel-now ()
