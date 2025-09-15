@@ -12,7 +12,9 @@ The idea: practice “context engineering”. Instead of keeping task state, ope
 - View to browse items and groups, with a compact header-line toolbar
 - Project‑aware, optional auto‑switch on buffer/project change
 - One‑way integration with GPTel (push current items → GPTel)
+- Per‑group Undo/Redo (history) with header‑line controls
 - Async, per‑group persistence with progress and spinner
+- Stats footer (counts, size, token estimates) — togglable
 - Dired‑aware “Universal Add”, globs, and “add from text”
 
 Repository: https://github.com/11111000000/context-navigator
@@ -109,15 +111,15 @@ Notes:
 
 - Sidebar
   - Title inside the buffer shows “[project: group]” in Items view; Groups view shows “[project]”.
-  - Toolbar under the header-line (clickable and TAB-reachable) contains all toggles and actions:
+  - Toolbar under the header-line (clickable and TAB-reachable) contains all toggles and actions (shows graphical icons when all-the-icons is available; otherwise compact labels in brackets):
     - [→] push→gptel on/off
     - [A] auto-project on/off
+    - [↶]/[↷] Undo/Redo history
     - [O] Open buffers (background; dynamic count; remote-aware)
-    - [∅] Close buffers (belonging to the current group)
-    - [⇪] Push now (hidden when auto-push is ON)
-    - [✖] Clear group (remove all items)
-    - [⌦] Toggle all in gptel (“Enable all gptel” when everything is disabled; otherwise “Disable all in gptel”)
-  - Per-point status is shown in the modeline; the buffer footer is minimal.
+    - [K] Close buffers (belonging to the current group)
+    - [P] Push now
+    - [T] Toggle all in gptel (“Enable all gptel” when everything is disabled; otherwise “Disable all in gptel”)
+  - Per-point status is shown in the modeline; the buffer footer is minimal. In items view the modeline shows the full path of the item at point; in groups view it shows “Display — Description” when a description is set.
   - Indicators (green/gray) show whether an item is present in GPTel (when enabled).
 
 - Transient menu (=C-c n= by default)
@@ -145,19 +147,21 @@ Examples:
 
 - Sidebar (context-navigator-view-mode)
   - RET / l: activate (visit item/open group)
-  - SPC: preview (other window)
+  - v: preview (other window)
   - n/p/j/k: next/previous
-  - t: toggle GPTel membership for item at point
+  - SPC / t: toggle enabled for item at point
   - d: delete (item or group, depending on view)
   - g: refresh (items or groups)
-  - h: go up (toggle items ↔ groups)
-  - a / r / c: add / rename / duplicate group (groups view)
-  - G / A: toggle push→gptel / auto‑project
+  - h / u: go up (toggle items ↔ groups)
+  - a / r / e / c: add / rename / edit description / duplicate group (groups view)
+  - x / A: toggle push→gptel / auto‑project
   - P / C: push now / clear gptel
   - O / o: open all context buffers (background)
+  - K: close all context buffers
   - E: clear current group
+  - s: toggle Stats footer
   - TAB / S-TAB: jump across toggles/actions/items/groups
-  - q: quit, ?: help
+  - q: quit, ?: menu/help
 
 Quality‑of‑life:
 - =delete-other-windows= is remapped to close sidebar windows first (keeps layout).
@@ -173,7 +177,7 @@ Below are all public settings collected from the source, grouped by module. “D
 |--------------------------------------------+---------------------------+---------------------------+-----------------------------------------------------------------------------------------------+----------------------------------|
 | context-navigator-auto-refresh             | boolean                   | t                         | Auto refresh model/sidebar after external changes                                             | core/context-navigator-core.el   |
 | context-navigator-global-key               | string or nil             | nil                       | Global key for transient (e.g., "C-c n"); nil = no binding                                    | core/context-navigator-core.el   |
-| context-navigator-view-width            | integer                   | 33                        | Sidebar width in columns                                                                      | core/context-navigator-core.el   |
+| context-navigator-view-width            | integer                   | 42                        | Sidebar width in columns                                                                      | core/context-navigator-core.el   |
 | context-navigator-max-filename-length      | integer                   | 64                        | Max display length for file names                                                             | core/context-navigator-core.el   |
 | context-navigator-context-switch-interval  | number                    | 0.7                       | Throttle interval (s) for project auto‑switch                                                | core/context-navigator-core.el   |
 | context-navigator-context-load-batch-size  | integer                   | 64                        | Batch size for async context load                                                             | core/context-navigator-core.el   |
@@ -185,7 +189,7 @@ Below are all public settings collected from the source, grouped by module. “D
 | context-navigator-autosave-debounce        | number                    | 0.5                       | Debounce (s) for autosave                                                                     | core/context-navigator-core.el   |
 | context-navigator-autoload                 | boolean                   | t                         | Autoload context on project switch                                                            | core/context-navigator-core.el   |
 | context-navigator-default-push-to-gptel    | boolean                   | nil                       | Initial session state: push to GPTel                                                          | core/context-navigator-core.el   |
-| context-navigator-default-auto-project-switch | boolean                | nil                       | Initial session state: auto‑project switch                                                    | core/context-navigator-core.el   |
+| context-navigator-default-auto-project-switch | boolean                | t                         | Initial session state: auto‑project switch                                                    | core/context-navigator-core.el   |
 | context-navigator-dir-name                 | string                    | ".context"                | Project subdir for context files                                                              | core/context-navigator-core.el   |
 | context-navigator-context-file-name        | string                    | "context.el"              | Legacy single‑file name (still used for compatibility paths)                                  | core/context-navigator-core.el   |
 | context-navigator-global-dir               | directory                 | ~/.context                | Global context directory                                                                      | core/context-navigator-core.el   |
@@ -204,7 +208,7 @@ Constants:
 | context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-controls-style                 | choice (auto    | icons   | text)                                                      | text                              | Labels style for toggles/actions            | sidebar/context-navigator-view.el |
-| context-navigator-openable-count-ttl             | number          | 0.3     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |
 | context-navigator-gptel-indicator-poll-interval  | number          | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |
@@ -405,9 +409,9 @@ Manual project switch at any time: =M-x context-navigator-switch-to-current-buff
 - How to manage groups?
   - From the sidebar groups view: a (add), r (rename), c (duplicate), d (delete).
 - How to clear GPTel or the group?
-  - Footer [⌦] or transient “C” clears GPTel. Footer [✖] or “E” clears the current group.
+  - Press C in the sidebar (or use transient “C”) to clear GPTel. Use “E” to clear the current group.
 - Open/close all context buffers?
-  - Footer [O]/[∅] or sidebar keys O/o and the close command via footer.
+  - Header [O]/[K], sidebar keys O/o and K.
 
 * Contributing
 
