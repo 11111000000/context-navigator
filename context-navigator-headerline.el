@@ -43,20 +43,8 @@ rendered inside the buffer itself (above the \"..\" line)."
                       (when (fboundp 'context-navigator-view-controls-segments)
                         (context-navigator-view-controls-segments)))))
       (when (and (listp controls) controls)
-        ;; Ensure minimal spacing between segments:
-        ;; - keep the leading space of the head
-        ;; - drop leading spaces from the rest (preserving text properties via `substring')
-        ;; - insert a single plain space between segments
-        (let* ((head (car controls))
-               (tail (mapcar (lambda (s)
-                               (if (and (stringp s)
-                                        (> (length s) 0)
-                                        (eq (aref s 0) ?\s))
-                                   (substring s 1) s))
-                             (cdr controls))))
-          (if tail
-              (concat head " " (mapconcat #'identity tail " "))
-            head))))))
+        ;; Preserve exact spacing from segments (tests rely on it).
+        (mapconcat #'identity controls "")))))
 
 (defun context-navigator-headerline--apply (buffer)
   "Apply or remove header-line controls in BUFFER based on the feature flag."

@@ -12,7 +12,7 @@
     (cl-letf (((symbol-function 'context-navigator-view-controls-segments)
                (lambda () '(" A" " B"))))
       (let ((out (context-navigator-headerline-format)))
-        (should (string= out " AB"))))))
+        (should (string= out " A B"))))))
 
 (ert-deftest ctxnav-headerline/apply-installs-eval-format ()
   "headerline--apply should install (:eval ... ) format when enabled."

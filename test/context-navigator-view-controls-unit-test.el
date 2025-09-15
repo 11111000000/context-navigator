@@ -25,8 +25,8 @@
         (should (and (listp segs) (> (length segs) 0)))
         (let* ((acts (ctxnav--collect-prop-values segs 'context-navigator-action))
                (tgls (ctxnav--collect-prop-values segs 'context-navigator-toggle)))
-          ;; Required actions
-          (dolist (sym '(push-now open-buffers close-buffers clear-gptel toggle-all-gptel))
+          ;; Required actions (clear-gptel button removed; covered by toggle-all)
+          (dolist (sym '(push-now open-buffers close-buffers toggle-all-gptel))
             (should (member sym acts)))
           ;; Required toggles
           (dolist (sym '(push auto redo undo))

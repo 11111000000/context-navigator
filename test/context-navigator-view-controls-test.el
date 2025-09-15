@@ -6,7 +6,7 @@
 (require 'context-navigator-model)
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-off-no-gptel ()
-  "When push is OFF and gptel is empty, show [Push now] and [Clear gptel] (disabled)."
+  "When push is OFF and gptel is empty, show [Push now] and [Toggle All Gptel] (disabled)."
   (let ((context-navigator-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf (((symbol-value 'context-navigator--push-to-gptel) nil)
@@ -14,10 +14,10 @@
       (let* ((segs (context-navigator-view-controls-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
-        (should (string-match-p "\\[Clear gptel\\]" joined))))))
+        (should (string-match-p "\\[Toggle All Gptel\\]" joined))))))
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-off-has-gptel ()
-  "When push is OFF and gptel has entries, show both [Push now] and [Clear gptel]."
+  "When push is OFF and gptel has entries, show both [Push now] and [Toggle All Gptel]."
   (let ((context-navigator-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) nil)
@@ -26,10 +26,10 @@
       (let* ((segs (context-navigator-view-controls-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
-        (should (string-match-p "\\[Clear gptel\\]" joined))))))
+        (should (string-match-p "\\[Toggle All Gptel\\]" joined))))))
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-on-has-gptel ()
-  "When push is ON and gptel has entries, [Push now] is present (disabled), [Clear gptel] is present."
+  "When push is ON and gptel has entries, [Push now] is present (disabled), [Toggle All Gptel] is present."
   (let ((context-navigator-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) t)
@@ -38,7 +38,7 @@
       (let* ((segs (context-navigator-view-controls-segments))
              (joined (mapconcat #'identity segs "")))
         (should (string-match-p "\\[Push now\\]" joined))
-        (should (string-match-p "\\[Clear gptel\\]" joined))))))
+        (should (string-match-p "\\[Toggle All Gptel\\]" joined))))))
 
 (provide 'context-navigator-view-controls-test)
 ;;; context-navigator-view-controls-test.el ends here
