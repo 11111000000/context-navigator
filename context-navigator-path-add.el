@@ -358,7 +358,7 @@ Primary pass:
 Fallback (when primary found nothing):
 - dired-like lines: take the last whitespace-separated field on each line,
   normalize and validate as a candidate (helps with org blocks containing dired listings)."
-  (let* ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[[:alnum:]_.:/\\\\-]+\\)")
+  (let* ((re "\\(?:\"[^\"\n]+\"\\|'[^'\n]+'\\|<[^>\n]+>\\|[~[:alnum:]_.:/\\\\-]+\\)")
          (pos 0) (acc '()))
     ;; Primary pass
     (while (and (< pos (length text))
