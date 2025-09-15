@@ -199,28 +199,28 @@ Below are all public settings collected from the source, grouped by module. “D
 
 ** Core (context-navigator-core.el)
 
-| Variable                                   | Type                      | Default                   | Description                                                                                   | Module/File                     |
-|--------------------------------------------+---------------------------+---------------------------+-----------------------------------------------------------------------------------------------+----------------------------------|
-| context-navigator-auto-refresh             | boolean                   | t                         | Auto refresh model/sidebar after external changes                                             | core/context-navigator-core.el   |
-| context-navigator-global-key               | string or nil             | nil                       | Global key for transient (e.g., "C-c n"); nil = no binding                                    | core/context-navigator-core.el   |
-| context-navigator-view-width            | integer                   | 42                        | Sidebar width in columns                                                                      | core/context-navigator-core.el   |
-| context-navigator-max-filename-length      | integer                   | 64                        | Max display length for file names                                                             | core/context-navigator-core.el   |
-| context-navigator-context-switch-interval  | number                    | 0.7                       | Throttle interval (s) for project auto‑switch                                                | core/context-navigator-core.el   |
-| context-navigator-context-load-batch-size  | integer                   | 64                        | Batch size for async context load                                                             | core/context-navigator-core.el   |
-| context-navigator-gptel-apply-batch-size   | integer                   | 20                        | Items per tick when pushing to GPTel in background                                            | core/context-navigator-core.el   |
-| context-navigator-gptel-apply-batch-interval | number                  | 0.05                      | Delay (s) between GPTel apply batches                                                         | core/context-navigator-core.el   |
-| context-navigator-gptel-require-visible-window | boolean                | nil                       | Defer GPTel apply until a GPTel window is visible                                             | core/context-navigator-core.el   |
-| context-navigator-gptel-visible-poll-interval | number                 | 0.5                       | Poll interval (s) for GPTel visibility when deferred                                          | core/context-navigator-core.el   |
-| context-navigator-autosave                 | boolean                   | t                         | Autosave group file on model refresh                                                          | core/context-navigator-core.el   |
-| context-navigator-autosave-debounce        | number                    | 0.5                       | Debounce (s) for autosave                                                                     | core/context-navigator-core.el   |
-| context-navigator-autoload                 | boolean                   | t                         | Autoload context on project switch                                                            | core/context-navigator-core.el   |
-| context-navigator-default-push-to-gptel    | boolean                   | nil                       | Initial session state: push to GPTel                                                          | core/context-navigator-core.el   |
-| context-navigator-default-auto-project-switch | boolean                | t                         | Initial session state: auto‑project switch                                                    | core/context-navigator-core.el   |
-| context-navigator-dir-name                 | string                    | ".context"                | Project subdir for context files                                                              | core/context-navigator-core.el   |
-| context-navigator-context-file-name        | string                    | "context.el"              | Legacy single‑file name (still used for compatibility paths)                                  | core/context-navigator-core.el   |
-| context-navigator-global-dir               | directory                 | ~/.context                | Global context directory                                                                      | core/context-navigator-core.el   |
-| context-navigator-create-default-group-file| boolean                   | t                         | Ensure default group file exists on first use                                                 | core/context-navigator-core.el   |
-| context-navigator-protect-sidebar-windows  | boolean                   | t                         | Protect sidebar from window‑balancing (skip balance while visible)                            | core/context-navigator-core.el   |
+| Variable                                       | Type          | Default      | Description                                                        | Module/File                    |
+|------------------------------------------------+---------------+--------------+--------------------------------------------------------------------+--------------------------------|
+| context-navigator-auto-refresh                 | boolean       | t            | Auto refresh model/sidebar after external changes                  | core/context-navigator-core.el |
+| context-navigator-global-key                   | string or nil | nil          | Global key for transient (e.g., "C-c n"); nil = no binding         | core/context-navigator-core.el |
+| context-navigator-view-width                   | integer       | 42           | Sidebar width in columns                                           | core/context-navigator-core.el |
+| context-navigator-max-filename-length          | integer       | 64           | Max display length for file names                                  | core/context-navigator-core.el |
+| context-navigator-context-switch-interval      | number        | 0.7          | Throttle interval (s) for project auto‑switch                      | core/context-navigator-core.el |
+| context-navigator-context-load-batch-size      | integer       | 64           | Batch size for async context load                                  | core/context-navigator-core.el |
+| context-navigator-gptel-apply-batch-size       | integer       | 20           | Items per tick when pushing to GPTel in background                 | core/context-navigator-core.el |
+| context-navigator-gptel-apply-batch-interval   | number        | 0.05         | Delay (s) between GPTel apply batches                              | core/context-navigator-core.el |
+| context-navigator-gptel-require-visible-window | boolean       | nil          | Defer GPTel apply until a GPTel window is visible                  | core/context-navigator-core.el |
+| context-navigator-gptel-visible-poll-interval  | number        | 0.5          | Poll interval (s) for GPTel visibility when deferred               | core/context-navigator-core.el |
+| context-navigator-autosave                     | boolean       | t            | Autosave group file on model refresh                               | core/context-navigator-core.el |
+| context-navigator-autosave-debounce            | number        | 0.5          | Debounce (s) for autosave                                          | core/context-navigator-core.el |
+| context-navigator-autoload                     | boolean       | t            | Autoload context on project switch                                 | core/context-navigator-core.el |
+| context-navigator-default-push-to-gptel        | boolean       | nil          | Initial session state: push to GPTel                               | core/context-navigator-core.el |
+| context-navigator-default-auto-project-switch  | boolean       | t            | Initial session state: auto‑project switch                         | core/context-navigator-core.el |
+| context-navigator-dir-name                     | string        | ".context"   | Project subdir for context files                                   | core/context-navigator-core.el |
+| context-navigator-context-file-name            | string        | "context.el" | Legacy single‑file name (still used for compatibility paths)       | core/context-navigator-core.el |
+| context-navigator-global-dir                   | directory     | ~/.context   | Global context directory                                           | core/context-navigator-core.el |
+| context-navigator-create-default-group-file    | boolean       | t            | Ensure default group file exists on first use                      | core/context-navigator-core.el |
+| context-navigator-protect-sidebar-windows      | boolean       | t            | Protect sidebar from window‑balancing (skip balance while visible) | core/context-navigator-core.el |
 
 Constants:
 | Variable                          | Type     | Default | Description                                | Module/File                    |
