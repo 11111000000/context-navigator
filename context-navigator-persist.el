@@ -193,10 +193,12 @@ Returns the file path or nil on error."
 (defun context-navigator-persist--read-one (file)
   "Read single s-exp from FILE safely (no eval)."
   (with-temp-buffer
-    (insert-file-contents file)
-    (goto-char (point-min))
-    (condition-case nil
-        (read (current-buffer))
+    (condition-case _err
+        (progn
+          (when (file-readable-p file)
+            (insert-file-contents file)
+            (goto-char (point-min))
+            (read (current-buffer))))
       (error nil))))
 
 (defun context-navigator-persist--load-batch-size ()

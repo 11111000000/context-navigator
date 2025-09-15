@@ -16,6 +16,7 @@
 (require 'subr-x)
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
+(require 'context-navigator-controls-icons)
 
 ;; Declarations to avoid load cycles; provided by context-navigator-view or core.
 (declare-function context-navigator-view-open-all-buffers "context-navigator-view" ())
@@ -35,37 +36,55 @@
 
 (defun context-navigator-view-controls--build-toggles ()
   "Build toggle segments for push→gptel, auto-project and Undo/Redo with mouse keymaps.
-Respects `context-navigator-controls-style' for compact icon/text labels."
+Prefers real graphic icons (all-the-icons) without brackets when available and enabled,
+falls back to compact labels or text with brackets otherwise."
   (let* ((push-on (and (boundp 'context-navigator--push-to-gptel)
                        context-navigator--push-to-gptel))
          (auto-on (and (boundp 'context-navigator--auto-project-switch)
                        context-navigator--auto-project-switch))
          (gptel-available (ignore-errors (context-navigator-gptel-available-p)))
          (style (or context-navigator-controls-style 'auto))
-         ;; label builders
+         (gicons (and (fboundp 'context-navigator-controls-icons-available-p)
+                      (context-navigator-controls-icons-available-p)))
+         ;; Build labels with icon preference
          (lbl-push
-          (pcase style
-            ((or 'icons 'auto) " [→]")
-            (_ (format " [→gptel: %s]" (if push-on "on" "off")))))
+          (let* ((fallback
+                  (pcase style
+                    ((or 'icons 'auto) " [→]")
+                    (_ (format " [→gptel: %s]" (if push-on "on" "off")))))
+                 (ico (and gicons
+                           (context-navigator-controls-icon 'push (if push-on 'on 'off)))))
+            (if gicons
+                (concat " " (or ico fallback))
+              fallback)))
          (lbl-auto
-          (pcase style
-            ((or 'icons 'auto) " [A]")
-            (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off")))))
+          (let* ((fallback
+                  (pcase style
+                    ((or 'icons 'auto) " [A]")
+                    (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (if auto-on "on" "off")))))
+                 (ico (and gicons
+                           (context-navigator-controls-icon 'auto-project (if auto-on 'on 'off)))))
+            (if gicons
+                (concat " " (or ico fallback))
+              fallback)))
          (lbl-redo
-          (pcase style
-            ((or 'icons 'auto) " [↷]")
-            (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
+          (let* ((fallback (pcase style
+                             ((or 'icons 'auto) " [↷]")
+                             (_ (concat " [" (context-navigator-i18n :razor-redo) "]"))))
+                 (ico (and gicons (context-navigator-controls-icon 'redo))))
+            (if gicons (concat " " (or ico fallback)) fallback)))
          (lbl-undo
-          (pcase style
-            ((or 'icons 'auto) " [↶]")
-            (_ (concat " [" (context-navigator-i18n :razor-undo) "]")))))
+          (let* ((fallback (pcase style
+                             ((or 'icons 'auto) " [↶]")
+                             (_ (concat " [" (context-navigator-i18n :razor-undo) "]"))))
+                 (ico (and gicons (context-navigator-controls-icon 'undo))))
+            (if gicons (concat " " (or ico fallback)) fallback))))
     (let* ((seg1 (let* ((s (copy-sequence lbl-push))
                         (m (let ((km (make-sparse-keymap)))
                              (when gptel-available
                                (define-key km [mouse-1] #'context-navigator-view-toggle-push)
                                (define-key km [header-line mouse-1] #'context-navigator-view-toggle-push))
                              km))
-                        (fg (if (and push-on gptel-available) "green4" "gray"))
                         (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
                    (add-text-properties beg (length s)
                                         (list 'mouse-face 'highlight
@@ -74,29 +93,30 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                                            "gptel not available")
                                               'keymap m
                                               'local-map m
-                                              'context-navigator-toggle 'push
-                                              'face (if gptel-available
-                                                        (list :foreground fg)
-                                                      'shadow))
+                                              'context-navigator-toggle 'push)
                                         s)
+                   ;; When gptel is not available, dim the icon/label
+                   (unless gptel-available
+                     (add-text-properties beg (length s) (list 'face 'shadow) s))
                    s))
            (seg2 (let* ((s (copy-sequence lbl-auto))
                         (m (let ((km (make-sparse-keymap)))
                              (define-key km [mouse-1] #'context-navigator-view-toggle-auto-project)
                              (define-key km [header-line mouse-1] #'context-navigator-view-toggle-auto-project)
                              km))
-                        (fg (if auto-on "green4" "gray"))
                         (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
                    (add-text-properties beg (length s)
                                         (list 'mouse-face 'highlight
                                               'help-echo (context-navigator-i18n :toggle-auto)
                                               'keymap m
                                               'local-map m
-                                              'context-navigator-toggle 'auto
-                                              'face (list :foreground fg))
+                                              'context-navigator-toggle 'auto)
                                         s)
+                   ;; In text fallback, tint color; in icon mode face comes from icon
+                   (unless gicons
+                     (let ((fg (if auto-on "green4" "gray")))
+                       (add-text-properties beg (length s) (list 'face (list :foreground fg)) s)))
                    s))
-
            (seg3 (let* ((s (copy-sequence lbl-redo))
                         (m (let ((km (make-sparse-keymap)))
                              (when (fboundp 'context-navigator-redo)
@@ -112,7 +132,6 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
                                               'context-navigator-toggle 'redo)
                                         s)
                    s))
-
            (seg4 (let* ((s (copy-sequence lbl-undo))
                         (m (let ((km (make-sparse-keymap)))
                              (when (fboundp 'context-navigator-undo)
@@ -133,56 +152,67 @@ Respects `context-navigator-controls-style' for compact icon/text labels."
 (defun context-navigator-view-controls--build-actions ()
   "Build action segments (Open/Close buffers, Clear gptel, Push now, Toggle all gptel).
 
-Return a list of propertized segment strings. Each segment has a keymap and
-the text property `context-navigator-action' set to a symbol describing the action
-(e.g. 'push-now, 'open-buffers). Labels respect `context-navigator-controls-style'."
-  (let ((mk (lambda (label action-sym cmd help)
-              (let* ((s (copy-sequence label))
-                     (km (let ((m (make-sparse-keymap)))
-                           (define-key m [mouse-1] cmd)
-                           (define-key m [header-line mouse-1] cmd)
-                           m))
-                     (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
-                (add-text-properties beg (length s)
-                                     (list 'mouse-face 'highlight
-                                           'help-echo help
-                                           'keymap km
-                                           'local-map km
-                                           'context-navigator-action action-sym)
-                                     s)
-                s))))
-    (let ((style (or context-navigator-controls-style 'auto)))
+When graphic icons are available (all-the-icons) and enabled, show icons only (no brackets);
+otherwise fall back to compact labels or text in brackets."
+  (let* ((style (or context-navigator-controls-style 'auto))
+         (gicons (and (fboundp 'context-navigator-controls-icons-available-p)
+                      (context-navigator-controls-icons-available-p)))
+         (mk (lambda (label action-sym cmd help)
+               (let* ((s (copy-sequence label))
+                      (km (let ((m (make-sparse-keymap)))
+                            (define-key m [mouse-1] cmd)
+                            (define-key m [header-line mouse-1] cmd)
+                            m))
+                      (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0)))
+                 (add-text-properties beg (length s)
+                                      (list 'mouse-face 'highlight
+                                            'help-echo help
+                                            'keymap km
+                                            'local-map km
+                                            'context-navigator-action action-sym)
+                                      s)
+                 s))))
+    (let* ((lbl-push-now
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :push-now)))
+                               " [P]"))
+                   (ico (and gicons (context-navigator-controls-icon 'push-now))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-open
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :open-buffers)))
+                               " [O]"))
+                   (ico (and gicons (context-navigator-controls-icon 'open-buffers))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-close
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :close-buffers)))
+                               " [K]"))
+                   (ico (and gicons (context-navigator-controls-icon 'close-buffers))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-clear
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :clear-gptel)))
+                               " [∅]"))
+                   (ico (and gicons (context-navigator-controls-icon 'clear-gptel))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-toggle-all
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel)))
+                               " [T]"))
+                   (ico (and gicons (context-navigator-controls-icon 'toggle-all-gptel))))
+              (if gicons (concat " " (or ico fallback)) fallback))))
       (list
-       (funcall mk
-                (if (eq style 'text)
-                    (format " [%s]" (capitalize (context-navigator-i18n :push-now)))
-                  " [P]")
-                'push-now #'context-navigator-view-push-now
+       (funcall mk lbl-push-now 'push-now #'context-navigator-view-push-now
                 (context-navigator-i18n :push-now))
-       (funcall mk
-                (if (eq style 'text)
-                    (format " [%s]" (capitalize (context-navigator-i18n :open-buffers)))
-                  " [O]")
-                'open-buffers #'context-navigator-view-open-all-buffers
+       (funcall mk lbl-open 'open-buffers #'context-navigator-view-open-all-buffers
                 (context-navigator-i18n :open-buffers))
-       (funcall mk
-                (if (eq style 'text)
-                    (format " [%s]" (capitalize (context-navigator-i18n :close-buffers)))
-                  " [K]")
-                'close-buffers #'context-navigator-view-close-all-buffers
+       (funcall mk lbl-close 'close-buffers #'context-navigator-view-close-all-buffers
                 (context-navigator-i18n :close-buffers))
        ;; Note: show "Clear gptel" action (clears gptel context), not group clear.
-       (funcall mk
-                (if (eq style 'text)
-                    (format " [%s]" (capitalize (context-navigator-i18n :clear-gptel)))
-                  " [∅]")
-                'clear-gptel #'context-navigator-view-clear-gptel
+       (funcall mk lbl-clear 'clear-gptel #'context-navigator-view-clear-gptel
                 (context-navigator-i18n :clear-gptel))
-       (funcall mk
-                (if (eq style 'text)
-                    (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel)))
-                  " [T]")
-                'toggle-all-gptel #'context-navigator-view-toggle-all-gptel
+       (funcall mk lbl-toggle-all 'toggle-all-gptel #'context-navigator-view-toggle-all-gptel
                 (context-navigator-i18n :toggle-all-gptel))))))
 
 (defun context-navigator-view-controls-segments ()

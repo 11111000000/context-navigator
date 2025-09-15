@@ -27,13 +27,16 @@
                                                  (it2 (context-navigator-item-create :type 'file :name "b" :path f2 :enabled t)))
                                             (context-navigator-set-items (list it1 it2))
                                             (ctxnav-counters--with-sidebar
-                                             ;; Force a fresh compute
-                                             (context-navigator-view-counters-invalidate)
-                                             (context-navigator-view-counters-refresh-openable)
-                                             (let ((res (context-navigator-view-counters-get-openable)))
-                                               (should (consp res))
-                                               (should (= (car res) 2))
-                                               (should (not (cdr res)))))))))
+                                             ;; Изоляция: сбрасываем подписки/таймеры и вычисляем синхронно.
+                                             (context-navigator-events-reset)
+                                             (let ((context-navigator-openable-count-ttl 0)
+                                                   (context-navigator--push-to-gptel nil))
+                                               (context-navigator-view-counters-invalidate)
+                                               (context-navigator-view-counters-refresh-openable)
+                                               (let ((res (context-navigator-view-counters-get-openable)))
+                                                 (should (consp res))
+                                                 (should (= (car res) 2))
+                                                 (should (not (cdr res))))))))))
 
 (ert-deftest ctxnav-counters/get-triggers-debounced-refresh ()
   "When cache is stale or empty, get-openable schedules a refresh."

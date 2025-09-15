@@ -662,6 +662,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
        ;; Игнорируем устаревшие колбэки по токену.
        (let* ((st (context-navigator--state-get))
               (alive (and (context-navigator-state-p st)
+                          (context-navigator-state-loading-p st)
                           (= (or (context-navigator-state-load-token st) 0)
                              token))))
          (when alive
