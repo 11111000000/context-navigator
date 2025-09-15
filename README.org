@@ -94,6 +94,7 @@ Notes:
   - t — Add files from text (extracts paths from region/buffer)
   - g — show groups
   - G/A — toggle push→gptel / auto‑project
+  - R — Occam filter (org-mode): minimize enabled items for the task
   - P/C — Push now / Clear gptel
 - Press ? in the sidebar for localized, column‑formatted help
 
@@ -107,11 +108,34 @@ Notes:
   - Add by mask (glob)
   - Add from text (extract file‑like tokens and resolve)
 
+* Practical scenarios (with GPTel/gptel-aibo)
+
+- Per-task groups with GPTel:
+  - Create a group per task/issue; add files, buffers, and selections that matter.
+  - Toggle auto-push ON and keep chatting in GPTel (or gptel-aibo minor mode in org).
+  - The modeline in the Navigator shows the full path at point; indicators (●/○) reflect actual presence in GPTel.
+
+- Using gptel-aibo:
+  - gptel-aibo buffers are treated as “interesting” for auto-project switching; Navigator will stick to the correct project while you chat.
+  - Default-directory of gptel-aibo buffers is respected; switching windows updates Navigator’s project and groups list.
+
+- Trimming context and saving tokens:
+  - Use the Occam filter (R in the transient, org-mode) to keep only essential items enabled for the current task.
+  - The Stats footer (s) shows rough token estimates for enabled vs total; combine with Occam to control budget.
+
+- Selections and edits:
+  - Add precise regions from files as “selection” items; Occam handles them safely.
+  - Quickly enable/disable per item with SPC/t; Undo/Redo per group is available via header toolbar (↶/↷).
+
+- Multi-project work:
+  - Navigator “sticks” to the last meaningful root and avoids flicker to global; throttle is configurable.
+  - Use p in the transient to switch explicitly to the current buffer’s project when needed.
+
 * Usage — interface overview
 
 - Sidebar
   - Title inside the buffer shows “[project: group]” in Items view; Groups view shows “[project]”.
-  - Toolbar under the header-line (clickable and TAB-reachable) contains all toggles and actions (shows graphical icons when all-the-icons is available; otherwise compact labels in brackets):
+  - Toolbar in the header-line (clickable and TAB-reachable) contains all toggles and actions (shows graphical icons when all-the-icons is available; otherwise compact labels in brackets):
     - [→] push→gptel on/off
     - [A] auto-project on/off
     - [↶]/[↷] Undo/Redo history
@@ -120,7 +144,7 @@ Notes:
     - [P] Push now
     - [T] Toggle all in gptel (“Enable all gptel” when everything is disabled; otherwise “Disable all in gptel”)
   - Per-point status is shown in the modeline; the buffer footer is minimal. In items view the modeline shows the full path of the item at point; in groups view it shows “Display — Description” when a description is set.
-  - Indicators (green/gray) show whether an item is present in GPTel (when enabled).
+  - Indicators (green/gray) show whether an item is present in GPTel (when indicators are enabled).
 
 - Transient menu (=C-c n= by default)
   - Quick access to panel, groups, add, GPTel toggles, and logs.
@@ -153,8 +177,10 @@ Examples:
   - d: delete (item or group, depending on view)
   - g: refresh (items or groups)
   - h / u: go up (toggle items ↔ groups)
+  - G: show groups list
   - a / r / e / c: add / rename / edit description / duplicate group (groups view)
   - x / A: toggle push→gptel / auto‑project
+  - U: unload context (switch to global)
   - P / C: push now / clear gptel
   - O / o: open all context buffers (background)
   - K: close all context buffers
@@ -207,11 +233,11 @@ Constants:
 |--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------|
 | context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-controls-style                 | choice (auto    | icons   | text)                                                      | text                              | Labels style for toggles/actions            | sidebar/context-navigator-view.el |
+| context-navigator-controls-style                 | choice (auto|icons|text) | icons   | Labels style for toggles/actions                            | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |
-| context-navigator-gptel-indicator-poll-interval  | number          | 1.0     | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |
+| context-navigator-gptel-indicator-poll-interval  | number          | 0       | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-view-spinner-frames            | list of strings | ⠋…⠏     | Frames for the loading spinner                             | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-view-spinner-interval          | number          | 0.1     | Spinner animation interval (s)                             | sidebar/context-navigator-view.el |                                             |                                   |
 | context-navigator-view-spinner-degrade-threshold | number          | 0.25    | Degrade to static indicator if timer slips beyond this (s) | sidebar/context-navigator-view.el |                                             |                                   |
@@ -256,7 +282,7 @@ Constants:
 
 | Variable                          | Type    | Default          | Description                                      | Module/File                             |
 |-----------------------------------+---------+------------------+--------------------------------------------------+------------------------------------------|
-| context-navigator-max-file-size   | integer | (* 2 1024 1024)  | Max file size (bytes) for recursive adds/filters | transient/context-navigator-transient.el |
+| context-navigator-max-file-size   | integer | (* 1 1024 1024)  | Max file size (bytes) for recursive adds/filters | transient/context-navigator-transient.el |
 
 ** Logging (context-navigator-log.el)
 
@@ -358,6 +384,35 @@ How to use:
 - Press [⇪] Push now in the footer, or P in transient, for a manual reset + add.
 - Clear GPTel via footer [⌦] or transient (C).
 
+* Occam filter (AI)
+
+Minimize enabled context for the current task described in your org buffer:
+- Where: org-mode only (appears as R “Occam filter (org)” in the transient).
+- Source: active region if any; otherwise the whole org buffer.
+- Payload: content of currently enabled items (files/buffers/selections) is included for the model to reason about.
+- Safety:
+  - Warns and confirms when remote (TRAMP) content is present (configurable).
+  - Warns on large payloads before sending (rough token budget is shown in Stats).
+- Parsing modes:
+  - flex (default): tries strict JSON first; if absent, accepts plain identifiers (keys/paths/names). Optional cautious fuzzy matching.
+  - json-only: require strict JSON; offers an automatic retry with stricter instruction on parse error.
+- Apply flow:
+  - Preview counts before applying (enabled vs total); confirm or cancel.
+  - Applies by enabling only the returned items; auto-push to GPTel is respected when ON.
+  - Per-group Undo/Redo available via the header toolbar (↶/↷) if the result doesn’t look right.
+
+Key options (defaults):
+- context-navigator-razor-model: "deepseek-chat"
+- context-navigator-razor-parse-mode: flex
+- context-navigator-razor-flex-allow-fuzzy: nil
+- context-navigator-razor-max-output-tokens: 256
+- context-navigator-razor-timeout: 45
+- context-navigator-razor-remote-include: t
+- context-navigator-razor-large-bytes-threshold: 600000
+- context-navigator-razor-budget-tokens-limit: 100000
+- context-navigator-razor-preview: t
+- context-navigator-undo-depth: 10
+
 * Persistence
 
 - Format v3, one file per group:
@@ -376,7 +431,7 @@ Tips:
 - Roots from =project.el= or projectile (if available).
 - “Interesting” buffers:
   - File‑backed buffers
-  - gptel buffers (derived modes)
+  - gptel/gptel-aibo buffers (derived modes and gptel-aibo minor mode)
   - Dired (and wdired) buffers
 - Auto‑switch is throttled (see =context-navigator-context-switch-interval=) and sticky (keep last root instead of flickering to global).
 - Child frames (posframe/popups) and certain internal buffers (e.g., corfu) are ignored.
