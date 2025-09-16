@@ -693,7 +693,9 @@ Graceful when gptel is absent: show an informative message and do nothing."
               (alive (and (context-navigator-state-p st)
                           (context-navigator-state-loading-p st)
                           (= (or (context-navigator-state-load-token st) 0)
-                             token))))
+                             token)))
+              ;; сохраним предыдущие элементы, чтобы восстановить при неуспехе загрузки
+              (prev-items (and st (context-navigator-state-items st))))
          (when alive
            (when context-navigator--push-to-gptel
              ;; Применяем к gptel порциями в фоне. Игнорируем требование видимости окна,
@@ -703,17 +705,23 @@ Graceful when gptel is absent: show an informative message and do nothing."
                             (let ((context-navigator-gptel-require-visible-window nil))
                               (ignore-errors
                                 (context-navigator--gptel-defer-or-start (or items '()) token))))))
-           ;; Модель и UI отрисовываем сразу — это даёт мгновенную отзывчивость.
-           (context-navigator-set-items (or items '())))
-         ;; Снимаем флаги и уведомляем завершение.
-         (let* ((cur2 (context-navigator--state-get))
-                (new2 (context-navigator--state-copy cur2)))
-           (setf (context-navigator-state-inhibit-refresh new2) nil)
-           (setf (context-navigator-state-inhibit-autosave new2) nil)
-           (setf (context-navigator-state-loading-p new2) nil)
-           (context-navigator--set-state new2))
-         (context-navigator-events-publish :context-load-done root (listp items))
-         (context-navigator-events-publish :group-switch-done root slug (listp items)))))))
+           ;; Модель и UI: если загрузка вернула валидный список, ставим его,
+           ;; иначе восстанавливаем предыдущие элементы и логируем предупреждение.
+           (if (and (listp items))
+               (context-navigator-set-items items)
+             (context-navigator-debug :warn :persist
+                                      "load failed for root=%s slug=%s; keeping previous items"
+                                      root slug)
+             (context-navigator-set-items (or prev-items '())))))
+       ;; Снимаем флаги и уведомляем завершение.
+       (let* ((cur2 (context-navigator--state-get))
+              (new2 (context-navigator--state-copy cur2)))
+         (setf (context-navigator-state-inhibit-refresh new2) nil)
+         (setf (context-navigator-state-inhibit-autosave new2) nil)
+         (setf (context-navigator-state-loading-p new2) nil)
+         (context-navigator--set-state new2))
+       (context-navigator-events-publish :context-load-done root (listp items))
+       (context-navigator-events-publish :group-switch-done root slug (listp items))))))
 
 (defun context-navigator--load-context-for-root (root)
   "Load current group for ROOT (or global) using state.el.
@@ -846,8 +854,8 @@ Otherwise start immediately."
             (setf (context-navigator-state-inhibit-autosave new1) t)
             (setf (context-navigator-state-loading-p new1) t)
             (context-navigator--set-state new1))
-          ;; Clear model and (optionally) gptel before loading context of the new project.
-          (context-navigator-set-items '())
+          ;; Clear only gptel before loading context of the new project; keep old items visible
+          ;; while loading (the View shows a spinner when loading-p is set).
           (when context-navigator--push-to-gptel
             ;; Avoid blocking UI by performing a remove-all asynchronously.
             (if (fboundp 'gptel-context-remove-all)
@@ -877,8 +885,7 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
       (setf (context-navigator-state-inhibit-autosave new) t)
       (setf (context-navigator-state-loading-p new) t)
       (context-navigator--set-state new))
-    ;; Fully unload previous context (model + gptel) before loading the new one.
-    (context-navigator-set-items '())
+    ;; Clear only gptel before loading the new context; keep current items until load succeeds.
     (when context-navigator--push-to-gptel
       ;; Async clear to avoid blocking interactive manual load command.
       (if (fboundp 'gptel-context-remove-all)
@@ -1465,6 +1472,12 @@ Also triggers an immediate project switch so header shows actual project."
       ('sidebar (ignore-errors (context-navigator-view-open)))
       ('buffer  (ignore-errors (context-navigator-buffer-open)))
       (_ nil))
+    ;; After restart, try to recover project context automatically by selecting
+    ;; the first file-visiting buffer's project on the current frame and publishing
+    ;; a :project-switch event so other components (sidebar) can pick it up.
+    (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+      (when root
+        (context-navigator-events-publish :project-switch root)))
     (message "Context Navigator: restarted")))
 
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
