@@ -1516,6 +1516,19 @@ Do not highlight header/separator lines."
         (setq-local context-navigator-view--last-render-key nil))))
   (context-navigator-view--render-if-visible))
 
+(defun context-navigator-view-razor-run ()
+  "Run Occam filter against the most recent org-mode buffer."
+  (interactive)
+  (let* ((org-buf
+          (cl-find-if (lambda (b)
+                        (with-current-buffer b
+                          (derived-mode-p 'org-mode)))
+                      (buffer-list))))
+    (if (and org-buf (fboundp 'context-navigator-razor-run))
+        (with-current-buffer org-buf
+          (call-interactively 'context-navigator-razor-run))
+      (message "Open an org-mode buffer to run Occam filter"))))
+
 ;;;###autoload
 (defun context-navigator-view-open-all-buffers ()
   "Open all file/buffer/selection items from current model in background (no window selection).
@@ -1657,7 +1670,7 @@ Buffers are opened in background; we do not change window focus."
 - On toggle segments in header: toggle push/auto flags
 - On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/toggle-all-gptel)
 - In groups mode: open group at point
-- In items mode: \"..\" goes to groups; otherwise visit item."
+- In items mode: ".." goes to groups; otherwise visit item."
   (interactive)
   ;; Title line: collapse/expand
   (when (get-text-property (point) 'context-navigator-title)
@@ -1677,6 +1690,7 @@ Buffers are opened in background; we do not change window focus."
      ((eq act 'clear-group) (context-navigator-view-clear-group))
      ((eq act 'clear-gptel) (context-navigator-view-clear-gptel))
      ((eq act 'toggle-all-gptel) (context-navigator-view-toggle-all-gptel))
+     ((eq act 'razor) (context-navigator-view-razor-run))
      ;; Header toggles
      ((eq tgl 'push) (context-navigator-view-toggle-push))
      ((eq tgl 'auto) (context-navigator-view-toggle-auto-project))

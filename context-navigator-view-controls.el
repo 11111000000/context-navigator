@@ -29,6 +29,7 @@
 (declare-function context-navigator-undo "context-navigator-core" ())
 (declare-function context-navigator-redo "context-navigator-core" ())
 (declare-function context-navigator-view--wrap-segments "context-navigator-view" (segments total-width))
+(declare-function context-navigator-view-razor-run "context-navigator-view" ())
 
 (defgroup context-navigator-view-controls nil
   "Toolbar controls (toggles and actions) for Context Navigator view."
@@ -150,13 +151,16 @@ falls back to compact labels or text with brackets otherwise."
       (list seg1 seg2 seg3 seg4))))
 
 (defun context-navigator-view-controls--build-actions ()
-  "Build action segments (Open/Close buffers, Clear gptel, Push now, Toggle all gptel).
+  "Build action segments (Occam, Open/Close buffers, Clear gptel, Push now, Toggle all gptel).
 
 When graphic icons are available (all-the-icons) and enabled, show icons only (no brackets);
-otherwise fall back to compact labels or text in brackets."
+otherwise fall back to compact labels or text in brackets. While Occam is running,
+show a small spinner in place of its icon."
   (let* ((style (or context-navigator-controls-style 'auto))
          (gicons (and (fboundp 'context-navigator-controls-icons-available-p)
                       (context-navigator-controls-icons-available-p)))
+         (razor-running (and (boundp 'context-navigator-razor--running)
+                             context-navigator-razor--running))
          (mk (lambda (label action-sym cmd help)
                (let* ((s (copy-sequence label))
                       (km (let ((m (make-sparse-keymap)))
@@ -172,7 +176,22 @@ otherwise fall back to compact labels or text in brackets."
                                             'context-navigator-action action-sym)
                                       s)
                  s))))
-    (let* ((lbl-push-now
+    (let* ((lbl-razor
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (context-navigator-i18n :tr-razor))
+                               " [R]"))
+                   (spinner (and razor-running
+                                 (fboundp 'context-navigator-razor-spinner-frame)
+                                 (context-navigator-razor-spinner-frame)))
+                   (ico (and gicons (not razor-running)
+                             (context-navigator-controls-icon 'razor))))
+              (cond
+               (razor-running
+                (concat " " (or spinner fallback)))
+               (gicons
+                (concat " " (or ico fallback)))
+               (t fallback))))
+           (lbl-push-now
             (let* ((fallback (if (eq style 'text)
                                  (format " [%s]" (capitalize (context-navigator-i18n :push-now)))
                                " [P]"))
@@ -190,6 +209,18 @@ otherwise fall back to compact labels or text in brackets."
                                " [K]"))
                    (ico (and gicons (context-navigator-controls-icon 'close-buffers))))
               (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-clear-gptel
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :clear-gptel)))
+                               " [∅]"))
+                   (ico (and gicons (context-navigator-controls-icon 'clear-gptel))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
+           (lbl-clear-group
+            (let* ((fallback (if (eq style 'text)
+                                 (format " [%s]" (capitalize (context-navigator-i18n :clear-group)))
+                               " [C]"))
+                   (ico (and gicons (context-navigator-controls-icon 'clear-group))))
+              (if gicons (concat " " (or ico fallback)) fallback)))
            (lbl-toggle-all
             (let* ((fallback (if (eq style 'text)
                                  (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel)))
@@ -197,12 +228,18 @@ otherwise fall back to compact labels or text in brackets."
                    (ico (and gicons (context-navigator-controls-icon 'toggle-all-gptel))))
               (if gicons (concat " " (or ico fallback)) fallback))))
       (list
+       (funcall mk lbl-razor 'razor #'context-navigator-view-razor-run
+                (context-navigator-i18n :tr-razor))
        (funcall mk lbl-push-now 'push-now #'context-navigator-view-push-now
                 (context-navigator-i18n :push-now))
        (funcall mk lbl-open 'open-buffers #'context-navigator-view-open-all-buffers
                 (context-navigator-i18n :open-buffers))
        (funcall mk lbl-close 'close-buffers #'context-navigator-view-close-all-buffers
                 (context-navigator-i18n :close-buffers))
+       (funcall mk lbl-clear-gptel 'clear-gptel #'context-navigator-view-clear-gptel
+                (context-navigator-i18n :clear-gptel))
+       (funcall mk lbl-clear-group 'clear-group #'context-navigator-view-clear-group
+                (context-navigator-i18n :clear-group))
        (funcall mk lbl-toggle-all 'toggle-all-gptel #'context-navigator-view-toggle-all-gptel
                 (context-navigator-i18n :toggle-all-gptel))))))
 
@@ -226,7 +263,22 @@ lines fit into TOTAL-WIDTH."
     (when too-wide
       (let ((context-navigator-controls-style 'icons))
         (setq segs (context-navigator-view-controls-segments))))
-    (context-navigator-view--wrap-segments segs total-width)))
+    (let ((wrap-fn (if (fboundp 'context-navigator-view--wrap-segments)
+                       #'context-navigator-view--wrap-segments
+                     (lambda (segments total-width)
+                       (let ((acc '())
+                             (cur ""))
+                         (dolist (seg segments)
+                           (let* ((sw (string-width seg))
+                                  (cw (string-width cur)))
+                             (if (<= (+ cw sw) total-width)
+                                 (setq cur (concat cur seg))
+                               (when (> (length cur) 0)
+                                 (push cur acc))
+                               (setq cur seg))))
+                         (when (> (length cur) 0) (push cur acc))
+                         (nreverse acc))))))
+      (funcall wrap-fn segs total-width))))
 
 (provide 'context-navigator-view-controls)
 ;;; context-navigator-view-controls.el ends here

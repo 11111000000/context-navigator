@@ -104,7 +104,14 @@ Files larger than this threshold are skipped."
                  ("K" (lambda ()
                         (let ((n (length (context-navigator-view--collect-closable-buffers))))
                           (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
-                  context-navigator-view-close-all-buffers)]
+                  context-navigator-view-close-all-buffers)
+                 ("R" (lambda () (context-navigator-i18n :tr-razor))
+                  context-navigator-view-razor-run
+                  :if (lambda ()
+                        (cl-some (lambda (b)
+                                   (with-current-buffer b
+                                     (derived-mode-p 'org-mode)))
+                                 (buffer-list)))) ]
    [:description (lambda () "Groups")
                  :if (lambda () (eq context-navigator-view--mode 'groups))
                  ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate)

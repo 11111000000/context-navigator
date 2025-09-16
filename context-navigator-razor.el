@@ -111,6 +111,62 @@
 (defvar context-navigator-razor--debug-resolve nil
   "When non-nil, `context-navigator-razor--resolve-token' returns (KEY . REASON) for logging.")
 
+;; UI status for header-line spinner
+(defvar context-navigator-razor--running nil
+  "Non-nil while Occam (razor) analysis is running.")
+
+(defvar context-navigator-razor--spinner-index 0
+  "Current spinner frame index for the header-line Occam indicator.")
+
+(defvar context-navigator-razor--spinner-timer nil
+  "Timer used to animate the header-line Occam spinner.")
+
+(defcustom context-navigator-razor-spinner-frames
+  '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  "Frames used for the Occam header-line spinner."
+  :type '(repeat string)
+  :group 'context-navigator-razor)
+
+(defun context-navigator-razor-spinner-frame ()
+  "Return current visual spinner frame string for the header-line."
+  (let* ((frames (or context-navigator-razor-spinner-frames
+                     '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
+         (len (max 1 (length frames))))
+    (nth (mod (or context-navigator-razor--spinner-index 0) len) frames)))
+
+(defun context-navigator-razor--schedule-header-refresh ()
+  "Request immediate header-line refresh for the Navigator buffer (no debounce)."
+  (let ((buf (get-buffer "*context-navigator*")))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        ;; Сброс кешей рендера, чтобы следующая перерисовка точно прошла
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-view--last-render-key nil)
+        ;; Форсируем переоценку header-line (:eval) даже если тело буфера не менялось
+        (force-mode-line-update t)
+        (when (fboundp 'context-navigator-view--render-if-visible)
+          (context-navigator-view--render-if-visible))))))
+
+(defun context-navigator-razor--notify-start ()
+  "Mark razor run as started and start spinner animation."
+  (setq context-navigator-razor--running t
+        context-navigator-razor--spinner-index 0)
+  (when (timerp context-navigator-razor--spinner-timer)
+    (cancel-timer context-navigator-razor--spinner-timer))
+  (setq context-navigator-razor--spinner-timer
+        (run-at-time 0 0.12
+                     (lambda ()
+                       (setq context-navigator-razor--spinner-index
+                             (1+ (or context-navigator-razor--spinner-index 0)))
+                       (context-navigator-razor--schedule-header-refresh)))))
+(defun context-navigator-razor--notify-stop ()
+  "Mark razor run as finished and stop spinner animation."
+  (setq context-navigator-razor--running nil)
+  (when (timerp context-navigator-razor--spinner-timer)
+    (cancel-timer context-navigator-razor--spinner-timer))
+  (setq context-navigator-razor--spinner-timer nil)
+  (context-navigator-razor--schedule-header-refresh))
+
 (defun context-navigator-razor--absolute-p (s)
   "Return non-nil if S looks like an absolute path (POSIX, Windows drive, or TRAMP)."
   (and (stringp s)
@@ -672,30 +728,14 @@
              (length (or keep '())) total))))
 
 (defun context-navigator-razor--gptel-opts (sys cb)
-  "Build options plist for gptel with SYS and wrapped callback CB.
+  "Return minimal options plist for gptel. The actual wrapping is done in `context-navigator-razor--gptel-call'."
+  (list :system sys :callback cb))
 
-Note: gptel-request does not accept :model/:temperature/:max-tokens etc.
-We set those via let-binding around the call. Here we only return
-the supported keyword args for gptel-request."
-  (list :system   sys
-        :callback (lambda (response info)
-                    (ignore info)
-                    (let ((len (length (or response ""))))
-                      (ignore-errors
-                        (context-navigator-debug :debug :razor
-                                                 "gptel callback: response length=%d" len)))
-                    (funcall cb (or response "")))))
-
-(defun context-navigator-razor--gptel-call (user opts)
-  "Call gptel with USER text and OPTS plist. Return request object or nil.
-
-OPTS must contain only supported gptel-request keywords (e.g., :system, :callback).
-Model/temperature/max-tokens are let-bound via gptel variables."
+(defun context-navigator-razor--gptel-call (sys user cb)
+  "Call gptel with SYS, USER and 1-arg CB (response-only). Return request object or nil."
   (unless (require 'gptel nil t)
     (user-error "gptel is not available"))
-  (let* ((sys (plist-get opts :system))
-         (cb  (plist-get opts :callback))
-         (model (if (symbolp context-navigator-razor-model)
+  (let* ((model (if (symbolp context-navigator-razor-model)
                     context-navigator-razor-model
                   (ignore-errors (intern context-navigator-razor-model)))))
     (ignore-errors
@@ -709,12 +749,19 @@ Model/temperature/max-tokens are let-bound via gptel variables."
           (gptel-temperature context-navigator-razor-temperature)
           (gptel-max-tokens  context-navigator-razor-max-output-tokens)
           (gptel-stream      nil))
-      (gptel-request user :system sys :callback cb))))
+      (gptel-request user
+        :system sys
+        :callback (lambda (response info)
+                    (ignore info)
+                    (let ((len (length (or response ""))))
+                      (ignore-errors
+                        (context-navigator-debug :debug :razor
+                                                 "gptel callback: response length=%d" len)))
+                    (funcall cb (or response "")))))))
 
 (defun context-navigator-razor--call-model (sys user cb)
-  "Compatibility wrapper: build OPTS from SYS/CB and call gptel with USER."
-  (let* ((opts (context-navigator-razor--gptel-opts sys cb)))
-    (context-navigator-razor--gptel-call user opts)))
+  "Call gptel with a wrapped 1-arg callback."
+  (context-navigator-razor--gptel-call sys user cb))
 
 (defun context-navigator-razor--collect-run-input ()
   "Collect input for the razor run and log initial metrics.
@@ -825,43 +872,47 @@ Return plist:
 (defun context-navigator-razor--make-apply-callback (total-enabled user model-items)
   "Build the gptel callback that parses and applies keep-set with retry logic.
 MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
-  (let ((retry-done nil)
-        (cb nil))
-    (setq cb
-          (lambda (raw)
-            (condition-case err
-                (let ((parsed (context-navigator-razor--parse-response raw model-items)))
-                  (if (and (listp parsed) (plist-get parsed :keep_keys))
-                      (let ((keep (plist-get parsed :keep_keys)))
-                        (context-navigator-razor--maybe-apply-keep keep total-enabled))
-                    (if (eq context-navigator-razor-parse-mode 'json-only)
-                        (if (and (not retry-done)
-                                 (yes-or-no-p (context-navigator-i18n :razor-parse-error)))
-                            (progn
-                              (setq retry-done t)
-                              (context-navigator-razor--retry-json-strict user cb raw))
-                          (let* ((snippet (substring (or raw "") 0 (min (length (or raw "")) 256))))
-                            (ignore-errors
-                              (context-navigator-debug :error :razor
-                                                       "Abort: parse failed; head=%S" snippet)))
-                          (message "%s" (context-navigator-i18n :razor-abort-parse)))
-                      (progn
-                        (context-navigator-razor--show-flex-stats parsed)
-                        (if (and (not retry-done)
-                                 (yes-or-no-p (context-navigator-i18n :razor-retry)))
-                            (progn
-                              (setq retry-done t)
-                              (context-navigator-razor--retry-flex-list user cb))
-                          (let* ((snippet (substring (or raw "") 0 (min (length (or raw "")) 256))))
-                            (ignore-errors
-                              (context-navigator-debug :error :razor
-                                                       "Abort: flex-parse failed; head=%S" snippet)))
-                          (message "%s" (context-navigator-i18n :aborted)))))))
-              (error
-               (ignore-errors
-                 (context-navigator-debug :error :razor "Callback error: %S" err))
-               (message "Razor error: %S" err)))))
-    cb))
+  (let ((retry-done nil))
+    (cl-labels
+        ((cb (raw)
+           (condition-case err
+               (let ((parsed (context-navigator-razor--parse-response raw model-items)))
+                 (if (and (listp parsed) (plist-get parsed :keep_keys))
+                     (progn
+                       (let ((keep (plist-get parsed :keep_keys)))
+                         (context-navigator-razor--maybe-apply-keep keep total-enabled))
+                       (context-navigator-razor--notify-stop))
+                   (if (eq context-navigator-razor-parse-mode 'json-only)
+                       (if (and (not retry-done)
+                                (yes-or-no-p (context-navigator-i18n :razor-parse-error)))
+                           (progn
+                             (setq retry-done t)
+                             (context-navigator-razor--retry-json-strict user #'cb raw))
+                         (let* ((snippet (substring (or raw "") 0 (min (length (or raw "")) 256))))
+                           (ignore-errors
+                             (context-navigator-debug :error :razor
+                                                      "Abort: parse failed; head=%S" snippet)))
+                         (message "%s" (context-navigator-i18n :razor-abort-parse))
+                         (context-navigator-razor--notify-stop))
+                     (progn
+                       (context-navigator-razor--show-flex-stats parsed)
+                       (if (and (not retry-done)
+                                (yes-or-no-p (context-navigator-i18n :razor-retry)))
+                           (progn
+                             (setq retry-done t)
+                             (context-navigator-razor--retry-flex-list user #'cb))
+                         (let* ((snippet (substring (or raw "") 0 (min (length (or raw "")) 256))))
+                           (ignore-errors
+                             (context-navigator-debug :error :razor
+                                                      "Abort: flex-parse failed; head=%S" snippet)))
+                         (message "%s" (context-navigator-i18n :aborted))
+                         (context-navigator-razor--notify-stop))))))
+             (error
+              (ignore-errors
+                (context-navigator-debug :error :razor "Callback error: %S" err))
+              (context-navigator-razor--notify-stop)
+              (message "Razor error: %S" err)))))
+      #'cb)))
 
 (defun context-navigator-razor--request (sys user total-enabled model-items)
   "Send the request to the model with SYS/USER and handle the response."
@@ -890,6 +941,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
                                               context-navigator-razor-flex-allow-fuzzy))
       (let* ((sys (context-navigator-razor--system-prompt))
              (user (context-navigator-razor--build-user org-text items-pl)))
+        (context-navigator-razor--notify-start)
         (context-navigator-razor--request sys user total-enabled model-items)))))
 
 (provide 'context-navigator-razor)

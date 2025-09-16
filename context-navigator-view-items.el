@@ -17,6 +17,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-core)
 (require 'context-navigator-stats)
+(require 'context-navigator-view-title)
 
 ;;;###autoload
 (defun context-navigator-view--items-header-toggle-lines (total-width)
@@ -26,9 +27,22 @@ Prefer the controls module implementation when available; fall back to the
 legacy local builder for compatibility."
   (if (fboundp 'context-navigator-view-controls-lines)
       (context-navigator-view-controls-lines total-width)
-    ;; Fallback: use the original toggle builder and wrap it for inline rendering.
-    (context-navigator-view--wrap-segments
-     (context-navigator-view--make-toggle-segments) total-width)))
+    ;; Fallback: use the original toggle builder and wrap it locally to avoid requiring the full view.
+    (let* ((segments (context-navigator-view--make-toggle-segments)))
+      (if (fboundp 'context-navigator-view--wrap-segments)
+          (context-navigator-view--wrap-segments segments total-width)
+        (let ((acc '())
+              (cur ""))
+          (dolist (seg segments)
+            (let* ((sw (string-width seg))
+                   (cw (string-width cur)))
+              (if (<= (+ cw sw) total-width)
+                  (setq cur (concat cur seg))
+                (when (> (length cur) 0)
+                  (push cur acc))
+                (setq cur seg))))
+          (when (> (length cur) 0) (push cur acc))
+          (nreverse acc))))))
 
 ;;;###autoload
 (defun context-navigator-view--items-base-lines (state header total-width)

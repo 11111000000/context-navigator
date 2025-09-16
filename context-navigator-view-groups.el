@@ -15,6 +15,7 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-icons)
 (require 'context-navigator-render)
+(require 'context-navigator-view-title)
 
 ;;;###autoload
 (defun context-navigator-view--groups-header-lines (header total-width)

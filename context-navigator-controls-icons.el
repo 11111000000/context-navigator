@@ -20,6 +20,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'subr-x)
 
 (defgroup context-navigator-controls-icons nil
@@ -66,9 +67,11 @@ to the textual/compact style (with brackets)."
     (undo . (faicon . "undo"))
     (redo . (faicon . "repeat"))
     (push-now . (faicon . "paper-plane"))
+    (razor . (faicon . "scissors"))
     (open-buffers . (faicon . "folder-open"))
     (close-buffers . (material . "close"))
     (clear-gptel . (faicon . "trash"))
+    (clear-group . (faicon . "trash"))
     (toggle-all-gptel . (faicon . "check-square-o")))
   "Default mapping of control keys to all-the-icons specs."
   :type '(alist :key-type symbol
@@ -86,7 +89,8 @@ to the textual/compact style (with brackets)."
   '((undo . (:foreground "SteelBlue4"))
     (redo . (:foreground "SteelBlue4"))
     (close-buffers . (:foreground "IndianRed3"))
-    (clear-gptel . (:foreground "orange3")))
+    (clear-gptel . (:foreground "orange3"))
+    (clear-group . (:foreground "orange3")))
   "Optional per-key face overrides for control icons.
 Each entry is either a face symbol or a plist like (:foreground \"...\" [:height N])."
   :type '(alist :key-type symbol
@@ -129,7 +133,7 @@ Returns nil if icons are not available or spec cannot be resolved.
 Known KEYS by default:
   push (stateful: on/off)
   auto-project (stateful: on/off)
-  undo redo push-now open-buffers close-buffers clear-gptel toggle-all-gptel
+  undo redo push-now open-buffers close-buffers clear-group clear-gptel toggle-all-gptel
 
 STATE is used for stateful controls: 'on or 'off."
   (when (context-navigator-controls-icons-available-p)
@@ -159,7 +163,25 @@ STATE is used for stateful controls: 'on or 'off."
                                            (and (listp final-face) final-face))
                                  :height context-navigator-controls-icon-height
                                  ;; keep v-adjust neutral; we apply raise via display:
-                                 :v-adjust 0.0)))))
+                                 :v-adjust 0.0))))
+                   ;; Fallbacks for tricky keys (e.g. razor) across providers
+                   (icon
+                    (or icon
+                        (when (eq key 'razor)
+                          (let ((alts '((material . "content_cut")
+                                        (octicon  . "scissors")
+                                        (faicon   . "scissors"))))
+                            (cl-loop for sp in alts
+                                     for pf = (context-navigator-controls-icons--provider-fn (car sp))
+                                     for nm = (cdr sp)
+                                     for s = (and pf (ignore-errors
+                                                       (funcall pf nm
+                                                                :face (or (and (symbolp final-face) final-face)
+                                                                          (and (listp final-face) final-face))
+                                                                :height context-navigator-controls-icon-height
+                                                                :v-adjust 0.0)))
+                                     when (and (stringp s) (not (string-empty-p s)))
+                                     return s))))))
               (when (and (stringp icon) (not (string-empty-p icon)))
                 ;; Apply uniform raise on top of backend result; also enforce height override
                 ;; when face is a plist (add :height if missing).
@@ -172,6 +194,37 @@ STATE is used for stateful controls: 'on or 'off."
 (defun context-navigator-controls-icons-clear-cache ()
   "Clear the internal cache of rendered control icons."
   (clrhash context-navigator-controls-icons--cache))
+
+;; Auto-refresh UI (header-line controls) when icons become available or settings/theme change.
+(defun context-navigator-controls-icons--refresh-ui ()
+  "Force header-line controls to rebuild after icon settings change."
+  (ignore-errors (context-navigator-controls-icons-clear-cache))
+  ;; Trigger a lightweight model refresh if available (publishes :model-refreshed)
+  (ignore-errors (context-navigator-refresh))
+  ;; And force a mode-line/header-line redraw as a fallback.
+  (force-mode-line-update t))
+
+;; When all-the-icons loads later in the session, rebuild controls with icons.
+(with-eval-after-load 'all-the-icons
+  (context-navigator-controls-icons--refresh-ui))
+
+;; React to variable changes (customize/setq): enable/disable icons, map/face, sizes.
+(when (fboundp 'add-variable-watcher)
+  (dolist (sym '(context-navigator-controls-use-graphic-icons
+                 context-navigator-controls-icon-map
+                 context-navigator-controls-icon-face-map
+                 context-navigator-controls-icon-height
+                 context-navigator-controls-icon-raise))
+    (add-variable-watcher
+     sym
+     (lambda (_sym _newval _op _where)
+       (context-navigator-controls-icons--refresh-ui)))))
+
+;; Refresh after theme changes so colors/sizes re-render properly.
+(when (boundp 'after-enable-theme-functions)
+  (add-hook 'after-enable-theme-functions
+            (lambda (&rest _)
+              (context-navigator-controls-icons--refresh-ui))))
 
 (provide 'context-navigator-controls-icons)
 
