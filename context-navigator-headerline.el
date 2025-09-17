@@ -39,9 +39,13 @@
 Shows only control toggles and action segments; the project/group title is
 rendered inside the buffer itself (above the \"..\" line)."
   (when (eq major-mode 'context-navigator-view-mode)
+    ;; Build headerline segments using the controls module.
+    ;; Apply a small downward shift for graphic icons in the header-line so
+    ;; they visually have a tiny top offset (space above the icons).
     (let ((controls (ignore-errors
                       (when (fboundp 'context-navigator-view-controls-segments)
-                        (context-navigator-view-controls-segments)))))
+                        (let ((context-navigator-controls-icon-raise -0.08))
+                          (context-navigator-view-controls-segments))))))
       (when (and (listp controls) controls)
         ;; Preserve exact spacing from segments (tests rely on it).
         (mapconcat #'identity controls "")))))
