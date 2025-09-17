@@ -27,7 +27,7 @@
   "Settings for adding files from names/paths."
   :group 'context-navigator)
 
-(defcustom context-navigator-path-add-limit 50
+(defcustom context-navigator-path-add-limit 70
   "Maximum number of files to add in a single operation."
   :type 'integer :group 'context-navigator-path-add)
 
@@ -598,7 +598,7 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
 ;; Interactive commands
 
 ;;;###autoload
-(defun context-navigator-add-from-text ()
+(cl-defun context-navigator-add-from-text ()
   "Extract path-like tokens from region or buffer, preview, and add resolved files to the active group."
   (interactive)
   (let* ((src (if (use-region-p)
@@ -612,36 +612,42 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
              (files (plist-get res :files))
              (amb (plist-get res :ambiguous))
              (unr (plist-get res :unresolved))
+             ;; Если есть неоднозначности — включаем все их совпадения и пересчитываем фильтры/статистику
+             (amb-files (and (consp amb)
+                             (cl-mapcan (lambda (cell) (copy-sequence (cdr cell))) amb)))
+             (combined-files (if amb-files (nreverse (delete-dups (append files amb-files))) files))
+             (flt (and amb-files (context-navigator-path-add--apply-filters combined-files)))
+             (files (or (and flt (plist-get flt :files)) combined-files))
+             (stats (or flt res))
              (too-many (> (length files) (or context-navigator-path-add-limit 50))))
-        ;; Ambiguities: abort and show a short summary
+        ;; Неоднозначности: уведомляем, но продолжаем и предлагаем добавить все подходящие файлы
         (when (and (consp amb) (> (length amb) 0))
           (let ((sample (mapconcat
                          (lambda (cell)
                            (format "%s → %d" (car cell) (length (cdr cell))))
                          (cl-subseq amb 0 (min 10 (length amb)))
                          ", ")))
-            (message "%s %s" (context-navigator-i18n :ambiguous-found) sample))
-          (cl-return-from context-navigator-add-from-text nil))
-        ;; Unresolved: show a short list (non-fatal)
+            (message "%s %s" (context-navigator-i18n :ambiguous-found) sample)))
+        ;; Нерешённые: просто сообщаем (не фатально)
         (when (and (consp unr) (> (length unr) 0))
           (let ((sample (string-join (cl-subseq unr 0 (min 10 (length unr))) ", ")))
             (message "%s %s" (context-navigator-i18n :unresolved-found) sample)))
-        ;; Too many
+        ;; Слишком много
         (when too-many
           (message (context-navigator-i18n :too-many) (length files) (or context-navigator-path-add-limit 50))
           (cl-return-from context-navigator-add-from-text nil))
-        ;; Remote confirmation
-        (when (and (> (plist-get res :remote) 0)
-                   (not (yes-or-no-p (format (context-navigator-i18n :remote-warning) (plist-get res :remote)))))
+        ;; Подтверждение для remote
+        (when (and (> (plist-get stats :remote) 0)
+                   (not (yes-or-no-p (format (context-navigator-i18n :remote-warning) (plist-get stats :remote)))))
           (message "%s" (context-navigator-i18n :aborted))
           (cl-return-from context-navigator-add-from-text nil))
-        ;; Nothing to add
+        ;; Нечего добавлять
         (if (not (and (listp files) (> (length files) 0)))
             (message "%s" (context-navigator-i18n :unresolved-found))
-          ;; Preview + confirm
-          (if (not (context-navigator-path-add--preview-and-confirm files res))
+          ;; Превью + подтверждение
+          (if (not (context-navigator-path-add--preview-and-confirm files stats))
               (message "%s" (context-navigator-i18n :aborted))
-            ;; Add and push (batched)
+            ;; Добавление и пуш (батч)
             (let* ((st-before (context-navigator--state-get))
                    (items-before (and st-before (context-navigator-state-items st-before)))
                    (added (context-navigator-path-add--append-files-as-items files))
