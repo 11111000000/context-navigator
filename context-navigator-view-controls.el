@@ -151,7 +151,7 @@ falls back to compact labels or text with brackets otherwise."
       (list seg1 seg2 seg3 seg4))))
 
 (defun context-navigator-view-controls--build-actions ()
-  "Build action segments (Occam, Open/Close buffers, Clear gptel, Push now, Toggle all gptel).
+  "Build action segments (Occam, Open/Close buffers, Push now, Toggle all gptel).
 
 When graphic icons are available (all-the-icons) and enabled, show icons only (no brackets);
 otherwise fall back to compact labels or text in brackets. While Occam is running,
@@ -209,12 +209,6 @@ show a small spinner in place of its icon."
                                " [K]"))
                    (ico (and gicons (context-navigator-controls-icon 'close-buffers))))
               (if gicons (concat " " (or ico fallback)) fallback)))
-           (lbl-clear-gptel
-            (let* ((fallback (if (eq style 'text)
-                                 (format " [%s]" (capitalize (context-navigator-i18n :clear-gptel)))
-                               " [∅]"))
-                   (ico (and gicons (context-navigator-controls-icon 'clear-gptel))))
-              (if gicons (concat " " (or ico fallback)) fallback)))
            (lbl-clear-group
             (let* ((fallback (if (eq style 'text)
                                  (format " [%s]" (capitalize (context-navigator-i18n :clear-group)))
@@ -236,12 +230,11 @@ show a small spinner in place of its icon."
                 (context-navigator-i18n :open-buffers))
        (funcall mk lbl-close 'close-buffers #'context-navigator-view-close-all-buffers
                 (context-navigator-i18n :close-buffers))
-       (funcall mk lbl-clear-gptel 'clear-gptel #'context-navigator-view-clear-gptel
-                (context-navigator-i18n :clear-gptel))
        (funcall mk lbl-clear-group 'clear-group #'context-navigator-view-clear-group
                 (context-navigator-i18n :clear-group))
        (funcall mk lbl-toggle-all 'toggle-all-gptel #'context-navigator-view-toggle-all-gptel
                 (context-navigator-i18n :toggle-all-gptel))))))
+
 
 (defun context-navigator-view-controls-segments ()
   "Return all control segments (toggles and actions).
