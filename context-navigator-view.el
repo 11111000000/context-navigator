@@ -957,13 +957,17 @@ Order of operations:
   "Subscribe to groups list updates."
   (push (context-navigator-events-subscribe
          :groups-list-updated
-         (lambda (_root groups)
+         (lambda (root groups)
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
-                 (setq context-navigator-view--groups groups)
-                 (when (eq context-navigator-view--mode 'groups)
-                   (context-navigator-view--schedule-render)))))))
+                 (let* ((st (ignore-errors (context-navigator--state-get)))
+                        (cur-root (and st (context-navigator-state-last-project-root st))))
+                   ;; Защита от устаревших событий: принимаем только для актуального root
+                   (when (equal root cur-root)
+                     (setq context-navigator-view--groups groups)
+                     (when (eq context-navigator-view--mode 'groups)
+                       (context-navigator-view--schedule-render)))))))))
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-project-events ()

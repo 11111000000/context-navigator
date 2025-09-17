@@ -862,14 +862,19 @@ Otherwise start immediately."
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
-  ;; Always update last project root for UI/header, regardless of auto-switch flag.
-  (let* ((cur (context-navigator--state-get))
-         (new (context-navigator--state-copy cur)))
-    (setf (context-navigator-state-last-project-root new) root)
-    (context-navigator--set-state new))
-  (context-navigator--log "Project switch -> %s" (or root "~"))
-  (when context-navigator--auto-project-switch
-    (if context-navigator-autoload
+  (if (not context-navigator--auto-project-switch)
+      ;; Автопереключение выключено — игнорируем событие и не трогаем state/заголовок.
+      (context-navigator--log "Project switch (ignored, auto-project OFF) -> %s" (or root "~"))
+    (progn
+      ;; Обновляем last-project-root только когда автопереключение включено.
+      (let* ((cur (context-navigator--state-get))
+             (new (context-navigator--state-copy cur)))
+        (setf (context-navigator-state-last-project-root new) root)
+        (context-navigator--set-state new))
+      (context-navigator--log "Project switch -> %s" (or root "~"))
+      ;; Сразу публикуем список групп для нового root, чтобы исключить смешение
+      (ignore-errors (context-navigator-groups-open))
+      (when context-navigator-autoload
         (progn
           ;; Inhibit autosave/refresh during transition to avoid leaking saves.
           (let* ((cur1 (context-navigator--state-get))
@@ -885,9 +890,8 @@ Otherwise start immediately."
             (if (fboundp 'gptel-context-remove-all)
                 (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
               (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
-          (context-navigator--load-context-for-root root))
-      ;; When autoload is disabled, do not touch current context/model.
-      nil)))
+          (context-navigator--load-context-for-root root))))))
+
 
 ;;;###autoload
 (defun context-navigator-context-load (&optional prompt)
@@ -1459,6 +1463,13 @@ Also triggers an immediate project switch so header shows actual project."
          (sidebar (ignore-errors (context-navigator--sidebar-visible-p)))
          (buffer  (ignore-errors (context-navigator--buffer-mode-visible-p)))
          (disp    (and (boundp 'context-navigator-display-mode) context-navigator-display-mode)))
+    ;; Best-effort autosave of current group before restart
+    (let* ((st (ignore-errors (context-navigator--state-get)))
+           (root (and st (context-navigator-state-last-project-root st)))
+           (slug (and st (context-navigator-state-current-group-slug st)))
+           (items (and st (context-navigator-state-items st))))
+      (when (and (stringp slug) (not (string-empty-p slug)))
+        (ignore-errors (context-navigator-persist-save items root slug))))
     ;; Close UI
     (ignore-errors (context-navigator-view-close))
     (ignore-errors (context-navigator-buffer-close))
@@ -1501,7 +1512,8 @@ Also triggers an immediate project switch so header shows actual project."
     ;; a :project-switch event so other components (sidebar) can pick it up.
     (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
       (when root
-        (context-navigator-events-publish :project-switch root)))
+        (context-navigator-events-publish :project-switch root)
+        (ignore-errors (context-navigator-groups-open))))
     (message "Context Navigator: restarted")))
 
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
