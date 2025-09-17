@@ -315,7 +315,15 @@ lines fit into TOTAL-WIDTH."
     (add-variable-watcher
      sym
      (lambda (&rest _)
-       (ignore-errors (context-navigator-refresh))
+       ;; Avoid full model refresh; do a local sidebar re-render
+       (ignore-errors
+         (let ((buf (get-buffer "*context-navigator*")))
+           (when (buffer-live-p buf)
+             (with-current-buffer buf
+               (setq-local context-navigator-render--last-hash nil)
+               (setq-local context-navigator-view--last-render-key nil)
+               (when (fboundp 'context-navigator-view--render-if-visible)
+                 (context-navigator-view--render-if-visible))))))
        (force-mode-line-update t)))))
 
 (provide 'context-navigator-view-controls)

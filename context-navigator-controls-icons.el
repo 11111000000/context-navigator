@@ -199,9 +199,16 @@ STATE is used for stateful controls: 'on or 'off."
 (defun context-navigator-controls-icons--refresh-ui ()
   "Force header-line controls to rebuild after icon settings change."
   (ignore-errors (context-navigator-controls-icons-clear-cache))
-  ;; Trigger a lightweight model refresh if available (publishes :model-refreshed)
-  (ignore-errors (context-navigator-refresh))
-  ;; And force a mode-line/header-line redraw as a fallback.
+  ;; Prefer a local sidebar re-render over full model refresh to avoid generation spam.
+  (ignore-errors
+    (let ((buf (get-buffer "*context-navigator*")))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (setq-local context-navigator-render--last-hash nil)
+          (setq-local context-navigator-view--last-render-key nil)
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (context-navigator-view--render-if-visible))))))
+  ;; As a fallback, force header-line/modeline refresh.
   (force-mode-line-update t))
 
 ;; When all-the-icons loads later in the session, rebuild controls with icons.

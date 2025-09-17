@@ -444,6 +444,30 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 (defun context-navigator-refresh ()
   "Recompute indices and publish a light refresh event."
   (interactive)
+  ;; Optional diagnostics: when `context-navigator-diagnostics-log-refresh-caller' is non-nil,
+  ;; log a trimmed backtrace on refresh bursts (>=10 calls/sec).
+  (defvar context-navigator--refresh-log-ts 0.0)
+  (defvar context-navigator--refresh-log-count 0)
+  (when (and (boundp 'context-navigator-diagnostics-log-refresh-caller)
+             context-navigator-diagnostics-log-refresh-caller)
+    (let* ((now (float-time))
+           (prev context-navigator--refresh-log-ts)
+           (cnt context-navigator--refresh-log-count))
+      (if (< (- now prev) 1.0)
+          (setq context-navigator--refresh-log-count (1+ cnt))
+        (setq context-navigator--refresh-log-ts now
+              context-navigator--refresh-log-count 1))
+      (when (>= context-navigator--refresh-log-count 10)
+        (setq context-navigator--refresh-log-ts now
+              context-navigator--refresh-log-count 0)
+        (let ((bt (ignore-errors (with-output-to-string (backtrace)))))
+          (when (and (stringp bt) (fboundp 'context-navigator-debug))
+            (ignore-errors
+              (context-navigator-debug :trace :core "refresh burst — caller backtrace:\n%s"
+                                       (mapconcat #'identity
+                                                  (cl-subseq (split-string bt "\n") 0
+                                                             (min 22 (length (split-string bt "\n"))))
+                                                  "\n"))))))))
   (let* ((cur (context-navigator--state-get))
          (items (context-navigator-state-items cur))
          (new (context-navigator--state-with-items

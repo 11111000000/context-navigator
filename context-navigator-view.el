@@ -117,8 +117,15 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar context-navigator-view--group-line-keymap
   (let ((m (make-sparse-keymap)))
     (define-key m [mouse-1] #'context-navigator-view-mouse-open-group)
+    ;; Explicit keyboard bindings on group lines for reliability
+    (define-key m (kbd "RET")       #'context-navigator-view-activate)
+    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
+    (define-key m [return]          #'context-navigator-view-activate)
+    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
+    (define-key m [kp-enter]        #'context-navigator-view-activate)
+    (define-key m (kbd "l")         #'context-navigator-view-activate)
     m)
-  "Keymap attached to group lines to support mouse clicks.")
+  "Keymap attached to group lines to support mouse and keyboard activation.")
 (defvar-local context-navigator-view--load-progress nil) ;; cons (POS . TOTAL) | nil)
 (defvar-local context-navigator-view--winselect-fn nil)  ;; function added to window-selection-change-functions
 (defvar-local context-navigator-view--gptel-keys nil)    ;; cached stable keys from gptel (for indicators)
@@ -142,19 +149,25 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar context-navigator-view--title-line-keymap
   (let ((m (make-sparse-keymap)))
     ;; Mouse click toggles collapse/expand
-    (define-key m [mouse-1] #'context-navigator-view-toggle-collapse)
+    (define-key m [mouse-1] #'context-navigator-view-toggle-collapse-immediate)
     ;; TAB on title behaves like in Magit: toggle collapse
-    (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse)
-    (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse)
-    (define-key m [tab]             #'context-navigator-view-toggle-collapse)
-    (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m [tab]             #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse-immediate)
     ;; RET on title also toggles collapse/expand
-    (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse)
-    (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse)
-    (define-key m [return]          #'context-navigator-view-toggle-collapse)
-    (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse)
+    (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m [return]          #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse-immediate)
     m)
   "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
+
+(defun context-navigator-view-toggle-collapse-immediate ()
+  "Toggle collapse and render immediately."
+  (interactive)
+  (context-navigator-view-toggle-collapse)
+  (context-navigator-view--render-if-visible))
 
 (defcustom context-navigator-view-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -1687,15 +1700,28 @@ Buffers are opened in background; we do not change window focus."
 - On toggle segments in header: toggle push/auto flags
 - On footer action segments: invoke the assigned action (push/open buffers/close buffers/clear group/toggle-all-gptel)
 - In groups mode: open group at point
-- In items mode: ".." goes to groups; otherwise visit item."
+- In items mode: \"..\" goes to groups; otherwise visit item."
   (interactive)
-  ;; Title line: collapse/expand
+  ;; Diagnostics: log where activation happened (helps with RET issues)
+  (ignore-errors
+    (context-navigator-debug :debug :ui "activate: mode=%s title=%s stats=%s item=%s group=%s up=%s act=%s tgl=%s"
+                             context-navigator-view--mode
+                             (and (get-text-property (point) 'context-navigator-title) t)
+                             (and (get-text-property (point) 'context-navigator-stats-toggle) t)
+                             (and (get-text-property (point) 'context-navigator-item) t)
+                             (get-text-property (point) 'context-navigator-group-slug)
+                             (and (get-text-property (point) 'context-navigator-groups-up) t)
+                             (get-text-property (point) 'context-navigator-action)
+                             (get-text-property (point) 'context-navigator-toggle)))
+  ;; Title line: collapse/expand (render immediately)
   (when (get-text-property (point) 'context-navigator-title)
     (context-navigator-view-toggle-collapse)
+    (context-navigator-view--render-if-visible)
     (cl-return-from context-navigator-view-activate))
-  ;; Stats header toggle
+  ;; Stats header toggle (render immediately)
   (when (get-text-property (point) 'context-navigator-stats-toggle)
     (context-navigator-view-stats-toggle)
+    (context-navigator-view--render-if-visible)
     (cl-return-from context-navigator-view-activate))
   (let ((act (get-text-property (point) 'context-navigator-action))
         (tgl (get-text-property (point) 'context-navigator-toggle)))
@@ -1736,17 +1762,16 @@ Buffers are opened in background; we do not change window focus."
     (context-navigator-view-delete-from-model)))
 
 (defun context-navigator-view-go-up ()
-  "Toggle between items and groups views.
+  "Switch from items to groups view; in groups view do nothing.
+
 - From items -> switch to groups and fetch list
-- From groups -> switch back to items"
+- From groups -> no-op"
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
-      (progn
-        (setq context-navigator-view--mode 'items)
-        (context-navigator-view--schedule-render))
+  (when (not (eq context-navigator-view--mode 'groups))
     (setq context-navigator-view--mode 'groups)
     (ignore-errors (context-navigator-groups-open))
-    (context-navigator-view--schedule-render)))
+    ;; Render immediately for responsive UX (avoid waiting for debounce)
+    (context-navigator-view--render-if-visible)))
 
 (defun context-navigator-view-group-create ()
   "Create a new group (groups mode)."
@@ -1807,7 +1832,8 @@ Buffers are opened in background; we do not change window focus."
   (interactive)
   (when (fboundp 'context-navigator-stats-toggle)
     (context-navigator-stats-toggle))
-  (context-navigator-view--schedule-render))
+  (context-navigator-view--schedule-render)
+  (context-navigator-view--render-if-visible))
 
 (provide 'context-navigator-view)
 ;;; context-navigator-view.el ends here
