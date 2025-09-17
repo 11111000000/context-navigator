@@ -31,6 +31,16 @@
 (require 'context-navigator-log)
 (require 'context-navigator-razor)
 
+;; Safe wrapper to avoid transient setup errors when the real command
+;; isn't defined yet (e.g., during partial loads).
+(defun context-navigator-view-activate-safe (&optional arg)
+  "Safely activate the Navigator action at point.
+Calls `context-navigator-view-activate' when available; otherwise shows a hint."
+  (interactive "P")
+  (if (fboundp 'context-navigator-view-activate)
+      (call-interactively 'context-navigator-view-activate)
+    (message "[Context Navigator] Activate command not available yet.")))
+
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
   :group 'context-navigator)
@@ -81,7 +91,7 @@ Files larger than this threshold are skipped."
 (transient-define-prefix context-navigator-view-transient ()
   "Navigator menu"
   [[:description (lambda () "Navigate")
-                 ("RET" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate)
+                 ("RET" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate-safe)
                  ("SPC" (lambda () (context-navigator-i18n :help-preview))  context-navigator-view-preview)
                  ("n"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
                  ("p"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
@@ -114,7 +124,7 @@ Files larger than this threshold are skipped."
                                  (buffer-list)))) ]
    [:description (lambda () "Groups")
                  :if (lambda () (eq context-navigator-view--mode 'groups))
-                 ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate)
+                 ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate-safe)
                  ("a"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
                  ("r"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
                  ("e"   (lambda ()

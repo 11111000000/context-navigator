@@ -1174,6 +1174,23 @@ MAP is a keymap to search for COMMAND bindings."
       ;; Groups mode summary (localized)
       (princ (context-navigator-i18n :help-groups-summary)) (princ "\n"))))
 
+;; Ensure autoload for the transient entry so “?” works even without generated autoloads
+(autoload 'context-navigator-view-transient "context-navigator-transient"
+  "Open Context Navigator transient menu." t)
+
+(defun context-navigator-view-open-menu ()
+  "Open Navigator menu (transient) or fallback to Help when unavailable."
+  (interactive)
+  ;; Make sure transient is available if installed
+  (unless (featurep 'transient)
+    (require 'transient nil t))
+  ;; Best-effort load of our transient menu
+  (unless (fboundp 'context-navigator-view-transient)
+    (ignore-errors (require 'context-navigator-transient)))
+  (if (fboundp 'context-navigator-view-transient)
+      (call-interactively 'context-navigator-view-transient)
+    (call-interactively 'context-navigator-view-help)))
+
 (defvar context-navigator-view-mode-map
   (let ((m (make-sparse-keymap)))
     ;; Dispatch RET depending on mode
@@ -1238,7 +1255,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "e")   #'context-navigator-view-group-edit-description)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
     (define-key m (kbd "q")   #'context-navigator-view-quit)
-    (define-key m (kbd "?")   #'context-navigator-view-transient)
+    (define-key m (kbd "?")   #'context-navigator-view-open-menu)
     m)
   "Keymap for =context-navigator-view-mode'.")
 
@@ -1279,7 +1296,7 @@ MAP is a keymap to search for COMMAND bindings."
   (define-key context-navigator-view-mode-map (kbd "s") #'context-navigator-view-stats-toggle)
   (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
   (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-group-edit-description)
-  (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-transient))
+  (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-open-menu))
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
 (when (and (keymapp context-navigator-view--group-line-keymap)
            (keymapp context-navigator-view-mode-map))
