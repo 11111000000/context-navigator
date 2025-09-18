@@ -866,9 +866,12 @@ Otherwise start immediately."
       ;; Автопереключение выключено — игнорируем событие и не трогаем state/заголовок.
       (context-navigator--log "Project switch (ignored, auto-project OFF) -> %s" (or root "~"))
     (progn
-      ;; Обновляем last-project-root только когда автопереключение включено.
+      (ignore-errors (context-navigator-events-debounce :autosave 0 (lambda () nil)))
       (let* ((cur (context-navigator--state-get))
              (new (context-navigator--state-copy cur)))
+        (setf (context-navigator-state-inhibit-refresh new) t)
+        (setf (context-navigator-state-inhibit-autosave new) t)
+        (setf (context-navigator-state-loading-p new) t)
         (setf (context-navigator-state-last-project-root new) root)
         (context-navigator--set-state new))
       (context-navigator--log "Project switch -> %s" (or root "~"))
@@ -876,13 +879,6 @@ Otherwise start immediately."
       (ignore-errors (context-navigator-groups-open))
       (when context-navigator-autoload
         (progn
-          ;; Inhibit autosave/refresh during transition to avoid leaking saves.
-          (let* ((cur1 (context-navigator--state-get))
-                 (new1 (context-navigator--state-copy cur1)))
-            (setf (context-navigator-state-inhibit-refresh new1) t)
-            (setf (context-navigator-state-inhibit-autosave new1) t)
-            (setf (context-navigator-state-loading-p new1) t)
-            (context-navigator--set-state new1))
           ;; Clear only gptel before loading context of the new project; keep old items visible
           ;; while loading (the View shows a spinner when loading-p is set).
           (when context-navigator--push-to-gptel
