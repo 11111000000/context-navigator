@@ -264,6 +264,10 @@ REST is a list of item lines."
                                                      'local-map km)
                                                s))
                         (setq first nil))
+                      (unless is-header
+                        (add-text-properties 0 (length s)
+                                             (list 'context-navigator-stats-line t)
+                                             s))
                       s))
                   raw-stats)))))
     (let ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))

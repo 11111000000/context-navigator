@@ -195,6 +195,21 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
   "If spinner timer slips by more than this (seconds), degrade to a static indicator until load completes."
   :type 'number :group 'context-navigator)
 
+(defcustom context-navigator-view-header-props
+  '(context-navigator-title context-navigator-stats-toggle)
+  "List of text-properties that mark section headers in the sidebar."
+  :type '(repeat symbol) :group 'context-navigator)
+
+(defcustom context-navigator-view-element-props
+  '(context-navigator-item
+    context-navigator-group-slug
+    context-navigator-groups-up
+    context-navigator-action
+    context-navigator-toggle
+    context-navigator-stats-line)
+  "List of text-properties that are considered section elements for j/n/k/p."
+  :type '(repeat symbol) :group 'context-navigator)
+
 (defun context-navigator-view--header (state)
   "Compute compact header title from STATE.
 
@@ -590,42 +605,156 @@ hard to restore the sidebar afterward."
   (context-navigator-view--visit t))
 
 (defun context-navigator-view-next-item ()
-  "Move point to the next item line or \"..\" or group line."
+  "Section-aware next (down) navigation.
+
+Rules:
+- On any header (title or Stats) → move to the first element in its section;
+  if none, jump to the next header (wrap to the first header when at the last).
+- On a section element:
+  • if it's the last element in the section → jump to the next header (wrap);
+  • otherwise → move to the next element within the same section.
+
+This does not toggle collapse/stats; RET/TAB still handle toggling on headers."
   (interactive)
-  (let* ((start (min (1+ (line-end-position)) (point-max)))
-         (pos (or (context-navigator-view--find-next-itemish-pos start)
-                  (text-property-not-all start (point-max) 'context-navigator-group-slug nil))))
-    (unless pos
-      ;; wrap to the first item-ish or group element
-      (setq pos (or (context-navigator-view--find-next-itemish-pos (point-min))
-                    (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))))
-    (when pos
-      (goto-char pos)
-      (beginning-of-line))))
+  (let* ((bol (line-beginning-position))
+         (eol (line-end-position))
+         (here bol)
+         (hdr-props context-navigator-view-header-props)
+         (elt-props context-navigator-view-element-props)
+         (find-next (lambda (start props &optional end)
+                      (let ((best nil))
+                        (dolist (p props)
+                          (let ((pos (text-property-not-all start (or end (point-max)) p nil)))
+                            (when (and pos (or (null best) (< pos best)))
+                              (setq best pos))))
+                        best)))
+         (find-prev (lambda (start props)
+                      (let ((pos (funcall find-next (point-min) props))
+                            (best nil))
+                        (while (and pos (< pos start))
+                          (setq best pos)
+                          (setq pos (funcall find-next (1+ pos) props)))
+                        best)))
+         ;; Detect header anywhere on the current line, not only at BOL
+         (hdr-at-line (cl-some (lambda (p) (text-property-not-all bol eol p nil)) hdr-props))
+         (on-header (not (null hdr-at-line)))
+         ;; Use the header on this line when present; otherwise nearest header above
+         (section-header (or hdr-at-line
+                             (funcall find-prev (1+ bol) hdr-props)))
+         ;; When searching after a header, start strictly after its line (eol+1)
+         (hdr-eol (and section-header
+                       (save-excursion (goto-char section-header) (line-end-position))))
+         (next-header (and section-header
+                           (funcall find-next (1+ (or hdr-eol section-header)) hdr-props)))
+         (section-first (and section-header
+                             (funcall find-next (1+ (or hdr-eol section-header)) elt-props next-header)))
+         (section-last
+          (and section-header
+               (let ((end (or next-header (point-max))))
+                 (funcall find-prev end elt-props)))))
+    (cond
+     (on-header
+      (cond
+       (section-first (goto-char section-first))
+       (next-header (goto-char next-header))
+       (t (when-let ((first-h (funcall find-next (point-min) hdr-props)))
+            (goto-char first-h)))))
+     (t
+      ;; Start from end of current line to avoid re-selecting the same element.
+      (let* ((cur-next (funcall find-next (1+ eol) elt-props))
+             (next-in-section (and cur-next
+                                   (or (null next-header) (< cur-next next-header)))))
+        (cond
+         ((and section-last (= here section-last))
+          (if next-header
+              (goto-char next-header)
+            (when-let ((first-h (funcall find-next (point-min) hdr-props)))
+              (goto-char first-h))))
+         (next-in-section (goto-char cur-next))
+         (t
+          (if next-header
+              (goto-char next-header)
+            (when-let ((first-h (funcall find-next (point-min) hdr-props)))
+              (goto-char first-h))))))))))
 
 (defun context-navigator-view-previous-item ()
-  "Move point to the previous item line or \"..\" or group line."
+  "Section-aware previous (up) navigation.
+
+Rules:
+- On any header (title or Stats) → move to the last element of the previous
+  section (wrap to the last header); when that section is empty, land on its header.
+- From a section element:
+  • if it's the first element of the section → go to the section header;
+  • otherwise → move to the previous element within the same section.
+
+No toggling occurs on j/k/p/n; RET/TAB handle toggles."
   (interactive)
-  (let* ((start (line-beginning-position))
-         (pos (or (context-navigator-view--find-prev-itemish-pos start)
-                  (let ((p nil) (best nil))
-                    (setq p (text-property-not-all (point-min) start 'context-navigator-group-slug nil))
-                    (while (and p (< p start))
-                      (setq best p)
-                      (setq p (text-property-not-all (1+ p) start 'context-navigator-group-slug nil)))
-                    best))))
-    (unless pos
-      ;; wrap to the last item-ish or group element
-      (setq pos (or (context-navigator-view--find-prev-itemish-pos (point-max))
-                    (let ((p nil) (best nil))
-                      (setq p (text-property-not-all (point-min) (point-max) 'context-navigator-group-slug nil))
-                      (while p
-                        (setq best p)
-                        (setq p (text-property-not-all (1+ p) (point-max) 'context-navigator-group-slug nil)))
-                      best))))
-    (when pos
-      (goto-char pos)
-      (beginning-of-line))))
+  (let* ((bol (line-beginning-position))
+         (eol (line-end-position))
+         (here bol)
+         (hdr-props context-navigator-view-header-props)
+         (elt-props context-navigator-view-element-props)
+         (find-next (lambda (start props &optional end)
+                      (let ((best nil))
+                        (dolist (p props)
+                          (let ((pos (text-property-not-all start (or end (point-max)) p nil)))
+                            (when (and pos (or (null best) (< pos best)))
+                              (setq best pos))))
+                        best)))
+         (find-prev (lambda (start props)
+                      (let ((pos (funcall find-next (point-min) props))
+                            (best nil))
+                        (while (and pos (< pos start))
+                          (setq best pos)
+                          (setq pos (funcall find-next (1+ pos) props)))
+                        best)))
+         ;; Detect header anywhere on the current line
+         (hdr-at-line (cl-some (lambda (p) (text-property-not-all bol eol p nil)) hdr-props))
+         (on-header (not (null hdr-at-line)))
+         (section-header (or hdr-at-line
+                             (funcall find-prev (1+ bol) hdr-props)))
+         ;; For movement relative to previous header, we also jump from its eol
+         (prev-header (and section-header
+                           (funcall find-prev section-header hdr-props)))
+         (last-header
+          (let ((p (funcall find-next (point-min) hdr-props))
+                (last nil))
+            (while p
+              (setq last p)
+              (setq p (funcall find-next (1+ p) hdr-props)))
+            last))
+         (target-prev-header (or prev-header last-header))
+         ;; Next header after current section header (search from its eol+1)
+         (hdr-eol (and section-header
+                       (save-excursion (goto-char section-header) (line-end-position))))
+         (next-header (and section-header
+                           (funcall find-next (1+ (or hdr-eol section-header)) hdr-props)))
+         (section-first (and section-header
+                             (funcall find-next (1+ (or hdr-eol section-header)) elt-props next-header)))
+         (section-last
+          (and section-header
+               (let ((end (or next-header (point-max))))
+                 (funcall find-prev end elt-props)))))
+    (cond
+     (on-header
+      (if target-prev-header
+          (let* ((prev-eol (save-excursion (goto-char target-prev-header) (line-end-position)))
+                 (nh-after-prev (funcall find-next (1+ prev-eol) hdr-props))
+                 (last-el (let ((end (or nh-after-prev (point-max))))
+                            (funcall find-prev end elt-props))))
+            (if last-el
+                (goto-char last-el)
+              (goto-char target-prev-header)))
+        (message "No headers")))
+     (t
+      (cond
+       ((and section-first (= here section-first))
+        (when section-header (goto-char section-header)))
+       (t
+        (let ((prev-el (funcall find-prev here elt-props)))
+          (if (and prev-el (or (null section-header) (> prev-el section-header)))
+              (goto-char prev-el)
+            (when section-header (goto-char section-header))))))))))
 
 ;; TAB navigation helpers ----------------------------------------------------
 
@@ -679,6 +808,37 @@ Searches for known interactive properties used in the sidebar."
       (setq best pos)
       (setq pos (context-navigator-view--find-next-itemish-pos (1+ pos))))
     best))
+
+(defun context-navigator-view--move-next-interactive ()
+  "Move to the next interactive element without toggling title/stats; wraps."
+  (interactive)
+  (let* ((here (point))
+         (props '(context-navigator-title
+                  context-navigator-item
+                  context-navigator-group-slug
+                  context-navigator-action
+                  context-navigator-toggle
+                  context-navigator-stats-toggle
+                  context-navigator-groups-up))
+         ;; If inside an interactive segment, skip to its end first.
+         (cur-end
+          (if (cl-some (lambda (p) (get-text-property here p)) props)
+              (cl-reduce #'max
+                         (mapcar (lambda (p)
+                                   (if (get-text-property here p)
+                                       (or (next-single-property-change here p nil (point-max))
+                                           (point-max))
+                                     (1+ here)))
+                                 props)
+                         :initial-value (1+ here))
+            (1+ here)))
+         (pos (context-navigator-view--find-next-interactive-pos cur-end)))
+    (unless pos
+      ;; wrap to the first interactive element
+      (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
+    (if pos
+        (goto-char pos)
+      (message "No interactive elements"))))
 
 (defun context-navigator-view-tab-next ()
   "Move point to the next interactive element (title, items, groups, toggles, actions).
@@ -1328,15 +1488,19 @@ MAP is a keymap to search for COMMAND bindings."
 
 Highlight:
 - title line (has 'context-navigator-title)
+- Stats header (has 'context-navigator-stats-toggle)
 - item lines (have 'context-navigator-item)
 - group lines (have 'context-navigator-group-slug)
 - the \"..\" line (has 'context-navigator-groups-up)
+- Stats content lines (have 'context-navigator-stats-line)
 
-Do not highlight header/separator lines."
+Do not highlight purely decorative separators."
   (when (or (get-text-property (point) 'context-navigator-title)
+            (get-text-property (point) 'context-navigator-stats-toggle)
             (get-text-property (point) 'context-navigator-item)
             (get-text-property (point) 'context-navigator-group-slug)
-            (get-text-property (point) 'context-navigator-groups-up))
+            (get-text-property (point) 'context-navigator-groups-up)
+            (get-text-property (point) 'context-navigator-stats-line))
     (cons (line-beginning-position)
           (min (point-max) (1+ (line-end-position))))))
 

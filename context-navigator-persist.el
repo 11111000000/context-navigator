@@ -423,5 +423,16 @@ and :context-load-step events similarly to `context-navigator-persist-load-group
                'context-navigator-persist-load-group-async
                "0.3.0")
 
+(defun context-navigator-persist-group-item-count (file)
+  "Return number of items stored in group FILE (v3 format).
+Returns 0 when FILE is unreadable or on error. Avoids TRAMP sync checks."
+  (let ((ok (and (stringp file)
+                 (context-navigator-persist--group-file-readable-p file))))
+    (if (not ok)
+        0
+      (let* ((v3 (ignore-errors (context-navigator-persist--read-migrated-v3 file)))
+             (items (and (listp v3) (plist-get v3 :items))))
+        (if (listp items) (length items) 0)))))
+
 (provide 'context-navigator-persist)
 ;;; context-navigator-persist.el ends here

@@ -16,6 +16,8 @@
 (require 'context-navigator-icons)
 (require 'context-navigator-render)
 (require 'context-navigator-view-title)
+(require 'context-navigator-persist)
+(require 'context-navigator-stats)
 
 ;;;###autoload
 (defun context-navigator-view--groups-header-lines (header total-width)
@@ -26,7 +28,8 @@ Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
 
 ;;;###autoload
 (defun context-navigator-view--groups-body-lines (state)
-  "Return list of lines for groups body using STATE."
+  "Return list of lines for groups body using STATE.
+Each group shows display name with item count in parentheses."
   (let* ((active (and (context-navigator-state-p state)
                       (context-navigator-state-current-group-slug state))))
     (cond
@@ -37,8 +40,10 @@ Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
         (dolist (pl context-navigator-view--groups)
           (let* ((slug (or (plist-get pl :slug) ""))
                  (disp (or (plist-get pl :display) slug))
+                 (path (or (plist-get pl :path) nil))
+                 (cnt  (or (ignore-errors (context-navigator-persist-group-item-count path)) 0))
                  (ic (or (ignore-errors (context-navigator-icons-for-group)) "📁"))
-                 (txt (concat ic " " disp))
+                 (txt (format "%s %s (%d)" ic disp cnt))
                  (s (copy-sequence txt)))
             (add-text-properties 0 (length s)
                                  (list 'context-navigator-group-slug slug
@@ -63,15 +68,60 @@ Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
 ;;;###autoload
 (defun context-navigator-view--render-groups (state header total-width)
   "Render groups view using STATE, HEADER and TOTAL-WIDTH.
-Returns the list of lines that were rendered."
+Returns the list of lines that were rendered.
+
+Also shows the Stats block for the current group (when any), including when
+the groups view is collapsed."
   (let* ((hl-lines (context-navigator-view--groups-header-lines header total-width))
          (hl (car hl-lines))
-         (body (append
-                (context-navigator-view--groups-body-lines state)
-                (context-navigator-view--groups-help-lines total-width)))
-         ;; Add a blank line after the header line before the list of groups.
+         (active (and (context-navigator-state-p state)
+                      (context-navigator-state-current-group-slug state)))
+         ;; Build Stats lines (independent from main collapse flag, like in items view)
+         (raw-stats (and active
+                         (fboundp 'context-navigator-stats-footer-lines)
+                         (let ((context-navigator-view--collapsed-p nil))
+                           (context-navigator-stats-footer-lines total-width))))
+         (stats-lines
+          (and raw-stats
+               (let ((first t))
+                 (mapcar
+                  (lambda (s)
+                    (let* ((s (copy-sequence s))
+                           (is-header (or first
+                                          (get-text-property 0 'context-navigator-stats-toggle s))))
+                      (when is-header
+                        (let ((km (make-sparse-keymap)))
+                          (define-key km [mouse-1] #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "RET")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "C-m")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "TAB")       #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "<tab>")     #'context-navigator-view-stats-toggle)
+                          (define-key km [tab]             #'context-navigator-view-stats-toggle)
+                          (define-key km (kbd "C-i")       #'context-navigator-view-stats-toggle)
+                          (add-text-properties 0 (length s)
+                                               (list 'mouse-face 'highlight
+                                                     'help-echo "Click/TAB/RET — toggle stats"
+                                                     'context-navigator-stats-toggle t
+                                                     'keymap km
+                                                     'local-map km)
+                                               s))
+                        (setq first nil))
+                      (unless is-header
+                        (add-text-properties 0 (length s)
+                                             (list 'context-navigator-stats-line t)
+                                             s))
+                      s))
+                  raw-stats))))
+         (groups-lines (context-navigator-view--groups-body-lines state))
+         (help-lines (context-navigator-view--groups-help-lines total-width))
+         (body (if stats-lines
+                   (append groups-lines (list "") stats-lines (list "") help-lines)
+                 (append groups-lines help-lines)))
+         ;; Add a blank line after the header; keep Stats visible even when collapsed.
          (lines (if context-navigator-view--collapsed-p
-                    (list "" hl)
+                    (if stats-lines
+                        (append (list "" hl) stats-lines)
+                      (list "" hl))
                   (append (list "" hl "") body))))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
@@ -103,7 +153,6 @@ Returns the list of lines that were rendered."
             (when pos
               (goto-char pos)
               (beginning-of-line))))
-        ;; Update last-active and last-mode within the scope where `active' is bound.
         (setq context-navigator-view--last-active-group active
               context-navigator-view--last-mode 'groups)))
     lines))
