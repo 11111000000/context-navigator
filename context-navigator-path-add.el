@@ -138,14 +138,16 @@ Steps:
                     ;; If a stray opening bracket remains at the end, drop it too
                     (setq q (replace-regexp-in-string "[ \t]*[({（]\\s-*\\'" "" q))
                     q))
-                 ;; Collapse doubled backslashes inside token, but keep leading UNC (\\) intact
+                 ;; Collapse runs of backslashes inside token, but keep leading UNC (\\) as exactly two
                  (no-esc
                   (let ((q no-parens))
-                    (if (and (>= (length q) 2) (string-prefix-p "\\\\" q))
-                        (concat "\\\\"
-                                "\\"
-                                (replace-regexp-in-string "\\\\\\\\+" "\\\\" (substring q 2)))
-                      (replace-regexp-in-string "\\\\\\\\+" "\\\\" q))))
+                    (let ((m (string-match "\\`\\\\+" q)))
+                      (if (and m (>= (- (match-end 0) (match-beginning 0)) 2))
+                          (let* ((run-end (match-end 0))
+                                 (rest (substring q run-end))
+                                 (rest1 (replace-regexp-in-string "\\\\\\\\+" "\\\\" rest)))
+                            (concat "\\\\" rest1))
+                        (replace-regexp-in-string "\\\\\\\\+" "\\\\" q)))))
                  ;; Strip trailing punctuation like ",.;:)]}\"»" if present, repeatedly
                  ;; Guard: keep bare Windows drive like "C:" intact.
                  (trim-tails

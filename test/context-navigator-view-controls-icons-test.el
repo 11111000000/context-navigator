@@ -11,8 +11,8 @@
             ((symbol-function 'context-navigator-controls-icon)
              (lambda (&rest _args) "◎"))) ;; any single-glyph placeholder
     (let ((context-navigator-controls-style 'icons))
-      (let* ((toggles (context-navigator-view-controls--build-toggles))
-             (first (car toggles)))
+      (let* ((segs (context-navigator-view-controls-segments :inline))
+             (first (car segs)))
         (should (stringp first))
         (should-not (string-match-p "\\[" first))))))
 
@@ -22,8 +22,8 @@
             ((symbol-function 'context-navigator-controls-icon)
              (lambda (&rest _args) nil)))
     (let ((context-navigator-controls-style 'icons))
-      (let* ((toggles (context-navigator-view-controls--build-toggles))
-             (first (car toggles)))
+      (let* ((segs (context-navigator-view-controls-segments :inline))
+             (first (car segs)))
         (should (stringp first))
         (should (string-match-p "\\[" first))))))
 (provide 'context-navigator-view-controls-icons-test)

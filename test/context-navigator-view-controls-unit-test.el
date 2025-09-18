@@ -26,10 +26,10 @@
         (let* ((acts (ctxnav--collect-prop-values segs 'context-navigator-action))
                (tgls (ctxnav--collect-prop-values segs 'context-navigator-toggle)))
           ;; Required actions (clear-gptel button removed; covered by toggle-all)
-          (dolist (sym '(push-now open-buffers close-buffers toggle-all-gptel))
+          (dolist (sym '(push-now open-buffers close-buffers toggle-all-gptel undo redo))
             (should (member sym acts)))
-          ;; Required toggles
-          (dolist (sym '(push auto redo undo))
+          ;; Required toggles (auto-project toggle key replaced legacy 'auto)
+          (dolist (sym '(push auto-project))
             (should (member sym tgls))))))))
 
 (ert-deftest ctxnav-controls/wrap-lines-fit-width ()

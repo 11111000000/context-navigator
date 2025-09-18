@@ -65,5 +65,14 @@ Cancels any existing timer with same KEY and schedules FN."
     (push (cons key timer) context-navigator--debounce-timers)
     timer))
 
+(defun context-navigator-events-cancel (key)
+  "Cancel pending debounced callback under KEY (if any)."
+  (let ((cell (assoc key context-navigator--debounce-timers)))
+    (when (and cell (timerp (cdr cell)))
+      (cancel-timer (cdr cell)))
+    (setq context-navigator--debounce-timers
+          (assq-delete-all key context-navigator--debounce-timers))
+    t))
+
 (provide 'context-navigator-events)
 ;;; context-navigator-events.el ends here

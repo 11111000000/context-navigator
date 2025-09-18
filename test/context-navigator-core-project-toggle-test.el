@@ -11,7 +11,7 @@
     (and st (context-navigator-state-last-project-root st))))
 
 (ert-deftest ctxnav-core-project-toggle/handler-updates-last-root-when-flag-off ()
-  "Handler should update last-project-root even when auto-project-switch is off (for UI/header)."
+  "Handler should ignore project-switch and keep last-project-root when auto-project-switch is off."
   (context-navigator-test-with-temp-dir rootA
                                         (context-navigator-test-with-temp-dir rootB
                                                                               (let ((context-navigator--auto-project-switch nil))
@@ -20,9 +20,9 @@
                                                                                        (new (context-navigator--state-copy st)))
                                                                                   (setf (context-navigator-state-last-project-root new) rootA)
                                                                                   (context-navigator--set-state new))
-                                                                                ;; call handler -> update last-project-root for UI purposes
+                                                                                ;; call handler -> ignored; last-project-root unchanged
                                                                                 (context-navigator--on-project-switch rootB)
-                                                                                (should (equal (ctxnav-test--get-last-root) rootB))))))
+                                                                                (should (equal (ctxnav-test--get-last-root) rootA))))))
 
 (ert-deftest ctxnav-core-project-toggle/manual-switch-command-works ()
   "Manual command should switch root even when auto-project-switch is off."

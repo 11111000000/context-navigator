@@ -70,7 +70,7 @@ to the textual/compact style (with brackets)."
     (razor . (faicon . "scissors"))
     (open-buffers . (faicon . "folder-open"))
     (close-buffers . (material . "cancel"))
-    (clear-gptel . (mterial . "delete"))
+    (clear-gptel . (material . "delete"))
     (clear-group . (faicon . "trash"))
     (toggle-all-gptel . (faicon . "check-square-o")))
   "Default mapping of control keys to all-the-icons specs."

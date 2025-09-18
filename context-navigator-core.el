@@ -866,7 +866,7 @@ Otherwise start immediately."
       ;; Автопереключение выключено — игнорируем событие и не трогаем state/заголовок.
       (context-navigator--log "Project switch (ignored, auto-project OFF) -> %s" (or root "~"))
     (progn
-      (ignore-errors (context-navigator-events-debounce :autosave 0 (lambda () nil)))
+      (ignore-errors (context-navigator-events-cancel :autosave))
       (let* ((cur (context-navigator--state-get))
              (new (context-navigator--state-copy cur)))
         (setf (context-navigator-state-inhibit-refresh new) t)
@@ -894,6 +894,8 @@ Otherwise start immediately."
   "Manually load context for current project or globally.
 With PROMPT (prefix argument), prompt for a root directory; empty input = global."
   (interactive "P")
+  ;; Prevent any pending autosave from firing between root change and inhibit flags.
+  (ignore-errors (context-navigator-events-cancel :autosave))
   (let* ((root (if prompt
                    (let ((dir (read-directory-name "Load context for root (empty for global): " nil nil t)))
                      (and (stringp dir)
@@ -956,35 +958,32 @@ Also clears gptel context when push→gptel is enabled."
   "Unload/clear context and switch to global (nil root).
 Removes all gptel context entries and resets state flags safely."
   (interactive)
-  (let ((root nil))
-    ;; Mark root as global (use copy to avoid direct mutation)
-    (let* ((cur (context-navigator--state-get))
-           (new (context-navigator--state-copy cur)))
-      (setf (context-navigator-state-last-project-root new) root)
-      (context-navigator--set-state new))
-    ;; Inhibit autosave/refresh during apply (operate on a copy)
-    (let* ((cur (context-navigator--state-get))
-           (new (context-navigator--state-copy cur)))
-      (setf (context-navigator-state-inhibit-refresh new) t)
-      (setf (context-navigator-state-inhibit-autosave new) t)
-      (setf (context-navigator-state-loading-p new) t)
-      (context-navigator--set-state new))
-    ;; Apply empty set to gptel (when push is on) and clear model.
-    ;; Run asynchronously so UI commands don't block.
-    (when context-navigator--push-to-gptel
-      (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
-    (context-navigator-set-items '())
-    ;; Clear inhibit flags and notify done (operate on a fresh copy)
-    (let* ((cur2 (context-navigator--state-get))
-           (new2 (context-navigator--state-copy cur2)))
-      (setf (context-navigator-state-inhibit-refresh new2) nil)
-      (setf (context-navigator-state-inhibit-autosave new2) nil)
-      (setf (context-navigator-state-loading-p new2) nil)
-      (context-navigator--set-state new2))
-    (context-navigator-events-publish :context-load-done root nil)
-    (message "Context unloaded (global mode)")))
+  ;; Cancel any pending autosave first to avoid cross-root writes.
+  (ignore-errors (context-navigator-events-cancel :autosave))
+  ;; Atomically enable inhibits and set root to nil so no save can target a new location mid-switch.
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-copy cur)))
+    (setf (context-navigator-state-inhibit-refresh new) t)
+    (setf (context-navigator-state-inhibit-autosave new) t)
+    (setf (context-navigator-state-loading-p new) t)
+    (setf (context-navigator-state-last-project-root new) nil)
+    (context-navigator--set-state new))
+  ;; Clear gptel asynchronously (do not block UI)
+  (when context-navigator--push-to-gptel
+    (if (fboundp 'gptel-context-remove-all)
+        (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
+      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
+  ;; Clear model (inhibited autosave prevents accidental writes)
+  (context-navigator-set-items '())
+  ;; Drop inhibits and notify done
+  (let* ((cur2 (context-navigator--state-get))
+         (new2 (context-navigator--state-copy cur2)))
+    (setf (context-navigator-state-inhibit-refresh new2) nil)
+    (setf (context-navigator-state-inhibit-autosave new2) nil)
+    (setf (context-navigator-state-loading-p new2) nil)
+    (context-navigator--set-state new2))
+  (context-navigator-events-publish :context-load-done nil nil)
+  (message "Context unloaded (global mode)"))
 
 ;;;###autoload
 (define-minor-mode context-navigator-mode
@@ -1210,31 +1209,21 @@ Autosaves current group before switching. Prompts when SLUG is nil."
   (let* ((root (or (context-navigator--current-root)
                    (ignore-errors (context-navigator-project-current-root (current-buffer)))))
          (name (or display-name (read-string "New group name: ")))
-         (name (string-trim name))
-         (_ (when (string-empty-p name)
-              (user-error "Invalid name")))
-         (slug (context-navigator-persist-slugify name))
-         (file (context-navigator-persist-context-file root slug)))
-    (context-navigator--assert-unique-slug root slug)
-    (make-directory (file-name-directory file) t)
-    ;; Create empty payload file
-    (ignore-errors (context-navigator-persist-save '() root slug))
-    ;; Update core state with the resolved root so header/ops reflect it.
-    (let* ((cur (context-navigator--state-get))
-           (new (context-navigator--state-copy cur)))
-      (setf (context-navigator-state-last-project-root new) root)
-      (context-navigator--set-state new))
-    (context-navigator-groups-open)
-    ;; If auto-push is on, reset gptel immediately to avoid any carry-over.
-    ;; Run asynchronously to avoid any hiccup in group creation UI.
-    (when context-navigator--push-to-gptel
-      (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
-    ;; Immediately switch to the newly created (empty) group.
-    (ignore-errors (context-navigator--load-group-for-root root slug))
-    (message "Created group: %s (%s)" name slug)
-    slug))
+         (name (string-trim name)))
+    (when (string-empty-p name)
+      (user-error "Invalid name"))
+    ;; Cancel pending autosave to avoid cross-root write during group creation.
+    (ignore-errors (context-navigator-events-cancel :autosave))
+    (let* ((slug (context-navigator-persist-slugify name))
+           (file (context-navigator-persist-context-file root slug)))
+      (context-navigator--assert-unique-slug root slug)
+      (make-directory (file-name-directory file) t)
+      ;; Create empty payload file
+      (ignore-errors (context-navigator-persist-save '() root slug))
+      ;; Switch to the newly created (empty) group; loader sets flags and root atomically.
+      (ignore-errors (context-navigator--load-group-for-root root slug))
+      (message "Created group: %s (%s)" name slug)
+      slug)))
 
 ;;;###autoload
 (defun context-navigator-group-rename (&optional old-slug new-display)
