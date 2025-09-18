@@ -69,8 +69,8 @@ to the textual/compact style (with brackets)."
     (push-now . (faicon . "paper-plane"))
     (razor . (faicon . "scissors"))
     (open-buffers . (faicon . "folder-open"))
-    (close-buffers . (material . "close"))
-    (clear-gptel . (faicon . "trash"))
+    (close-buffers . (material . "cancel"))
+    (clear-gptel . (mterial . "delete"))
     (clear-group . (faicon . "trash"))
     (toggle-all-gptel . (faicon . "check-square-o")))
   "Default mapping of control keys to all-the-icons specs."
@@ -88,9 +88,13 @@ to the textual/compact style (with brackets)."
 (defcustom context-navigator-controls-icon-face-map
   '((undo . (:foreground "SteelBlue4"))
     (redo . (:foreground "SteelBlue4"))
-    (close-buffers . (:foreground "IndianRed3"))
-    (clear-gptel . (:foreground "orange3"))
-    (clear-group . (:foreground "orange3")))
+    (push-now . (:foreground "green4"))
+    (toggle-all-gptel . (:foreground "green4"))
+    (razor . (:foreground "green4"))
+    (open-buffers . (:foreground "orange3"))
+    (close-buffers . (:foreground "orange3"))
+    (clear-gptel . (:foreground "gray"))
+    (clear-group . (:foreground "tomato")))
   "Optional per-key face overrides for control icons.
 Each entry is either a face symbol or a plist like (:foreground \"...\" [:height N])."
   :type '(alist :key-type symbol
