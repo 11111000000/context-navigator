@@ -164,24 +164,63 @@ valid root."
             nil))))))
 
 (defun context-navigator-project--on-buffer-list-update ()
-  "Hook: evaluate current buffer for project switch when appropriate.
+  "Hook: evaluate current or nearest file buffer for project switch when appropriate.
+
+Special handling: if the selected window is the Context Navigator (sidebar/buffer),
+pick the first file-visiting window on the current frame and switch based on it.
+This makes auto-project responsive to tab/buffer changes while the sidebar is focused.
 
 Ignore events coming from child frames (posframe/popups) and
 when the current buffer is a minibuffer or a corfu internal buffer."
   (unless (or (context-navigator-project--child-frame-p)
               (minibufferp (current-buffer))
               (context-navigator-project--corfu-buffer-p (current-buffer)))
-    (context-navigator-project--maybe-publish-switch (current-buffer))))
+    (let* ((win (selected-window))
+           (buf (window-buffer win))
+           (nav-p (or (eq (window-parameter win 'context-navigator-view) 'sidebar)
+                      (with-current-buffer buf
+                        (eq major-mode 'context-navigator-view-mode))
+                      (equal (buffer-name buf) "*context-navigator*"))))
+      (if nav-p
+          ;; Focus is in Navigator → use nearest (first) file-visiting window on this frame
+          (let* ((w (cl-find-if
+                     (lambda (w)
+                       (with-current-buffer (window-buffer w)
+                         (and buffer-file-name t)))
+                     (window-list (selected-frame) 'no-minibuffer)))
+                 (target-buf (and w (window-buffer w))))
+            (when target-buf
+              (context-navigator-project--maybe-publish-switch target-buf)))
+        ;; Normal path: use current buffer
+        (context-navigator-project--maybe-publish-switch (current-buffer))))))
 
 (defun context-navigator-project--on-window-selection-change (_frame)
   "Hook: react to real window selection changes only.
+
+Special handling: if the selected window is the Context Navigator (sidebar/buffer),
+switch based on the first file-visiting window on the current frame so auto-project
+continues to follow real work buffers even while the sidebar is focused.
 
 Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers."
   (let ((win (selected-window)))
     (unless (or (context-navigator-project--child-frame-p (selected-frame))
                 (minibufferp (window-buffer win))
                 (context-navigator-project--corfu-buffer-p (window-buffer win)))
-      (context-navigator-project--maybe-publish-switch (window-buffer win)))))
+      (let* ((buf (window-buffer win))
+             (nav-p (or (eq (window-parameter win 'context-navigator-view) 'sidebar)
+                        (with-current-buffer buf
+                          (eq major-mode 'context-navigator-view-mode))
+                        (equal (buffer-name buf) "*context-navigator*"))))
+        (if nav-p
+            (let* ((w (cl-find-if
+                       (lambda (w)
+                         (with-current-buffer (window-buffer w)
+                           (and buffer-file-name t)))
+                       (window-list (selected-frame) 'no-minibuffer)))
+                   (target-buf (and w (window-buffer w))))
+              (when target-buf
+                (context-navigator-project--maybe-publish-switch target-buf)))
+          (context-navigator-project--maybe-publish-switch (window-buffer win)))))))
 
 (defun context-navigator-project-setup-hooks ()
   "Install lightweight hooks to track project changes."
