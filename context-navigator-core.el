@@ -50,6 +50,7 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
 ;; Forward declarations from project module (for byte-compiler friendliness)
 (declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
 (declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
+(declare-function context-navigator-project--frame-file-project-root "context-navigator-project" ())
 
 (defgroup context-navigator nil
   "Modern context manager for Emacs/gptel (functional core)."
@@ -1378,18 +1379,26 @@ Empty description clears it."
 
 (defun context-navigator--pick-root-for-autoproject ()
   "Return a project root for immediate auto-project activation.
+
 Strategy:
-- Prefer the most recently visited file-backed buffer's project.
+- Prefer the project of the first file-visiting window on the current frame
+  (stable, window-order based; avoids mixing contexts).
+- Fallback to the most recently visited file-backed buffer's project.
 - Fallback to the most recent \"interesting\" buffer (file/gptel/Dired).
 - As a last resort, return nil (global context)."
-  (let* ((buf-file
-          (cl-find-if (lambda (b) (with-current-buffer b buffer-file-name))
-                      (buffer-list)))
-         (root-file (and buf-file (context-navigator-project-current-root buf-file))))
-    (or root-file
-        (let* ((buf-any (cl-find-if #'context-navigator-project--interesting-buffer-p
-                                    (buffer-list))))
-          (and buf-any (context-navigator-project-current-root buf-any))))))
+  (or
+   ;; 1) Frame-first, file-visiting window (stable/project.el-validated)
+   (ignore-errors (context-navigator-project--frame-file-project-root))
+   ;; 2) Last visited file-backed buffer's project
+   (let* ((buf-file
+           (cl-find-if (lambda (b) (with-current-buffer b buffer-file-name))
+                       (buffer-list)))
+          (root-file (and buf-file (context-navigator-project-current-root buf-file))))
+     root-file)
+   ;; 3) First interesting buffer's project (gptel/org/dired etc.)
+   (let* ((buf-any (cl-find-if #'context-navigator-project--interesting-buffer-p
+                               (buffer-list))))
+     (and buf-any (context-navigator-project-current-root buf-any)))))
 
 (defun context-navigator--reinit-after-reload ()
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.

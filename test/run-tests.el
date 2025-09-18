@@ -50,6 +50,7 @@
 (require 'context-navigator-mask-posix-class-test)
 (require 'context-navigator-minibuf-mixed-input-test)
 (require 'context-navigator-buffer-mode-test)
+(require 'context-navigator-core-autoproject-pick-root-test)
 
 ;; New tests after refactor
 (require 'context-navigator-view-controls-unit-test)
