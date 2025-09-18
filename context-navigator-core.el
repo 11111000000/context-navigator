@@ -1142,24 +1142,16 @@ Return new state. If KEY not found, return current state."
 (defun context-navigator-groups-open ()
   "Publish groups list for current project/global and let sidebar render it.
 
-Fallback: when no last project root is recorded yet, try to detect the
-current buffer's project root on-the-fly so the groups from the active
-project are listed even if auto-project switching is off.
+Policy: when auto-project switching is OFF, use only the explicitly
+selected project from state (last-project-root). Do not infer root from
+the current buffer — the header should reflect only an actually switched project.
 
 Additionally, if the context directory is missing/empty and
 `context-navigator-create-default-group-file' is non-nil, initialize a
 default group on demand (create .context, default.el, and state.el)."
   (interactive)
-  (let* ((root (or (context-navigator--current-root)
-                   (ignore-errors (context-navigator-project-current-root (current-buffer)))))
+  (let* ((root (context-navigator--current-root))
          (groups (ignore-errors (context-navigator-persist-list-groups root))))
-    ;; Обновим last-project-root в состоянии, чтобы заголовок показывал имя проекта,
-    ;; даже если авто-переключение проекта выключено и root определён налёту.
-    (let* ((cur (context-navigator--state-get)))
-      (when (not (equal (context-navigator-state-last-project-root cur) root))
-        (let ((new (context-navigator--state-copy cur)))
-          (setf (context-navigator-state-last-project-root new) root)
-          (context-navigator--set-state new))))
     ;; Auto-initialize default group if nothing exists yet.
     (when (and context-navigator-create-default-group-file
                (or (null groups) (= (length groups) 0)))
