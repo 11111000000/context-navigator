@@ -90,7 +90,7 @@ to the textual/compact style (with brackets)."
     (redo . (:foreground "SteelBlue4"))
     (push-now . (:foreground "green4"))
     (toggle-all-gptel . (:foreground "green4"))
-    (razor . (:foreground "green4"))
+    (razor . (:foreground "magenta3"))
     (open-buffers . (:foreground "orange3"))
     (close-buffers . (:foreground "orange3"))
     (clear-gptel . (:foreground "gray"))
