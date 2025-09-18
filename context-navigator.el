@@ -5,7 +5,7 @@
 ;; Maintainer: Peter Kosov <11111000000@email.com>
 ;; URL: https://github.com/11111000000/context-navigator
 ;; Keywords: convenience, tools
-;; Version: 1.2.4
+;; Version: 1.2.5
 ;; Package-Requires: ((emacs "29.1") (transient "0.3.0"))
 
 ;;; Commentary:
@@ -80,8 +80,8 @@
 (defun context-navigator-version ()
   "Return version string for Context Navigator."
   (interactive)
-  (message "context-navigator — 1.2.4")
-  "1.2.4")
+  (message "context-navigator — 1.2.5")
+  "1.2.5")
 
 ;;;###autoload
 (defun context-navigator-start ()
