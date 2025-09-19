@@ -66,6 +66,13 @@ When non-nil, shows a binary indicator in the sidebar:
 (defvar-local context-navigator-render--prefix-getter nil
   "Buffer-local function (path -> prefix-string) used during a single render pass.")
 
+(defvar-local context-navigator-render--short-prefix-cache nil
+  "Buffer-local cache for short prefix map across renders.
+Plist: (:key KEY :map HASH), where
+  KEY = (ROOT . ITEMS-HASH)
+  ROOT is expanded project root (or nil),
+  ITEMS-HASH is an sxhash over the list of absolute item paths.")
+
 (defun context-navigator-render--truncate (s n)
   "Return S truncated to N chars with ellipsis."
   (if (and (stringp s) (> (length s) (max 4 n)))
@@ -246,51 +253,69 @@ Return an alist of (name . minimal-prefix)."
 
 (defun context-navigator-render--build-short-prefix-map (items root)
   "Return hash: abs-path -> short directory prefix \"a/b/\" relative to ROOT.
-Items with paths outside ROOT get an empty prefix."
-  (let* ((tree (make-hash-table :test 'equal))
-         (acc  (make-hash-table :test 'equal)))
-    ;; Collect children per parent-dir-list key
-    (dolist (it items)
-      (let ((p (context-navigator-item-path it)))
-        (when (and (stringp p) (not (string-empty-p p)))
-          (let ((rel (context-navigator-render--relpath p root)))
-            (when (not (string-prefix-p ".." rel))
-              (let* ((dirs+base (context-navigator-render--split-relpath rel))
-                     (dirs (car dirs+base)))
-                (when dirs
-                  (dotimes (i (length dirs))
-                    (let* ((parent (cl-subseq dirs 0 i))
-                           (child  (nth i dirs))
-                           (lst    (gethash parent tree)))
-                      (puthash parent (cons child lst) tree))))))))))
-    ;; For each parent, compute minimal prefixes map
-    (let ((prefix-per-parent (make-hash-table :test 'equal)))
-      (maphash
-       (lambda (parent children)
-         (let* ((uniq (delete-dups (nreverse children)))
-                (mp   (context-navigator-render--minimal-prefix-map uniq)))
-           (puthash parent mp prefix-per-parent)))
-       tree)
-      ;; Compute prefix for each item path
-      (dolist (it items)
-        (let ((p (context-navigator-item-path it)))
-          (when (and (stringp p) (not (string-empty-p p)))
-            (let ((rel (context-navigator-render--relpath p root)))
-              (if (string-prefix-p ".." rel)
-                  (puthash p "" acc)
-                (let* ((dirs (car (context-navigator-render--split-relpath rel)))
-                       (parts '()))
-                  (dolist (i (number-sequence 0 (1- (length (or dirs '())))))
-                    (let* ((parent (cl-subseq dirs 0 i))
-                           (child  (nth i dirs))
-                           (mp     (gethash parent prefix-per-parent))
-                           (pref   (or (cdr (assoc child mp)) child)))
-                      (push pref parts)))
-                  (let ((prefix (if parts
-                                    (concat (mapconcat #'identity (nreverse parts) "/") "/")
-                                  "")))
-                    (puthash p prefix acc))))))))
-      acc)))
+Items with paths outside ROOT get an empty prefix.
+
+Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITEMS-HASH)."
+  (let* ((root-key (and (stringp root) (not (string-empty-p root))
+                        (expand-file-name root)))
+         (paths (delq nil
+                      (mapcar (lambda (it)
+                                (let ((p (context-navigator-item-path it)))
+                                  (and (stringp p) (not (string-empty-p p)) p)))
+                              items)))
+         (items-key (sxhash-equal paths))
+         (key (cons root-key items-key))
+         (cached (and (listp context-navigator-render--short-prefix-cache)
+                      (equal (plist-get context-navigator-render--short-prefix-cache :key) key)
+                      (plist-get context-navigator-render--short-prefix-cache :map))))
+    (or cached
+        (let* ((tree (make-hash-table :test 'equal))
+               (acc  (make-hash-table :test 'equal)))
+          ;; Collect children per parent-dir-list key
+          (dolist (it items)
+            (let ((p (context-navigator-item-path it)))
+              (when (and (stringp p) (not (string-empty-p p)))
+                (let ((rel (context-navigator-render--relpath p root)))
+                  (when (not (string-prefix-p ".." rel))
+                    (let* ((dirs+base (context-navigator-render--split-relpath rel))
+                           (dirs (car dirs+base)))
+                      (when dirs
+                        (dotimes (i (length dirs))
+                          (let* ((parent (cl-subseq dirs 0 i))
+                                 (child  (nth i dirs))
+                                 (lst    (gethash parent tree)))
+                            (puthash parent (cons child lst) tree))))))))))
+          ;; For each parent, compute minimal prefixes map
+          (let ((prefix-per-parent (make-hash-table :test 'equal)))
+            (maphash
+             (lambda (parent children)
+               (let* ((uniq (delete-dups (nreverse children)))
+                      (mp   (context-navigator-render--minimal-prefix-map uniq)))
+                 (puthash parent mp prefix-per-parent)))
+             tree)
+            ;; Compute prefix for each item path
+            (dolist (it items)
+              (let ((p (context-navigator-item-path it)))
+                (when (and (stringp p) (not (string-empty-p p)))
+                  (let ((rel (context-navigator-render--relpath p root)))
+                    (if (string-prefix-p ".." rel)
+                        (puthash p "" acc)
+                      (let* ((dirs (car (context-navigator-render--split-relpath rel)))
+                             (parts '()))
+                        (dolist (i (number-sequence 0 (1- (length (or dirs '())))))
+                          (let* ((parent (cl-subseq dirs 0 i))
+                                 (child  (nth i dirs))
+                                 (mp     (gethash parent prefix-per-parent))
+                                 (pref   (or (cdr (assoc child mp)) child)))
+                            (push pref parts)))
+                        (let ((prefix (if parts
+                                          (concat (mapconcat #'identity (nreverse parts) "/") "/")
+                                        "")))
+                          (puthash p prefix acc))))))))
+            ;; Save cache
+            (setq context-navigator-render--short-prefix-cache
+                  (list :key key :map acc))
+            acc)))))
 
 (defun context-navigator-render--relative-prefix (p root)
   "Return directory prefix relative to ROOT for path P, or empty string."

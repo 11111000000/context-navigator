@@ -95,65 +95,88 @@ PLIST fields:
                 'face (list :foreground color :height context-navigator-stats-icon-height)
                 'display '(raise 0.11))))
 
+(defvar context-navigator-stats--icon-cache (make-hash-table :test 'equal)
+  "Cache for small icons used in the Stats block. Keyed by (KEY HEIGHT).")
+
+(defun context-navigator-stats-clear-icon-cache ()
+  "Clear cached Stats icons and schedule a view refresh."
+  (interactive)
+  (clrhash context-navigator-stats--icon-cache)
+  (when (fboundp 'context-navigator-view--schedule-render)
+    (context-navigator-view--schedule-render)))
+
+;; Refresh Stats icons when theme changes (colors/fonts may differ)
+(when (boundp 'after-enable-theme-functions)
+  (add-hook 'after-enable-theme-functions
+            (lambda (&rest _)
+              (context-navigator-stats-clear-icon-cache))))
+
 (defun context-navigator-stats--icon (key)
-  "Return small icon string for a logical KEY or nil.
+  "Return small icon string for a logical KEY or nil (cached).
 All icon calls are wrapped in `ignore-errors' to avoid timer crashes
 when an icon name is unavailable in the installed icon set."
   (when (context-navigator-stats--icons-enabled-p)
-    (pcase key
-      (:header
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "bar_chart") "SteelBlue4"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "assessment") "SteelBlue4"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "bar-chart") "SteelBlue4"))))
-      (:counts
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "view_list") "SlateGray"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-octicon "list-unordered") "SlateGray"))))
-      (:size
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "data_usage") "DarkGoldenrod4"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "database") "DarkGoldenrod4"))))
-      (:tokens
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "calculate") "DarkMagenta"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "calculator") "DarkMagenta"))))
-      (:file
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "insert_drive_file") "gray40"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "file-o") "gray40"))))
-      (:buffer
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "description") "SlateGray"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "file-text-o") "SlateGray"))))
-      (:selection
-       (or (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-material "content_copy") "DarkSeaGreen4"))
-           (ignore-errors
-             (context-navigator-stats--propertize-icon
-              (all-the-icons-faicon "files-o") "DarkSeaGreen4"))))
-      (_ nil))))
+    (let* ((ck (list key context-navigator-stats-icon-height))
+           (cached (gethash ck context-navigator-stats--icon-cache)))
+      (or cached
+          (let ((res
+                 (pcase key
+                   (:header
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "bar_chart") "SteelBlue4"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "assessment") "SteelBlue4"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "bar-chart") "SteelBlue4"))))
+                   (:counts
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "view_list") "SlateGray"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-octicon "list-unordered") "SlateGray"))))
+                   (:size
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "data_usage") "DarkGoldenrod4"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "database") "DarkGoldenrod4"))))
+                   (:tokens
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "calculate") "DarkMagenta"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "calculator") "DarkMagenta"))))
+                   (:file
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "insert_drive_file") "gray40"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "file-o") "gray40"))))
+                   (:buffer
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "description") "SlateGray"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "file-text-o") "SlateGray"))))
+                   (:selection
+                    (or (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-material "content_copy") "DarkSeaGreen4"))
+                        (ignore-errors
+                          (context-navigator-stats--propertize-icon
+                           (all-the-icons-faicon "files-o") "DarkSeaGreen4"))))
+                   (_ nil))))
+            (when (stringp res)
+              (puthash ck res context-navigator-stats--icon-cache))
+            res)))))
 
 (defun context-navigator-stats--item-bytes (it)
   "Best-effort byte size for item IT, respecting remote mode."
