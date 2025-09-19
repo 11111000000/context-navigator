@@ -125,10 +125,13 @@ Returns cons (PROVIDER . NAME) or nil."
      (t nil))))
 
 (defun context-navigator-controls-icons-available-p ()
-  "Return non-nil if graphic icons can be used in the current context."
+  "Return non-nil if graphic icons can be used in the current context.
+
+Avoid calling `require' in hot paths; rely on `featurep' and refresh when
+all-the-icons loads later (see with-eval-after-load below)."
   (and context-navigator-controls-use-graphic-icons
        (display-graphic-p)
-       (require 'all-the-icons nil t)))
+       (featurep 'all-the-icons)))
 
 (defun context-navigator-controls-icon (key &optional state)
   "Return a propertized icon string for control KEY and optional STATE.
@@ -208,8 +211,11 @@ STATE is used for stateful controls: 'on or 'off."
     (let ((buf (get-buffer "*context-navigator*")))
       (when (buffer-live-p buf)
         (with-current-buffer buf
+          ;; Invalidate view and headerline caches
           (setq-local context-navigator-render--last-hash nil)
           (setq-local context-navigator-view--last-render-key nil)
+          (setq-local context-navigator-headerline--cache-key nil)
+          (setq-local context-navigator-headerline--cache-str nil)
           (when (fboundp 'context-navigator-view--render-if-visible)
             (context-navigator-view--render-if-visible))))))
   ;; As a fallback, force header-line/modeline refresh.

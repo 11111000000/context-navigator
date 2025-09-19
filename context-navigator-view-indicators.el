@@ -108,7 +108,8 @@ ARGS typically contain a source symbol; ignore noisy sources."
   "Start optional polling to refresh gptel indicators while the sidebar is visible.
 
 Uses `context-navigator-gptel-indicator-poll-interval' to control frequency.
-Prefers raw keys to avoid triggering collectors; falls back to pulled keys."
+Non-blocking: only reads raw variables and falls back to current model state;
+does not call collectors or APIs that may allocate or block."
   (let ((int (or context-navigator-gptel-indicator-poll-interval 0)))
     (when (> int 0)
       (setq context-navigator-view--gptel-poll-timer
@@ -120,23 +121,17 @@ Prefers raw keys to avoid triggering collectors; falls back to pulled keys."
                                  (when (get-buffer-window buf t)
                                    (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
                                                          (ignore-errors (context-navigator-gptel--raw-keys))))
-                                          (pulled-keys
-                                           (and (or (null raw-keys) (= (length raw-keys) 0))
-                                                (let ((lst (ignore-errors (context-navigator-gptel-pull))))
-                                                  (and (listp lst)
-                                                       (mapcar #'context-navigator-model-item-key lst)))))
                                           (fallback-keys
-                                           (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                                      (or (null raw-keys) (= (length raw-keys) 0)))
+                                           (when (or (null raw-keys) (= (length raw-keys) 0))
                                              (let* ((st (ignore-errors (context-navigator--state-get)))
                                                     (items (and st (context-navigator-state-items st))))
                                                (and (listp items)
                                                     (mapcar #'context-navigator-model-item-key
                                                             (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                                          (keys (or raw-keys pulled-keys fallback-keys '()))
+                                          (keys (or raw-keys fallback-keys '()))
                                           (h (sxhash-equal keys))
-                                          (use-fallback (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                                             (or (null raw-keys) (= (length raw-keys) 0)))))
+                                          (use-fallback (and (or (null raw-keys) (= (length raw-keys) 0))
+                                                             (listp fallback-keys))))
                                      (unless (equal h context-navigator-view--gptel-keys-hash)
                                        (setq context-navigator-view--gptel-keys keys
                                              context-navigator-view--gptel-keys-hash h)
