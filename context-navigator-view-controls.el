@@ -40,6 +40,34 @@
   "Toolbar controls (toggles and actions) for Context Navigator view."
   :group 'context-navigator)
 
+(defface context-navigator-headerline
+  '((t :background "#2f2f2f" :foreground "gray90"))
+  "Default header-line face for Context Navigator.
+Used as the header-line background in the Navigator buffer."
+  :group 'context-navigator-view-controls)
+
+(defvar-local context-navigator--headerline-face-cookie nil
+  "Face-remap cookie for remapping the header-line face in Navigator buffer.")
+
+(defun context-navigator-view-controls--ensure-headerline-face ()
+  "Ensure the Navigator buffer uses `context-navigator-headerline' for its header-line."
+  (let ((buf (get-buffer "*context-navigator*")))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        ;; Remap the built-in `header-line' face buffer-locally to our custom face.
+        ;; Reset any previous remap to keep the operation idempotent.
+        (when context-navigator--headerline-face-cookie
+          (ignore-errors
+            (face-remap-remove-relative context-navigator--headerline-face-cookie))
+          (setq context-navigator--headerline-face-cookie nil))
+        (setq context-navigator--headerline-face-cookie
+              (face-remap-add-relative 'header-line 'context-navigator-headerline))
+        ;; Force header-line redraw
+        (force-mode-line-update t)))))
+
+;; Apply default header-line face now if the buffer already exists.
+(context-navigator-view-controls--ensure-headerline-face)
+
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
   '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
@@ -287,6 +315,8 @@ Returns a propertized string or nil when not visible."
                (setq-local context-navigator-headerline--cache-str nil)
                (when (fboundp 'context-navigator-view--render-if-visible)
                  (context-navigator-view--render-if-visible))))))
+       ;; Ensure the navigator buffer uses the default header-line face.
+       (context-navigator-view-controls--ensure-headerline-face)
        (force-mode-line-update t)))))
 
 (provide 'context-navigator-view-controls)
