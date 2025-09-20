@@ -94,6 +94,7 @@
                (context-navigator-test-wait 0.31))
              (apply orig args))
          res)))))
+(ert-run-tests-batch-and-exit)
 
 (provide 'run-tests)
 ;;; run-tests.el ends here

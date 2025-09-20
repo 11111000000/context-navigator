@@ -1509,6 +1509,9 @@ Do not highlight purely decorative separators."
   (buffer-disable-undo)
   (setq truncate-lines t
         cursor-type t)
+  ;; Ensure our header-line face is remapped for every Navigator buffer.
+  (when (fboundp 'context-navigator-view-controls--ensure-headerline-face)
+    (context-navigator-view-controls--ensure-headerline-face))
   ;; Install modeline/header-line for the sidebar buffer.
   ;; Use the dedicated helper so we show the status even when the global
   ;; mode-line is disabled (fallback to header-line).
