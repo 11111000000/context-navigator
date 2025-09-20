@@ -608,8 +608,7 @@ hard to restore the sidebar afterward."
   "Section-aware next (down) navigation.
 
 Rules:
-- On any header (title or Stats) → move to the first element in its section;
-  if none, jump to the next header (wrap to the first header when at the last).
+- On any header (title or Stats) → go to the next interactive element (item/toggle/action/header), wrap at end.
 - On a section element:
   • if it's the last element in the section → jump to the next header (wrap);
   • otherwise → move to the next element within the same section.
@@ -654,11 +653,16 @@ This does not toggle collapse/stats; RET/TAB still handle toggling on headers."
                  (funcall find-prev end elt-props)))))
     (cond
      (on-header
+      ;; На заголовке никогда не застреваем: если нет элементов секции —
+      ;; прыгаем к следующему интерактивному элементу (или оборачиваемся).
       (cond
-       (section-first (goto-char section-first))
-       (next-header (goto-char next-header))
-       (t (when-let ((first-h (funcall find-next (point-min) hdr-props)))
-            (goto-char first-h)))))
+       (section-first
+        (goto-char section-first))
+       (t
+        (let ((pos (context-navigator-view--find-next-interactive-pos (1+ eol))))
+          (unless pos
+            (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
+          (when pos (goto-char pos))))))
      (t
       ;; Start from end of current line to avoid re-selecting the same element.
       (let* ((cur-next (funcall find-next (1+ eol) elt-props))
@@ -681,8 +685,7 @@ This does not toggle collapse/stats; RET/TAB still handle toggling on headers."
   "Section-aware previous (up) navigation.
 
 Rules:
-- On any header (title or Stats) → move to the last element of the previous
-  section (wrap to the last header); when that section is empty, land on its header.
+- On any header (title or Stats) → go to the previous interactive element (item/toggle/action/header), wrap at start.
 - From a section element:
   • if it's the first element of the section → go to the section header;
   • otherwise → move to the previous element within the same section.
@@ -737,15 +740,12 @@ No toggling occurs on j/k/p/n; RET/TAB handle toggles."
                  (funcall find-prev end elt-props)))))
     (cond
      (on-header
-      (if target-prev-header
-          (let* ((prev-eol (save-excursion (goto-char target-prev-header) (line-end-position)))
-                 (nh-after-prev (funcall find-next (1+ prev-eol) hdr-props))
-                 (last-el (let ((end (or nh-after-prev (point-max))))
-                            (funcall find-prev end elt-props))))
-            (if last-el
-                (goto-char last-el)
-              (goto-char target-prev-header)))
-        (message "No headers")))
+      ;; На заголовке — всегда двигаемся назад к предыдущему интерактивному элементу; оборачиваемся в конец.
+      (let ((pos (context-navigator-view--find-prev-interactive-pos bol)))
+        (if pos
+            (goto-char pos)
+          (let ((wrap (context-navigator-view--find-prev-interactive-pos (point-max))))
+            (when wrap (goto-char wrap))))))
      (t
       (cond
        ((and section-first (= here section-first))

@@ -157,7 +157,7 @@ or removed. This is enabled by default."
 Disabled by default."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-display-mode 'buffer
+(defcustom context-navigator-display-mode 'sidebar
   "How to display Navigator: 'buffer (magit-like) or 'sidebar."
   :type '(choice (const buffer) (const sidebar))
   :group 'context-navigator)

@@ -249,6 +249,10 @@ REST is a list of item lines."
                                           (get-text-property 0 'context-navigator-stats-toggle s))))
                       (when is-header
                         (let ((km (make-sparse-keymap)))
+                          ;; Inherit the main mode map so navigation keys (n/p, j/k, arrows) work here.
+                          (when (and (boundp 'context-navigator-view-mode-map)
+                                     (keymapp context-navigator-view-mode-map))
+                            (set-keymap-parent km context-navigator-view-mode-map))
                           (define-key km [mouse-1] #'context-navigator-view-stats-toggle)
                           (define-key km (kbd "RET")       #'context-navigator-view-stats-toggle)
                           (define-key km (kbd "C-m")       #'context-navigator-view-stats-toggle)
