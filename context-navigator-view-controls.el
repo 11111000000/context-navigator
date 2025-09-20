@@ -3,7 +3,7 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;; Build header-line/inline toolbar controls (toggles + actions) for the Navigator view.
+;; Build header-line toolbar controls (toggles + actions) for the Navigator view.
 ;; Split out of context-navigator-view.el to reduce coupling.
 ;;
 ;; This module does not require the full view to avoid cycles; it declares the
@@ -12,7 +12,7 @@
 ;;
 ;; Refactoring note:
 ;; - Controls are now described declaratively in a registry: logic + appearance
-;; - Order/visibility is configured separately for header-line and inline toolbars
+;; - Order/visibility is configured via a single header-line order
 ;; - Rendering is unified and consumes registry + order
 
 ;;; Code:
@@ -33,26 +33,18 @@
 (declare-function context-navigator-view-toggle-auto-project "context-navigator-view" ())
 (declare-function context-navigator-undo "context-navigator-core" ())
 (declare-function context-navigator-redo "context-navigator-core" ())
-(declare-function context-navigator-view--wrap-segments "context-navigator-view" (segments total-width))
+
 (declare-function context-navigator-view-razor-run "context-navigator-view" ())
 
 (defgroup context-navigator-view-controls nil
   "Toolbar controls (toggles and actions) for Context Navigator view."
   :group 'context-navigator)
 
-;; Layout: order of controls for header-line and inline toolbars.
+;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
-  '(auto-project push undo redo push-now toggle-all-gptel
-                 razor open-buffers close-buffers clear-group)
+  '(auto-project push :gap undo redo :gap push-now toggle-all-gptel :gap
+                 razor :gap open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
-Remove a key to hide the control. You may also insert :gap for spacing."
-  :type '(repeat (choice symbol (const :gap)))
-  :group 'context-navigator-view-controls)
-
-(defcustom context-navigator-inline-controls-order
-  '(push auto-project undo redo
-         razor push-now open-buffers close-buffers clear-group toggle-all-gptel)
-  "Controls order for the inline (wrapped) toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
   :group 'context-navigator-view-controls)
@@ -196,7 +188,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                     (if (eq style 'text)
                         (format " [%s]" (capitalize (funcall tr :toggle-all-gptel))) " [T]")))
       ))
-  "Registry of Navigator controls for header-line/inline toolbars."
+  "Registry of Navigator controls for header-line toolbar."
   :type '(alist :key-type symbol :value-type plist)
   :group 'context-navigator-view-controls)
 
@@ -264,53 +256,21 @@ Returns a propertized string or nil when not visible."
                                    s))))
         (and (> (length s) 0) s)))))
 
-(defun context-navigator-view-controls-segments (&optional where)
-  "Return ordered control segments as a list of strings.
-Optional WHERE is one of:
-  :headerline — use `context-navigator-headerline-controls-order' (default)
-  :inline     — use `context-navigator-inline-controls-order'"
-  (let* ((order (pcase where
-                  (:inline     context-navigator-inline-controls-order)
-                  (_           context-navigator-headerline-controls-order))))
-    (cl-loop for k in order
-             if (eq k :gap) collect "    "
-             else
-             for seg = (context-navigator-view-controls--render k)
-             when (stringp seg) collect seg)))
-
-(defun context-navigator-view-controls-lines (total-width)
-  "Return wrapped control lines (inline toolbar) for TOTAL-WIDTH.
-
-Wrap segments produced by `context-navigator-view-controls-segments' using
-the view's wrapping helper. If any single segment is wider than TOTAL-WIDTH
-in the current style, rebuild segments with compact icon labels to ensure
-lines fit into TOTAL-WIDTH."
-  (let* ((segs (context-navigator-view-controls-segments :inline))
-         (too-wide (cl-some (lambda (s) (> (string-width s) total-width)) segs)))
-    (when too-wide
-      (let ((context-navigator-controls-style 'icons))
-        (setq segs (context-navigator-view-controls-segments :inline))))
-    (let ((wrap-fn (if (fboundp 'context-navigator-view--wrap-segments)
-                       #'context-navigator-view--wrap-segments
-                     (lambda (segments total-width)
-                       (let ((acc '())
-                             (cur ""))
-                         (dolist (seg segments)
-                           (let* ((sw (string-width seg))
-                                  (cw (string-width cur)))
-                             (if (<= (+ cw sw) total-width)
-                                 (setq cur (concat cur seg))
-                               (when (> (length cur) 0)
-                                 (push cur acc))
-                               (setq cur seg))))
-                         (when (> (length cur) 0) (push cur acc))
-                         (nreverse acc))))))
-      (funcall wrap-fn segs total-width))))
+(defun context-navigator-view-controls-segments (&optional _where)
+  "Return ordered control segments for the header-line as a list of strings."
+  (let* ((order context-navigator-headerline-controls-order)
+         (res '()))
+    (dolist (k order)
+      (if (eq k :gap)
+          (push " " res)
+        (when-let* ((seg (context-navigator-view-controls--render k)))
+          (when (stringp seg)
+            (push seg res)))))
+    (nreverse res)))
 
 ;; Auto-refresh UI when registry or order variables change.
 (when (fboundp 'add-variable-watcher)
   (dolist (sym '(context-navigator-headerline-controls-order
-                 context-navigator-inline-controls-order
                  context-navigator-controls-registry))
     (add-variable-watcher
      sym
@@ -320,8 +280,11 @@ lines fit into TOTAL-WIDTH."
          (let ((buf (get-buffer "*context-navigator*")))
            (when (buffer-live-p buf)
              (with-current-buffer buf
+               ;; Invalidate view and headerline caches
                (setq-local context-navigator-render--last-hash nil)
                (setq-local context-navigator-view--last-render-key nil)
+               (setq-local context-navigator-headerline--cache-key nil)
+               (setq-local context-navigator-headerline--cache-str nil)
                (when (fboundp 'context-navigator-view--render-if-visible)
                  (context-navigator-view--render-if-visible))))))
        (force-mode-line-update t)))))
