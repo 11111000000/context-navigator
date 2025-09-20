@@ -94,11 +94,28 @@ to the textual/compact style (with brackets)."
     (open-buffers . (:foreground "orange3"))
     (close-buffers . (:foreground "orange3"))
     (clear-gptel . (:foreground "gray"))
-    (clear-group . (:foreground "tomato")))
+    (clear-group . (:foreground "tomato"))
+    (auto-project . (:raise -0.2)))
   "Optional per-key face overrides for control icons.
-Each entry is either a face symbol or a plist like (:foreground \"...\" [:height N])."
+Each entry is either a face symbol or a plist like (:foreground \"...\" [:height N] [:raise N]).
+For stateful toggles (push, auto-project) use `context-navigator-controls-toggle-on-face` and
+`context-navigator-controls-toggle-off-face` variables to set on/off colors."
   :type '(alist :key-type symbol
                 :value-type (choice face (plist :key-type symbol :value-type sexp)))
+  :group 'context-navigator-controls-icons)
+
+(defcustom context-navigator-controls-toggle-on-face
+  '(:foreground "gray85")
+  "Face attributes or symbol for toggle icons when enabled (ON).
+Takes precedence for `push` and `auto-project` controls when STATE is 'on'."
+  :type '(choice face (plist :key-type symbol :value-type sexp))
+  :group 'context-navigator-controls-icons)
+
+(defcustom context-navigator-controls-toggle-off-face
+  '(:foreground "gray60")
+  "Face attributes or symbol for toggle icons when disabled (OFF).
+Takes precedence for `push` and `auto-project` controls when STATE is 'off'."
+  :type '(choice face (plist :key-type symbol :value-type sexp))
   :group 'context-navigator-controls-icons)
 
 (defvar context-navigator-controls-icons--cache (make-hash-table :test 'equal)
@@ -154,10 +171,26 @@ STATE is used for stateful controls: 'on or 'off."
                             'context-navigator-controls-icon-on
                           'context-navigator-controls-icon-off)))
            (override (alist-get key context-navigator-controls-icon-face-map))
-           (final-face (or override base-face))
+           ;; Use custom face for toggles, from defcustom, if present
+           (final-face
+            (cond
+             ((eq key 'push)
+              (cond
+               ((eq state 'on)  context-navigator-controls-toggle-on-face)
+               ((eq state 'off) context-navigator-controls-toggle-off-face)
+               (t nil)))
+             ((eq key 'auto-project)
+              (cond
+               ((eq state 'on)  context-navigator-controls-toggle-on-face)
+               ((eq state 'off) context-navigator-controls-toggle-off-face)
+               (t nil)))
+             (override override)
+             (t base-face)))
+           (raise (or (and (listp override) (plist-get override :raise))
+                      context-navigator-controls-icon-raise))
            (cache-key (list key state
                             context-navigator-controls-icon-height
-                            context-navigator-controls-icon-raise
+                            raise
                             final-face)))
       (or (gethash cache-key context-navigator-controls-icons--cache)
           (when (and provider name)
@@ -190,11 +223,10 @@ STATE is used for stateful controls: 'on or 'off."
                                      when (and (stringp s) (not (string-empty-p s)))
                                      return s))))))
               (when (and (stringp icon) (not (string-empty-p icon)))
-                ;; Apply uniform raise on top of backend result; also enforce height override
-                ;; when face is a plist (add :height if missing).
+                ;; Apply per-icon raise if specified, otherwise use default.
                 (let* ((s (propertize icon
                                       'display
-                                      (list 'raise context-navigator-controls-icon-raise))))
+                                      (list 'raise raise))))
                   (puthash cache-key s context-navigator-controls-icons--cache)
                   s))))))))
 

@@ -42,8 +42,8 @@
 
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
-  '(auto-project push :gap undo redo :gap push-now toggle-all-gptel :gap
-                 razor :gap open-buffers close-buffers :gap clear-group)
+  '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
+         razor :gap open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
