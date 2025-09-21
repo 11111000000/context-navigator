@@ -74,7 +74,9 @@ to the textual/compact style (with brackets)."
                     (off . (faicon . "chevron-down"))))
     (mf-filter . ((on . (faicon . "filter"))
                   (off . (faicon . "filter"))))
-    (mf-edit-all . (faicon . "edit"))
+    ;; Use a valid icon backend for "edit" (material has it; faicon "edit" may be absent)
+    (mf-edit-all . (material . "edit"))
+    (mf-close . (faicon . "times"))
     (open-buffers . (faicon . "folder-open"))
     (close-buffers . (material . "cancel"))
     (clear-gptel . (material . "delete"))
@@ -211,13 +213,31 @@ STATE is used for stateful controls: 'on or 'off."
                                  :height context-navigator-controls-icon-height
                                  ;; keep v-adjust neutral; we apply raise via display:
                                  :v-adjust 0.0))))
-                   ;; Fallbacks for tricky keys (e.g. razor) across providers
+                   ;; Fallbacks for tricky keys (e.g. razor, mf-edit-all) across providers
                    (icon
                     (or icon
+                        ;; Razor: try several providers to increase chances
                         (when (eq key 'razor)
                           (let ((alts '((material . "content_cut")
                                         (octicon  . "scissors")
                                         (faicon   . "scissors"))))
+                            (cl-loop for sp in alts
+                                     for pf = (context-navigator-controls-icons--provider-fn (car sp))
+                                     for nm = (cdr sp)
+                                     for s = (and pf (ignore-errors
+                                                       (funcall pf nm
+                                                                :face (or (and (symbolp final-face) final-face)
+                                                                          (and (listp final-face) final-face))
+                                                                :height context-navigator-controls-icon-height
+                                                                :v-adjust 0.0)))
+                                     when (and (stringp s) (not (string-empty-p s)))
+                                     return s)))
+                        ;; Edit-all: prefer material "edit", but try octicon/faicon fallbacks too
+                        (when (eq key 'mf-edit-all)
+                          (let ((alts '((material . "edit")
+                                        (octicon  . "pencil")
+                                        (faicon   . "pencil")
+                                        (faicon   . "pencil-square-o"))))
                             (cl-loop for sp in alts
                                      for pf = (context-navigator-controls-icons--provider-fn (car sp))
                                      for nm = (cdr sp)
@@ -257,6 +277,12 @@ STATE is used for stateful controls: 'on or 'off."
           (setq-local context-navigator-headerline--cache-str nil)
           (when (fboundp 'context-navigator-view--render-if-visible)
             (context-navigator-view--render-if-visible))))))
+  ;; Also refresh Multifile header-line if it's open.
+  (ignore-errors
+    (let ((buf (get-buffer "*Context Multifile View*")))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (force-mode-line-update t)))))
   ;; As a fallback, force header-line/modeline refresh.
   (force-mode-line-update t))
 

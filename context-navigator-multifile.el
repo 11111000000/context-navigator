@@ -130,36 +130,40 @@
 (defun context-navigator-multifile--headerline-format ()
   "Build header-line controls for the Multifile buffer."
   (let* ((state (if context-navigator-mf--collapsed-all 'off 'on))
-         (seg-collapse (propertize
-                        (context-navigator-multifile--icon-or-label 'mf-collapse state "[↧]")
-                        'mouse-face 'highlight
-                        'help-echo (if (eq state 'on) "Collapse all previews (z)" "Expand all previews (z)")
-                        'keymap (let ((m (make-sparse-keymap)))
-                                  (define-key m [mouse-1] #'context-navigator-multifile-toggle-collapse-all)
-                                  m)))
-         (seg-filter (propertize
-                      (context-navigator-multifile--icon-or-label 'mf-filter
-                                                                  (if context-navigator-mf--filter-enabled-only 'on 'off)
-                                                                  "[F]")
-                      'mouse-face 'highlight
-                      'help-echo "Toggle filter: enabled/all (f)"
-                      'keymap (let ((m (make-sparse-keymap)))
-                                (define-key m [mouse-1] #'context-navigator-multifile-toggle-filter)
-                                m)))
-         (seg-edit-all (propertize
-                        (context-navigator-multifile--icon-or-label 'mf-edit-all nil "[Edit All]")
-                        'mouse-face 'highlight
-                        'help-echo "Open edit buffers for all selections (E)"
-                        'keymap (let ((m (make-sparse-keymap)))
-                                  (define-key m [mouse-1] #'context-navigator-multifile-edit-all)
-                                  m)))
-         (seg-close (propertize
-                     " [×]"
-                     'mouse-face 'highlight
-                     'help-echo "Close Multifile (q)"
-                     'keymap (let ((m (make-sparse-keymap)))
-                               (define-key m [mouse-1] #'context-navigator-multifile-close)
-                               m))))
+         (seg-collapse (let* ((str (context-navigator-multifile--icon-or-label 'mf-collapse state "[↧]"))
+                              (m (make-sparse-keymap)))
+                         (define-key m [mouse-1] #'context-navigator-multifile-toggle-collapse-all)
+                         (define-key m [header-line mouse-1] #'context-navigator-multifile-toggle-collapse-all)
+                         (propertize str
+                                     'mouse-face 'highlight
+                                     'help-echo (if (eq state 'on) "Collapse all previews (z)" "Expand all previews (z)")
+                                     'keymap m 'local-map m)))
+         (seg-filter (let* ((str (context-navigator-multifile--icon-or-label 'mf-filter
+                                                                             (if context-navigator-mf--filter-enabled-only 'on 'off)
+                                                                             "[F]"))
+                            (m (make-sparse-keymap)))
+                       (define-key m [mouse-1] #'context-navigator-multifile-toggle-filter)
+                       (define-key m [header-line mouse-1] #'context-navigator-multifile-toggle-filter)
+                       (propertize str
+                                   'mouse-face 'highlight
+                                   'help-echo "Toggle filter: enabled/all (f)"
+                                   'keymap m 'local-map m)))
+         (seg-edit-all (let* ((str (context-navigator-multifile--icon-or-label 'mf-edit-all nil "[Edit All]"))
+                              (m (make-sparse-keymap)))
+                         (define-key m [mouse-1] #'context-navigator-multifile-edit-all)
+                         (define-key m [header-line mouse-1] #'context-navigator-multifile-edit-all)
+                         (propertize str
+                                     'mouse-face 'highlight
+                                     'help-echo "Open edit buffers for all selections (E)"
+                                     'keymap m 'local-map m)))
+         (seg-close (let* ((str (context-navigator-multifile--icon-or-label 'mf-close nil "[×]"))
+                           (m (make-sparse-keymap)))
+                      (define-key m [mouse-1] #'context-navigator-multifile-close)
+                      (define-key m [header-line mouse-1] #'context-navigator-multifile-close)
+                      (propertize str
+                                  'mouse-face 'highlight
+                                  'help-echo "Close Multifile (q)"
+                                  'keymap m 'local-map m))))
     (concat seg-collapse seg-filter seg-edit-all seg-close)))
 
 (defun context-navigator-multifile--section-collapsed-p (key)
