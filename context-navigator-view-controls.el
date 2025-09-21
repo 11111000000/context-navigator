@@ -71,7 +71,7 @@ Used as the header-line background in the Navigator buffer."
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
   '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
-         razor :gap open-buffers close-buffers :gap clear-group)
+         razor :gap multifile open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
@@ -215,6 +215,17 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
                         (format " [%s]" (capitalize (funcall tr :toggle-all-gptel))) " [T]")))
+      (multifile
+       :type action
+       :icon-key multifile
+       :command context-navigator-multifile-open
+       :help "Open Multifile view"
+       :enabled-p ,(lambda () t)
+       :visible-p ,(lambda () t)
+       :label-fn ,(lambda (style _s)
+                    (pcase style
+                      ((or 'icons 'auto) " [MF]")
+                      (_ " [Multifile]"))))
       ))
   "Registry of Navigator controls for header-line toolbar."
   :type '(alist :key-type symbol :value-type plist)
@@ -318,6 +329,58 @@ Returns a propertized string or nil when not visible."
        ;; Ensure the navigator buffer uses the default header-line face.
        (context-navigator-view-controls--ensure-headerline-face)
        (force-mode-line-update t)))))
+
+(defun context-navigator-view-controls--wrap-segments (segments total-width)
+  "Wrap SEGMENTS (list of strings) into lines within TOTAL-WIDTH columns.
+
+Guarantees each returned line's visual width does not exceed TOTAL-WIDTH.
+Segments longer than TOTAL-WIDTH are soft-split using `truncate-string-to-width'."
+  (let* ((tw (max 1 (or total-width 80)))
+         (acc '())
+         (cur ""))
+    (dolist (seg segments)
+      (let ((seg (or seg "")))
+        (while (and (stringp seg) (> (length seg) 0))
+          (let* ((cw (string-width cur))
+                 (avail (max 0 (- tw cw))))
+            (cond
+             ;; No space left on current line: emit it and continue
+             ((= avail 0)
+              (when (> (length cur) 0) (push cur acc))
+              (setq cur ""))
+             ;; Segment fits entirely on current line
+             ((<= (string-width seg) avail)
+              (setq cur (concat cur seg))
+              (setq seg ""))
+             ;; Need to split the segment to fit the remaining space
+             (t
+              (let* ((head (truncate-string-to-width seg avail nil nil))
+                     (head-len (length head)))
+                ;; If avail is small but truncate returns empty, force a line break
+                (if (or (null head) (= head-len 0))
+                    (progn
+                      (when (> (length cur) 0) (push cur acc))
+                      (setq cur "")) ;; retry with same seg on next loop
+                  (setq cur (concat cur head))
+                  (push cur acc)
+                  (setq cur "")
+                  ;; Remainder of seg (drop the chars we consumed)
+                  (setq seg (substring seg head-len))))))))))
+    (when (> (length cur) 0)
+      (push cur acc))
+    (nreverse acc)))
+
+(defun context-navigator-view-controls-lines (total-width)
+  "Return header-line control lines wrapped to TOTAL-WIDTH columns.
+
+When TOTAL-WIDTH is nil or non-positive, try to use the selected window width;
+fallback to 80 columns."
+  (let* ((tw (cond
+              ((and (numberp total-width) (> total-width 0)) total-width)
+              ((window-live-p (selected-window)) (window-body-width (selected-window)))
+              (t 80)))
+         (segments (context-navigator-view-controls-segments)))
+    (context-navigator-view-controls--wrap-segments (or segments '()) tw)))
 
 (provide 'context-navigator-view-controls)
 ;;; context-navigator-view-controls.el ends here

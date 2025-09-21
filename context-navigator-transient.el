@@ -72,7 +72,8 @@ Files larger than this threshold are skipped."
     ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
     ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
     ("t" (lambda () (context-navigator-i18n :add-from-text)) context-navigator-add-from-text)
-    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)]
+    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)
+    ("m" "Multifile view" context-navigator-multifile-open)]
    ["GPTel"
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)

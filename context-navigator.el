@@ -91,5 +91,13 @@
   (context-navigator-refresh)    ;; autoloads core if needed
   (ignore-errors (context-navigator-open)))
 
+;;; Multifile view (autoloads)
+;;;###autoload
+(autoload 'context-navigator-multifile-open "context-navigator-multifile"
+  "Open Context Multifile View." t)
+;;;###autoload
+(autoload 'context-navigator-multifile-close "context-navigator-multifile"
+  "Close Context Multifile View." t)
+
 (provide 'context-navigator)
 ;;; context-navigator.el ends here

@@ -62,6 +62,10 @@
 (require 'context-navigator-view-counters-test)
 (require 'context-navigator-view-spinner-test)
 (require 'context-navigator-view-indicators-test)
+(require 'context-navigator-multifile-basic-test)
+(require 'context-navigator-multifile-edit-actions-test)
+(require 'context-navigator-multifile-filter-visit-cleanup-test)
+(require 'context-navigator-multifile-remote-and-selection-edge-test)
 
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."
