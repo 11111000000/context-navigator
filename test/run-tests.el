@@ -3,8 +3,9 @@
 ;; Load path (robust: handle batch/interactive where load-file-name or buffer-file-name may be nil)
 (let* ((this-file (or load-file-name buffer-file-name default-directory))
        (test-dir (file-name-directory this-file))
-       (proj-root (expand-file-name ".." test-dir)))
-  (add-to-list 'load-path proj-root)
+       (proj-root (expand-file-name ".." test-dir))
+       (lisp-dir (expand-file-name "lisp" proj-root)))
+  (add-to-list 'load-path lisp-dir)
   (add-to-list 'load-path test-dir))
 
 ;; Load modules that tests may need
