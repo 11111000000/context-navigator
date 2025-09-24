@@ -229,18 +229,18 @@ Constants:
 
 ** Sidebar (context-navigator-view.el)
 
-| Variable                                         | Type            | Default | Description                                                | Module/File                       |                                             |                                   |
-|--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------|
-| context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-controls-style                 | choice (auto|icons|text) | icons   | Labels style for toggles/actions                            | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |
-| context-navigator-gptel-indicator-poll-interval  | number          | 0       | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-view-spinner-frames            | list of strings | ⠋…⠏     | Frames for the loading spinner                             | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-view-spinner-interval          | number          | 0.1     | Spinner animation interval (s)                             | sidebar/context-navigator-view.el |                                             |                                   |
-| context-navigator-view-spinner-degrade-threshold | number          | 0.25    | Degrade to static indicator if timer slips beyond this (s) | sidebar/context-navigator-view.el |                                             |                                   |
+| Variable                                         | Type            | Default | Description                                                | Module/File                       |                                             |                                   |   |   |
+|--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------+---+---|
+| context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-controls-style                 | choice (auto    | icons   | text)                                                      | icons                             | Labels style for toggles/actions            | sidebar/context-navigator-view.el |   |   |
+| context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |   |   |
+| context-navigator-gptel-indicator-poll-interval  | number          | 0       | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-view-spinner-frames            | list of strings | ⠋…⠏     | Frames for the loading spinner                             | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-view-spinner-interval          | number          | 0.1     | Spinner animation interval (s)                             | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+| context-navigator-view-spinner-degrade-threshold | number          | 0.25    | Degrade to static indicator if timer slips beyond this (s) | sidebar/context-navigator-view.el |                                             |                                   |   |   |
 
 ** Render (context-navigator-render.el)
 
@@ -286,22 +286,22 @@ Constants:
 
 ** Logging (context-navigator-log.el)
 
-| Variable                               | Type                                  | Default                         | Description                                         | Module/File                     |
-|----------------------------------------+---------------------------------------+---------------------------------+-----------------------------------------------------+----------------------------------|
-| context-navigator-log-enabled          | boolean                               | nil                             | Enable logging                                      | log/context-navigator-log.el    |
-| context-navigator-log-level            | choice (:error :warn :info :debug :trace) | :info                        | Minimal level to log when enabled                   | log/context-navigator-log.el    |
-| context-navigator-log-auto-open-on-error | boolean                             | t                               | Open log buffer automatically on errors             | log/context-navigator-log.el    |
-| context-navigator-log-buffer-name      | string                                | "*Context Navigator Log*"       | Log buffer name                                     | log/context-navigator-log.el    |
-| context-navigator-log-max-lines        | integer                               | 5000                            | Trim log to at most N lines                         | log/context-navigator-log.el    |
-| context-navigator-log-truncate-length  | integer                               | 800                             | Truncate long messages (0/nil = no truncation)      | log/context-navigator-log.el    |
-| context-navigator-log-file-enable      | boolean                               | nil                             | Also append each line to a persistent file          | log/context-navigator-log.el    |
-| context-navigator-log-file             | file or nil                           | nil                             | Path to persistent log file                         | log/context-navigator-log.el    |
+| Variable                                 | Type                                      | Default                 | Description                                    | Module/File                  |
+|------------------------------------------+-------------------------------------------+-------------------------+------------------------------------------------+------------------------------|
+| context-navigator-log-enabled            | boolean                                   | nil                     | Enable logging                                 | log/context-navigator-log.el |
+| context-navigator-log-level              | choice (:error :warn :info :debug :trace) | :info                   | Minimal level to log when enabled              | log/context-navigator-log.el |
+| context-navigator-log-auto-open-on-error | boolean                                   | t                       | Open log buffer automatically on errors        | log/context-navigator-log.el |
+| context-navigator-log-buffer-name        | string                                    | "*Context Navigator Log*" | Log buffer name                                | log/context-navigator-log.el |
+| context-navigator-log-max-lines          | integer                                   | 5000                    | Trim log to at most N lines                    | log/context-navigator-log.el |
+| context-navigator-log-truncate-length    | integer                                   | 800                     | Truncate long messages (0/nil = no truncation) | log/context-navigator-log.el |
+| context-navigator-log-file-enable        | boolean                                   | nil                     | Also append each line to a persistent file     | log/context-navigator-log.el |
+| context-navigator-log-file               | file or nil                               | nil                     | Path to persistent log file                    | log/context-navigator-log.el |
 
 ** I18n (context-navigator-i18n.el)
 
-| Variable                      | Type                        | Default | Description                                      | Module/File                        |
-|-------------------------------+-----------------------------+---------+--------------------------------------------------+-------------------------------------|
-| context-navigator-language    | choice (auto en ru fr de es)| auto    | UI language; auto detects from locale            | i18n/context-navigator-i18n.el      |
+| Variable                   | Type                         | Default | Description                           | Module/File                    |
+|----------------------------+------------------------------+---------+---------------------------------------+--------------------------------|
+| context-navigator-language | choice (auto en ru fr de es) | auto    | UI language; auto detects from locale | i18n/context-navigator-i18n.el |
 
 ** Header-line controls (context-navigator-headerline.el)
 
@@ -311,10 +311,10 @@ Constants:
 
 ** Modeline (context-navigator-modeline.el)
 
-| Variable                                 | Type    | Default | Description                                   | Module/File                           |
-|------------------------------------------+---------+---------+-----------------------------------------------+---------------------------------------|
-| context-navigator-view-modeline-enable   | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-modeline.el |
-| context-navigator-view-modeline-face     | face    | shadow | Face used for the modeline status text        | modeline/context-navigator-modeline.el |
+| Variable                               | Type    | Default | Description                                   | Module/File                            |
+|----------------------------------------+---------+---------+-----------------------------------------------+----------------------------------------|
+| context-navigator-view-modeline-enable | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-modeline.el |
+| context-navigator-view-modeline-face   | face    | shadow  | Face used for the modeline status text        | modeline/context-navigator-modeline.el |
 
 * Configuration examples
 

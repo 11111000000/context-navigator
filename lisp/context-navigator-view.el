@@ -1387,6 +1387,8 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "l")   #'context-navigator-view-activate)
     (define-key m (kbd "SPC")   #'context-navigator-view-toggle-enabled)
     (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "m")   #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "M")   #'context-navigator-view-toggle-all-gptel)
 
     ;; TAB navigation between interactive elements
     ;; Bind several TAB event representations to be robust across terminals/minor-modes.
@@ -1413,7 +1415,6 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     ;; Align with transient: U → unload context
-    (define-key m (kbd "U")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-view-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)
@@ -1423,14 +1424,16 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
     ;; Clear group (explicit shortcut matching UI hint)
-    (define-key m (kbd "E")   #'context-navigator-view-clear-group)
+    (define-key m (kbd "D")   #'context-navigator-view-clear-group)
     ;; Groups-specific keys
     (define-key m (kbd "u")   #'context-navigator-view-go-up)      ;; show groups from items (Up)
     (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
     (define-key m (kbd "a")   #'context-navigator-view-group-create)
+    (define-key m (kbd "+")   #'context-navigator-view-group-create)
     (define-key m (kbd "r")   #'context-navigator-view-group-rename)
     (define-key m (kbd "e")   #'context-navigator-view-group-edit-description)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
+    (define-key m (kbd "C")   #'context-navigator-view-group-duplicate)
     (define-key m (kbd "q")   #'context-navigator-view-quit)
     (define-key m (kbd "?")   #'context-navigator-view-open-menu)
     m)
@@ -1598,7 +1601,7 @@ Do not highlight purely decorative separators."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                                   (not (eq w (selected-window)))))
+                                              (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)

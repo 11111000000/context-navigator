@@ -63,7 +63,7 @@ Files larger than this threshold are skipped."
   "Context Navigator"
   [["Panel/Project"
     ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-toggle)
-    ("M" "Display Mode" context-navigator-display-mode-toggle)
+    ("S" "Display Mode" context-navigator-display-mode-toggle)
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
@@ -77,6 +77,7 @@ Files larger than this threshold are skipped."
    ["GPTel"
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
+    ("M" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
     ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
@@ -106,6 +107,7 @@ Files larger than this threshold are skipped."
    [:description (lambda () "Items")
                  :if (lambda () (eq context-navigator-view--mode 'items))
                  ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
+                 ("m" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
                  ("d" (lambda () (context-navigator-i18n :help-delete))       context-navigator-view-delete-dispatch)
                  ("g" (lambda () (context-navigator-i18n :help-refresh))      context-navigator-view-refresh-dispatch)
                  ("o" (lambda ()

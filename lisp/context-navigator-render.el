@@ -47,6 +47,12 @@
   :type '(choice (const off) (const short) (const relative) (const full))
   :group 'context-navigator-render)
 
+(defcustom context-navigator-render-short-prefix-cutoff 800
+  "When the ITEMS count exceeds this number and path prefix mode is 'short,
+automatically degrade to 'relative to avoid expensive unique-prefix computation.
+Set to nil to disable auto-degrade."
+  :type 'integer :group 'context-navigator-render)
+
 (defcustom context-navigator-render-prefix-dim-face 'shadow
   "Face used to render path prefix before item names."
   :type 'face :group 'context-navigator-render)
@@ -218,38 +224,45 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
 (defun context-navigator-render--minimal-prefix-map (names)
   "Compute minimal unique prefixes among sibling NAMES.
 Return an alist of (name . minimal-prefix)."
-  (let* ((lens (make-hash-table :test 'equal))
-         (startlen (lambda (s)
-                     (if (and (stringp s) (> (length s) 0)
-                              (eq (aref s 0) ?.))
-                         (min 2 (length s))
-                       (min 1 (length s))))))
-    (dolist (n names)
-      (puthash n (funcall startlen n) lens))
-    ;; Expand prefix lengths until all prefixes are unique
-    (let ((dups t))
-      (while dups
-        (let ((seen (make-hash-table :test 'equal))
-              (coll '()))
-          (maphash
-           (lambda (nm ln)
-             (let* ((ln (min ln (length nm)))
-                    (pref (substring nm 0 ln)))
-               (if (gethash pref seen)
-                   (push nm coll)
-                 (puthash pref nm seen))))
-           lens)
-          (setq dups (nreverse (delete-dups coll))))
-        (dolist (nm dups)
-          (let* ((cur (gethash nm lens))
-                 (next (min (1+ (or cur 1)) (length nm))))
-            (puthash nm next lens)))))
-    (let (alist)
-      (maphash
-       (lambda (nm ln)
-         (push (cons nm (substring nm 0 (min ln (length nm)))) alist))
-       lens)
-      alist)))
+  ;; Fast algorithm: sort, then use LCP with neighbors to decide minimal unique length.
+  (let* ((uniq (delete-dups (cl-copy-list names)))
+         (n (length uniq)))
+    (cond
+     ((= n 0) nil)
+     ((= n 1)
+      (let* ((s (car uniq))
+             (need (if (and (stringp s) (> (length s) 0)
+                            (eq (aref s 0) ?.))
+                       (min 2 (length s))
+                     (min 1 (length s)))))
+        (list (cons s (substring s 0 need)))))
+     (t
+      (let* ((vec (vconcat (cl-sort uniq #'string-lessp)))
+             (res nil))
+        (cl-labels
+            ((lcp (a b)
+               (let* ((la (length a)) (lb (length b))
+                      (lim (min la lb))
+                      (i 0))
+                 (while (and (< i lim)
+                             (eq (aref a i) (aref b i)))
+                   (setq i (1+ i)))
+                 i))
+             (min-start (s)
+               (if (and (stringp s) (> (length s) 0)
+                        (eq (aref s 0) ?.))
+                   (min 2 (length s))
+                 (min 1 (length s)))))
+          (let ((len (length vec)))
+            (dotimes (i len)
+              (let* ((s (aref vec i))
+                     (lprev (if (> i 0) (lcp s (aref vec (1- i))) 0))
+                     (lnext (if (< i (1- len)) (lcp s (aref vec (1+ i))) 0))
+                     (need (1+ (max lprev lnext)))
+                     (need (max need (min-start s)))
+                     (need (min need (length s))))
+                (push (cons s (substring s 0 need)) res))))
+          res))))))
 
 (defun context-navigator-render--build-short-prefix-map (items root)
   "Return hash: abs-path -> short directory prefix \"a/b/\" relative to ROOT.
@@ -269,9 +282,9 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
                       (equal (plist-get context-navigator-render--short-prefix-cache :key) key)
                       (plist-get context-navigator-render--short-prefix-cache :map))))
     (or cached
-        (let* ((tree (make-hash-table :test 'equal))
+        (let* ((children-by-parent (make-hash-table :test 'equal)) ; parent (list dirs) -> child-set (hash)
                (acc  (make-hash-table :test 'equal)))
-          ;; Collect children per parent-dir-list key
+          ;; Collect unique children per parent-dir-list key
           (dolist (it items)
             (let ((p (context-navigator-item-path it)))
               (when (and (stringp p) (not (string-empty-p p)))
@@ -280,19 +293,25 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
                     (let* ((dirs+base (context-navigator-render--split-relpath rel))
                            (dirs (car dirs+base)))
                       (when dirs
-                        (dotimes (i (length dirs))
-                          (let* ((parent (cl-subseq dirs 0 i))
-                                 (child  (nth i dirs))
-                                 (lst    (gethash parent tree)))
-                            (puthash parent (cons child lst) tree))))))))))
+                        (let ((i 0) (len (length dirs)))
+                          (while (< i len)
+                            (let* ((parent (cl-subseq dirs 0 i))
+                                   (child  (nth i dirs))
+                                   (set    (gethash parent children-by-parent)))
+                              (unless set
+                                (setq set (make-hash-table :test 'equal))
+                                (puthash parent set children-by-parent))
+                              (puthash child t set))
+                            (setq i (1+ i)))))))))))
           ;; For each parent, compute minimal prefixes map
           (let ((prefix-per-parent (make-hash-table :test 'equal)))
             (maphash
-             (lambda (parent children)
-               (let* ((uniq (delete-dups (nreverse children)))
-                      (mp   (context-navigator-render--minimal-prefix-map uniq)))
-                 (puthash parent mp prefix-per-parent)))
-             tree)
+             (lambda (parent child-set)
+               (let (children)
+                 (maphash (lambda (k _v) (push k children)) child-set)
+                 (puthash parent (context-navigator-render--minimal-prefix-map children)
+                          prefix-per-parent)))
+             children-by-parent)
             ;; Compute prefix for each item path
             (dolist (it items)
               (let ((p (context-navigator-item-path it)))
@@ -301,17 +320,20 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
                     (if (string-prefix-p ".." rel)
                         (puthash p "" acc)
                       (let* ((dirs (car (context-navigator-render--split-relpath rel)))
-                             (parts '()))
-                        (dolist (i (number-sequence 0 (1- (length (or dirs '())))))
+                             (parts nil)
+                             (i 0)
+                             (len (length (or dirs '()))))
+                        (while (< i len)
                           (let* ((parent (cl-subseq dirs 0 i))
                                  (child  (nth i dirs))
                                  (mp     (gethash parent prefix-per-parent))
                                  (pref   (or (cdr (assoc child mp)) child)))
-                            (push pref parts)))
-                        (let ((prefix (if parts
-                                          (concat (mapconcat #'identity (nreverse parts) "/") "/")
-                                        "")))
-                          (puthash p prefix acc))))))))
+                            (push pref parts))
+                          (setq i (1+ i)))
+                        (puthash p (if parts
+                                       (concat (mapconcat #'identity (nreverse parts) "/") "/")
+                                     "")
+                                 acc)))))))
             ;; Save cache
             (setq context-navigator-render--short-prefix-cache
                   (list :key key :map acc))
@@ -351,7 +373,13 @@ ICON-FN is a function (item -> string|nil) to decorate items.
 When LEFT-WIDTH is non-nil, align left column to that width."
   (let* ((header-lines (context-navigator-render--header-lines header))
          (root (context-navigator-render--state-root))
-         (mode (or context-navigator-render-path-prefix-mode 'short))
+         (n (length (or items '())))
+         (configured (or context-navigator-render-path-prefix-mode 'short))
+         (mode (if (and (eq configured 'short)
+                        (integerp context-navigator-render-short-prefix-cutoff)
+                        (> n context-navigator-render-short-prefix-cutoff))
+                   'relative
+                 configured))
          ;; Install getter for this render pass
          (context-navigator-render--prefix-getter
           (context-navigator-render--make-prefix-getter mode root items)))
