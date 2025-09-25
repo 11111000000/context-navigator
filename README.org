@@ -48,9 +48,9 @@ Not on MELPA. Use a local checkout or straight.el from GitHub.
 
 - Local checkout + use-package (recommended)
 #+begin_src emacs-lisp
-(add-to-list 'load-path "/path/to/context-navigator")
 
 (use-package context-navigator
+  :load-path "~/Code/context-navigator/lisp"
   :commands (context-navigator-start
              context-navigator-mode
              context-navigator-view-open)
