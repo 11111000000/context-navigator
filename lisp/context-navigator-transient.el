@@ -30,6 +30,7 @@
 (require 'context-navigator-view)
 (require 'context-navigator-log)
 (require 'context-navigator-razor)
+(require 'context-navigator-util)
 
 ;; Safe wrapper to avoid transient setup errors when the real command
 ;; isn't defined yet (e.g., during partial loads).
@@ -225,14 +226,7 @@ Files larger than this threshold are skipped."
           :skipped-nonregular skipped-nonregular
           :remote remote)))
 
-(defun context-navigator-transient--human-size (bytes)
-  "Return human-readable size for BYTES."
-  (cond
-   ((null bytes) "?")
-   ((< bytes 1024) (format "%d B" bytes))
-   ((< bytes (* 1024 1024)) (format "%.1f KB" (/ bytes 1024.0)))
-   ((< bytes (* 1024 1024 1024)) (format "%.1f MB" (/ bytes 1048576.0)))
-   (t (format "%.1f GB" (/ bytes 1073741824.0)))))
+
 
 (defun context-navigator-transient--preview-and-confirm (files stats)
   "Show preview buffer for FILES and STATS, return non-nil to proceed."
@@ -249,12 +243,12 @@ Files larger than this threshold are skipped."
         (erase-buffer)
         (insert (format (context-navigator-i18n :preview-title)
                         total
-                        (context-navigator-transient--human-size sum-bytes)))
+                        (context-navigator-human-size sum-bytes)))
         (insert "\n")
         (when (> too-big 0)
           (insert (format (context-navigator-i18n :preview-skipped-too-big)
                           too-big
-                          (context-navigator-transient--human-size context-navigator-max-file-size)))
+                          (context-navigator-human-size context-navigator-max-file-size)))
           (insert "\n"))
         (when (> nonreg 0)
           (insert (format (context-navigator-i18n :preview-skipped-nonregular) nonreg))
@@ -268,7 +262,7 @@ Files larger than this threshold are skipped."
         (dolist (f files)
           (insert (format "  %s (%s)\n"
                           (abbreviate-file-name f)
-                          (context-navigator-transient--human-size (context-navigator-transient--file-size f)))))
+                          (context-navigator-human-size (context-navigator-transient--file-size f)))))
         (goto-char (point-min))
         (view-mode 1)))
     (display-buffer buf '((display-buffer-pop-up-window)))

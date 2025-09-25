@@ -218,7 +218,7 @@ Rules:
 - Groups mode: [<project>] only
 - Global (no project): use ~ as project name → items: [~: <group>] / groups: [~]
 
-Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the footer."
+Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the header-line."
   (let* ((root (context-navigator-state-last-project-root state))
          (group (context-navigator-state-current-group-slug state))
          (proj-name (if root
@@ -261,11 +261,12 @@ Returns a list of line strings."
 ;; during incremental extraction. They intentionally do small, local work:
 ;; install buffer-list/window-selection hooks that trigger counters/refresh.
 (defun context-navigator-view--install-buffer-list-hook ()
-  "Install a per-sidebar buffer-list update hook (idempotent).
+  "Install buffer-list update hook (idempotent).
 
-When the global buffer list changes, we recompute openable counters
-for the sidebar buffer. This is installed buffer-locally so removal
-is straightforward in `context-navigator-view--remove-subs'."
+When the global buffer list changes, recompute openable counters
+for the Navigator buffer. We install a global hook and filter inside
+the handler for the live sidebar buffer; removal is handled in
+`context-navigator-view--remove-subs'."
   (unless context-navigator-view--buflist-fn
     (setq context-navigator-view--buflist-fn
           (lambda ()
@@ -273,11 +274,11 @@ is straightforward in `context-navigator-view--remove-subs'."
               (when (buffer-live-p buf)
                 (with-current-buffer buf
                   (ignore-errors (context-navigator-view--invalidate-openable)))))))
-    ;; Add buffer-local hook so it runs only while the sidebar buffer exists.
-    (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn nil t)))
+    ;; Global hook (filter inside handler by the Navigator buffer)
+    (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn)))
 
 (defun context-navigator-view--install-window-select-hook ()
-  "Install a per-sidebar window-selection-change hook (idempotent).
+  "Install window-selection-change hook (idempotent).
 
 When the selected window changes, schedule a render of the sidebar so
 it can become responsive to focus changes."
@@ -288,7 +289,7 @@ it can become responsive to focus changes."
               (when (buffer-live-p buf)
                 (with-current-buffer buf
                   (ignore-errors (context-navigator-view--schedule-render)))))))
-    (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn nil t)))
+    (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn)))
 
 (defun context-navigator-view--initial-compute-counters ()
   "Perform initial computation of openable counters (safe no-op when modules missing)."
@@ -1021,8 +1022,8 @@ Order of operations:
   (interactive)
   (when-let* ((item (context-navigator-view--at-item)))
     ;; Push snapshot for Undo/Redo prior to deletion
-    (when (fboundp 'context-navigator-razor-snapshot-push)
-      (ignore-errors (context-navigator-razor-snapshot-push)))
+    (when (fboundp 'context-navigator-snapshot-push)
+      (ignore-errors (context-navigator-snapshot-push)))
     (let* ((key (context-navigator-model-item-key item))
            (st (ignore-errors (context-navigator-remove-item-by-key key)))
            (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
@@ -1433,7 +1434,6 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "r")   #'context-navigator-view-group-rename)
     (define-key m (kbd "e")   #'context-navigator-view-group-edit-description)
     (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
-    (define-key m (kbd "C")   #'context-navigator-view-group-duplicate)
     (define-key m (kbd "q")   #'context-navigator-view-quit)
     (define-key m (kbd "?")   #'context-navigator-view-open-menu)
     m)
@@ -1804,8 +1804,8 @@ Buffers are opened in background; we do not change window focus."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: clear-gptel (event=%S)" last-input-event))
   ;; Push snapshot for Undo/Redo before clearing gptel (disables items)
-  (when (fboundp 'context-navigator-razor-snapshot-push)
-    (ignore-errors (context-navigator-razor-snapshot-push)))
+  (when (fboundp 'context-navigator-snapshot-push)
+    (ignore-errors (context-navigator-snapshot-push)))
   (ignore-errors (context-navigator-clear-gptel-now))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -1823,8 +1823,8 @@ Buffers are opened in background; we do not change window focus."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: enable-all-gptel (event=%S)" last-input-event))
   ;; Push snapshot for Undo/Redo before enabling all
-  (when (fboundp 'context-navigator-razor-snapshot-push)
-    (ignore-errors (context-navigator-razor-snapshot-push)))
+  (when (fboundp 'context-navigator-snapshot-push)
+    (ignore-errors (context-navigator-snapshot-push)))
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (context-navigator-state-items st))))
     (when (listp items)

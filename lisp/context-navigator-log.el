@@ -121,12 +121,7 @@ When disabled, still capture :error."
            (<= (context-navigator-log--level->num lvl)
                (context-navigator-log--level->num (or context-navigator-log-level :info))))))
 
-(defun context-navigator-log--ts ()
-  "Return timestamp string HH:MM:SS.mmm."
-  (let* ((time (current-time))
-         (ms (nth 2 (decode-time time)))
-         (fmt (format-time-string "%H:%M:%S" time)))
-    (format "%s.%03d" fmt (floor (* 1000 (nth 2 (time-subtract time (seconds-to-time (float-time (format-time-string "%T" time))))))))))
+
 
 (defun context-navigator-log--ensure-buffer ()
   "Create/initialize the log buffer."

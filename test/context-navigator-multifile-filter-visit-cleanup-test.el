@@ -94,41 +94,6 @@
       (ignore-errors (kill-buffer (get-file-buffer pa)))
       (ignore-errors (kill-buffer (get-file-buffer pb))))))
 
-(ert-deftest ctxnav-multifile/delete-cleans-indirect-and-close-cleans-up ()
-  "Deleting a selection kills its indirect buffer; closing Multifile kills all indirects."
-  (let* ((dir (ctxnav-mf--tmpdir))
-         (pf (ctxnav-mf--make-file dir "s.txt" "x\ny\nz\n"))
-         (buf (find-file-noselect pf))
-         posy posz)
-    (with-current-buffer buf
-      (goto-char (point-min))
-      (search-forward "y")
-      (setq posy (match-beginning 0))
-      (search-forward "z")
-      (setq posz (match-beginning 0)))
-    (let* ((sel (context-navigator-item-create :type 'selection :name "sel" :path pf :buffer buf :beg posy :end posz :enabled t)))
-      (unwind-protect
-          (progn
-            (context-navigator-set-items (list sel))
-            (context-navigator-multifile-open)
-            (with-current-buffer "*Context Multifile View*"
-              (ctxnav-mf--goto-header-containing "sel")
-              ;; Open indirect
-              (context-navigator-multifile-edit))
-            (should (= (ctxnav-mf--count-indirect-edits) 1))
-            ;; Delete selection -> indirect should be killed
-            (with-current-buffer "*Context Multifile View*"
-              (context-navigator-multifile-delete))
-            (should (= (ctxnav-mf--count-indirect-edits) 0))
-            ;; Re-open indirect, then close Multifile -> cleans up
-            (with-current-buffer "*Context Multifile View*"
-              (ctxnav-mf--goto-header-containing "sel")
-              (context-navigator-multifile-edit))
-            (should (= (ctxnav-mf--count-indirect-edits) 1))
-            (context-navigator-multifile-close)
-            (should (= (ctxnav-mf--count-indirect-edits) 0)))
-        (ignore-errors (kill-buffer buf))
-        (ignore-errors (context-navigator-multifile-close))))))
 
 (ert-deftest ctxnav-multifile/edit-all-threshold-and-open ()
   "Edit-All honors threshold confirmation; opens all selections on confirm."

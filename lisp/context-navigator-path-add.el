@@ -22,6 +22,7 @@
 (require 'context-navigator-events)
 (require 'context-navigator-i18n)
 (require 'context-navigator-project)
+(require 'context-navigator-util)
 
 (defgroup context-navigator-path-add nil
   "Settings for adding files from names/paths."
@@ -950,24 +951,12 @@ Respects case sensitivity and dotfiles rule."
         (erase-buffer)
         (insert (format (context-navigator-i18n :preview-title)
                         total
-                        (let ((bytes sum-bytes))
-                          (cond
-                           ((null bytes) "?")
-                           ((< bytes 1024) (format "%d B" bytes))
-                           ((< bytes (* 1024 1024)) (format "%.1f KB" (/ bytes 1024.0)))
-                           ((< bytes (* 1024 1024 1024)) (format "%.1f MB" (/ bytes 1048576.0)))
-                           (t (format "%.1f GB" (/ bytes 1073741824.0)))))))
+                        (context-navigator-human-size sum-bytes)))
         (insert "\n")
         (when (> too-big 0)
           (insert (format (context-navigator-i18n :preview-skipped-too-big)
                           too-big
-                          (let ((bytes context-navigator-max-file-size))
-                            (cond
-                             ((null bytes) "?")
-                             ((< bytes 1024) (format "%d B" bytes))
-                             ((< bytes (* 1024 1024)) (format "%.1f KB" (/ bytes 1024.0)))
-                             ((< bytes (* 1024 1024 1024)) (format "%.1f MB" (/ bytes 1048576.0)))
-                             (t (format "%.1f GB" (/ bytes 1073741824.0)))))))
+                          (context-navigator-human-size context-navigator-max-file-size)))
           (insert "\n"))
         (when (> nonreg 0)
           (insert (format (context-navigator-i18n :preview-skipped-nonregular) nonreg))

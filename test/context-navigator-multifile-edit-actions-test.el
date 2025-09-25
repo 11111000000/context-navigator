@@ -22,6 +22,17 @@
   (search-forward name nil t)
   (beginning-of-line))
 
+(defun ctxnav-mf--goto-item (item)
+  "Move point to the header line for ITEM in Multifile buffer."
+  (let* ((key (context-navigator-model-item-key item))
+         (pos (when (fboundp 'context-navigator-multifile--pos-for-key)
+                (context-navigator-multifile--pos-for-key key))))
+    (if (and pos (consp pos))
+        (progn
+          (goto-char (car pos))
+          (beginning-of-line))
+      (ctxnav-mf--goto-item-by-name (context-navigator-item-name item)))))
+
 (ert-deftest ctxnav-multifile/edit-selection-narrow-and-save ()
   "Edit selection via indirect buffer with narrowing; save persists to file."
   (let* ((p (ctxnav-mf--make-temp "edit.txt" "hello\nworld\n"))
@@ -38,7 +49,7 @@
           (ignore-errors (context-navigator-set-items (list sel)))
           (ignore-errors (context-navigator-multifile-open))
           (with-current-buffer "*Context Multifile View*"
-            (ctxnav-mf--goto-item-by-name "edit.txt")
+            (ctxnav-mf--goto-item sel)
             (context-navigator-multifile-edit))
           ;; Find indirect buffer and verify narrowing
           (let* ((ind (cl-find-if (lambda (b)
@@ -69,7 +80,7 @@
           (ignore-errors (context-navigator-set-items (list it)))
           (ignore-errors (context-navigator-multifile-open))
           (with-current-buffer "*Context Multifile View*"
-            (ctxnav-mf--goto-item-by-name "a.txt")
+            (ctxnav-mf--goto-item it)
             ;; Toggle -> should disable
             (context-navigator-multifile-toggle)
             (let* ((st (context-navigator--state-get))
@@ -82,6 +93,7 @@
             (let ((called nil))
               (cl-letf (((symbol-function 'context-navigator-gptel-toggle-one)
                          (lambda (_x) (setq called t) :added)))
+                (ctxnav-mf--goto-item it)
                 (context-navigator-multifile-push)
                 (should called)))
             ;; Delete -> item removed from model
@@ -90,7 +102,7 @@
                    (idx2 (context-navigator-state-index st2))
                    (key2 (context-navigator-model-item-key it)))
               (should (null (gethash key2 idx2)))))))
-    (ignore-errors (context-navigator-multifile-close)))))
+    (ignore-errors (context-navigator-multifile-close))))
 
 (provide 'context-navigator-multifile-edit-actions-test)
 ;;; context-navigator-multifile-edit-actions-test.el ends here

@@ -388,6 +388,29 @@ When LEFT-WIDTH is non-nil, align left column to that width."
                       (context-navigator-render--format-line it icon-fn left-width))
                     items))))
 
+(defun context-navigator-render-build-item-lines (items &optional icon-fn left-width)
+  "Return list of propertized lines for ITEMS only (no header/separator).
+ICON-FN is a function (item -> string|nil) to decorate items.
+When LEFT-WIDTH is non-nil, align left column to that width.
+
+This is identical to `context-navigator-render-build-lines' minus the header
+construction, so callers that render their own titles can avoid building and
+discarding header/separator lines."
+  (let* ((root (context-navigator-render--state-root))
+         (n (length (or items '())))
+         (configured (or context-navigator-render-path-prefix-mode 'short))
+         (mode (if (and (eq configured 'short)
+                        (integerp context-navigator-render-short-prefix-cutoff)
+                        (> n context-navigator-render-short-prefix-cutoff))
+                   'relative
+                 configured))
+         ;; Install getter for this render pass
+         (context-navigator-render--prefix-getter
+          (context-navigator-render--make-prefix-getter mode root items)))
+    (mapcar (lambda (it)
+              (context-navigator-render--format-line it icon-fn left-width))
+            items)))
+
 (defun context-navigator-render-apply-to-buffer (buffer lines)
   "Replace BUFFER text with LINES when different, preserving point/column, mark and window start best-effort.
 

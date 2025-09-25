@@ -172,14 +172,14 @@ REST is a list of item lines."
                     context-navigator-view--sorted-root root)
               s)))
          (left-width (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
-         (base (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
-                 (context-navigator-render-build-lines sorted-items header
-                                                       #'context-navigator-icons-for-item
-                                                       left-width)))
+         (item-lines (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
+                       (context-navigator-render-build-item-lines sorted-items
+                                                                  #'context-navigator-icons-for-item
+                                                                  left-width)))
          ;; Title/header is rendered inside the buffer (interactive, collapsible).
          (hl (context-navigator-view--title-line header))
          (sep "")
-         (rest (cddr base))
+         (rest item-lines)
          (up (let ((s (copy-sequence "..")))
                (add-text-properties 0 (length s)
                                     (list 'context-navigator-groups-up t

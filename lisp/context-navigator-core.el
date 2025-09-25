@@ -93,6 +93,10 @@ otherwise attempt `copy-tree' as a best-effort generic copy."
   "Polling interval (seconds) to check for a visible gptel window when deferring apply."
   :type 'number :group 'context-navigator)
 
+(defcustom context-navigator-diagnostics-log-refresh-caller nil
+  "When non-nil, log a brief backtrace when refresh bursts occur."
+  :type 'boolean :group 'context-navigator)
+
 (defcustom context-navigator-autosave t
   "Autosave context file on model refresh (when not inhibited)."
   :type 'boolean :group 'context-navigator)
@@ -432,7 +436,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
 
 (defun context-navigator--state-with-items (state items)
   "Return new STATE' with ITEMS and recomputed index/generation."
-  (let* ((uni (context-navigator-model-uniq items))
+  ;; Keep original order and allow duplicates in ITEMS; index will reflect last-wins semantics.
+  (let* ((uni items)
          (idx (context-navigator-model-build-index uni))
          (new (context-navigator--state-copy state)))
     (setf (context-navigator-state-items new) uni)
@@ -1068,8 +1073,11 @@ Prunes dead buffer items (non-live buffers). Return the new state."
   "Add ITEM to the model (deduplicated by key; last wins). Return new state."
   (let* ((cur (context-navigator--state-get))
          (old (and cur (context-navigator-state-items cur)))
-         (items (append old (list item))))
-    (context-navigator-set-items items)))
+         (items (append old (list item)))
+         ;; Deduplicate only here (API semantics: last wins); set-items
+         ;; intentionally preserves order/duplicates for callers that need it.
+         (uniq (context-navigator-model-uniq items)))
+    (context-navigator-set-items uniq)))
 
 (defun context-navigator-remove-item-by-key (key)
   "Remove item with stable KEY from the model. Return new state."
@@ -1504,6 +1512,7 @@ Also triggers an immediate project switch so header shows actual project."
 
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
 (context-navigator--reinit-after-reload)
+
 
 (provide 'context-navigator-core)
 ;;; context-navigator-core.el ends here
