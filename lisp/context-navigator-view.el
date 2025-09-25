@@ -87,6 +87,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-state-items "context-navigator-core" (state))
 (declare-function context-navigator-state-index "context-navigator-core" (state))
 (declare-function context-navigator-state-current-group-slug "context-navigator-core" (state))
+(declare-function context-navigator-state-p "context-navigator-core" (state))
+(declare-function context-navigator-state-generation "context-navigator-core" (state))
 (declare-function context-navigator-toggle-item "context-navigator-core" (key &optional enabled))
 (declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
 (declare-function context-navigator-context-clear-current-group "context-navigator-core" ())
@@ -102,12 +104,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 
 (defconst context-navigator-view--buffer-name "*context-navigator*")
 
-(defun context-navigator-view--in-buffer (fn)
-  "Run FN inside the Navigator view buffer when available."
-  (let ((buf (get-buffer context-navigator-view--buffer-name)))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (funcall fn)))))
+
 
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
@@ -1416,6 +1413,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     ;; Align with transient: U → unload context
+    (define-key m (kbd "U")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-view-clear-gptel)
     ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)

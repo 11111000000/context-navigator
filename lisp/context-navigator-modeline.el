@@ -20,6 +20,7 @@
 
 (declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
 (declare-function context-navigator--groups-candidates "context-navigator-core" (&optional root))
+(declare-function context-navigator--state-read "context-navigator-core" (root))
 
 (defgroup context-navigator-modeline nil
   "Modeline settings for Context Navigator."

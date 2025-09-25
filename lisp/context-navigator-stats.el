@@ -17,6 +17,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-icons)
 (require 'context-navigator-i18n)
+(require 'context-navigator-util)
 
 ;; Forward decls to avoid cycles
 (declare-function context-navigator--state-get "context-navigator-core" ())
@@ -73,13 +74,7 @@ PLIST fields:
 
 ;; Helpers --------------------------------------------------------------------
 
-(defun context-navigator-stats--human-size (bytes)
-  (cond
-   ((null bytes) "?")
-   ((< bytes 1024) (format "%d B" bytes))
-   ((< bytes 1048576) (format "%.1f KB" (/ bytes 1024.0)))
-   ((< bytes 1073741824) (format "%.1f MB" (/ bytes 1048576.0)))
-   (t (format "%.1f GB" (/ bytes 1073741824.0)))))
+
 
 (defun context-navigator-stats--icons-enabled-p ()
   (pcase context-navigator-stats-icons-enable
@@ -306,7 +301,7 @@ when an icon name is unavailable in the installed icon set."
                         hdr-ico
                         lbl
                         (or en 0)
-                        (context-navigator-stats--human-size b-en)
+                        (context-navigator-human-size b-en)
                         (or t-en 0)
                         (context-navigator-i18n :stats-tokens)))
            (s (copy-sequence hdr))
@@ -348,8 +343,8 @@ when an icon name is unavailable in the installed icon set."
                (row2 (format "   %s %s: %s ~%s  /  %s ~%s"
                              siz-ico
                              (context-navigator-i18n :stats-size)
-                             (context-navigator-i18n :enabled) (context-navigator-stats--human-size b-en)
-                             (context-navigator-i18n :total) (context-navigator-stats--human-size b-all)))
+                             (context-navigator-i18n :enabled) (context-navigator-human-size b-en)
+                             (context-navigator-i18n :total) (context-navigator-human-size b-all)))
                (row3 (format "   %s %s: %s %d  /  %s %d"
                              tok-ico
                              (context-navigator-i18n :stats-tokens)
