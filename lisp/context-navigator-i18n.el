@@ -144,6 +144,9 @@
      (be . "Адкрыць буферы (у фоне)")
      (zh . "打开缓冲区（后台）")
      (ja . "バッファを開く（バックグラウンド）"))
+    (:select-by-name
+     (en . "Select by name")
+     (ru . "Выбрать по имени"))
     (:tr-toggle-push
      (en . "Toggle push→gptel")
      (ru . "Переключить отправку→gptel")

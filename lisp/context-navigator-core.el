@@ -1510,6 +1510,125 @@ Also triggers an immediate project switch so header shows actual project."
         (ignore-errors (context-navigator-groups-open))))
     (message "Context Navigator: restarted")))
 
+;; --- Item open/selection-by-name ------------------------------------------------
+
+(defun context-navigator--window-on-sidebar-p (&optional win)
+  "Return non-nil if WIN (or selected window) is the Navigator sidebar window."
+  (let ((w (or win (selected-window))))
+    (and (window-live-p w)
+         (eq (window-parameter w 'context-navigator-view) 'sidebar))))
+
+(defun context-navigator-open-item (item &optional prefer-other-window)
+  "Open ITEM (file/buffer/selection). If PREFER-OTHER-WINDOW non-nil, open in other window.
+
+When current window is the Navigator sidebar, open in other window by default.
+For selection items, activate the region (mark active) after opening."
+  (let* ((open-in-other (or prefer-other-window
+                            (context-navigator--window-on-sidebar-p)))
+         (safe-goto (lambda (pos)
+                      (when (integerp pos)
+                        (goto-char (min (max (point-min) pos) (point-max))))))
+         (open-file (lambda (path)
+                      (when (and (stringp path) (file-exists-p path))
+                        (if open-in-other
+                            (find-file-other-window path)
+                          (find-file path)))))
+         (switch-buf (lambda (buf)
+                       (when (buffer-live-p buf)
+                         (if open-in-other
+                             (switch-to-buffer-other-window buf)
+                           (switch-to-buffer buf))))))
+    (pcase (context-navigator-item-type item)
+      ('file
+       (funcall open-file (context-navigator-item-path item)))
+      ('buffer
+       (let* ((buf (or (context-navigator-item-buffer item)
+                       (and (context-navigator-item-path item)
+                            (file-exists-p (context-navigator-item-path item))
+                            (find-file-noselect (context-navigator-item-path item))))))
+         (when buf (funcall switch-buf buf))))
+      ('selection
+       (let* ((path (context-navigator-item-path item))
+              (buf (or (context-navigator-item-buffer item)
+                       (and (stringp path) (file-exists-p path)
+                            (find-file-noselect path))))
+              (b (context-navigator-item-beg item))
+              (e (context-navigator-item-end item)))
+         (when buf
+           (funcall switch-buf buf)
+           (when (and (integerp b) (integerp e))
+             (let ((beg (min b e)) (end (max b e)))
+               (funcall safe-goto beg)
+               (push-mark end t t)
+               (when (fboundp 'recenter) (recenter)))))))
+      (_ (message "Unknown item type")))))
+
+(defun context-navigator--format-item-candidate (item)
+  "Return a human-readable label for ITEM: \"<name> — <path-or-buffer>\"."
+  (let* ((name (or (context-navigator-item-name item) ""))
+         (path (context-navigator-item-path item))
+         (buf  (context-navigator-item-buffer item))
+         (disp (cond
+                ((and (stringp path) (not (string-empty-p path)))
+                 (let* ((st (ignore-errors (context-navigator--state-get)))
+                        (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+                        (pp (condition-case _err
+                                (if (and root (stringp root))
+                                    (file-relative-name (expand-file-name path)
+                                                        (file-name-as-directory (expand-file-name root)))
+                                  (abbreviate-file-name (expand-file-name path)))
+                              (error (abbreviate-file-name path)))))
+                   pp))
+                ((bufferp buf) (format "<%s>" (buffer-name buf)))
+                (t ""))))
+    (string-trim (if (and (stringp disp) (not (string-empty-p disp)))
+                     (format "%s — %s" name disp)
+                   (format "%s" name)))))
+
+(defun context-navigator-select-by-name ()
+  "Select a context item by name from all items in the current context and open it.
+
+Uses consult when available (fuzzy search with live filtering),
+falls back to `completing-read' otherwise.
+
+Open in current window, or in another window when the current window is the Navigator sidebar.
+For selections, activate the region after opening."
+  (interactive)
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (ignore-errors (context-navigator-state-items st)))))
+    (if (not (and (listp items) (> (length items) 0)))
+        (message "Нет элементов в текущем контексте.")
+      (let* ((base-alist
+              (mapcar (lambda (it) (cons (context-navigator--format-item-candidate it) it))
+                      items))
+             ;; Disambiguate duplicate labels by appending a numeric suffix
+             (counts (make-hash-table :test 'equal))
+             (uniq-alist
+              (mapcar
+               (lambda (cell)
+                 (let* ((lbl (car cell))
+                        (cnt (1+ (gethash lbl counts 0))))
+                   (puthash lbl cnt counts)
+                   (if (> cnt 1)
+                       (cons (format "%s (%d)" lbl cnt) (cdr cell))
+                     cell)))
+               base-alist))
+             (prompt "Элемент контекста: ")
+             (prefer-other (context-navigator--window-on-sidebar-p))
+             (choice
+              (cond
+               ((and (require 'consult nil t) (fboundp 'consult--read))
+                (consult--read (mapcar #'car uniq-alist)
+                               :prompt prompt
+                               :require-match t
+                               :category 'context-navigator-item))
+               (t
+                (completing-read prompt (mapcar #'car uniq-alist) nil t)))))
+        (when (and (stringp choice) (not (string-empty-p choice)))
+          (let ((it (alist-get choice uniq-alist nil nil #'string=)))
+            (when (context-navigator-item-p it)
+              (context-navigator-open-item it prefer-other))))))))
+
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
 (context-navigator--reinit-after-reload)
 

@@ -73,6 +73,8 @@ Files larger than this threshold are skipped."
     ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
     ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
     ("t" (lambda () (context-navigator-i18n :add-from-text)) context-navigator-add-from-text)
+    ("b" (lambda () (or (ignore-errors (context-navigator-i18n :select-by-name)) "Select by name"))
+     context-navigator-select-by-name)
     ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)
     ("m" "Multifile view" context-navigator-multifile-open)]
    ["GPTel"
@@ -100,6 +102,8 @@ Files larger than this threshold are skipped."
                  ("p"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
                  ("j"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
                  ("k"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
+                 ("b"   (lambda () (or (ignore-errors (context-navigator-i18n :select-by-name)) "Select by name"))
+                  context-navigator-select-by-name)
                  ("h"   (lambda ()
                           (if (eq context-navigator-view--mode 'groups)
                               (context-navigator-i18n :groups-help-back)
