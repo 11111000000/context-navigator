@@ -51,15 +51,12 @@ Not on MELPA. Use a local checkout or straight.el from GitHub.
 
 (use-package context-navigator
   :load-path "~/Code/context-navigator/lisp"
-  :commands (context-navigator-start
-             context-navigator-mode
-             context-navigator-view-open)
-  :init
+  :custom
   ;; Optional, but handy: set a global key for the transient menu
-  (setq context-navigator-global-key "C-c n")
+  (context-navigator-global-key "C-c n")
   ;; Recommended defaults
-  (setq context-navigator-autoload t
-        context-navigator-autosave t)
+  (context-navigator-autoload t)
+  (context-navigator-autosave t)
   :config
   (context-navigator-mode 1))
 #+end_src
@@ -71,10 +68,10 @@ Not on MELPA. Use a local checkout or straight.el from GitHub.
              :type git
              :host github
              :repo "11111000000/context-navigator")
-  :init
-  (setq context-navigator-global-key "C-c n"
-        context-navigator-autoload t
-        context-navigator-autosave t)
+  :custom
+  (context-navigator-global-key "C-c n")
+  (context-navigator-autoload t)
+  (context-navigator-autosave t)
   :config
   (context-navigator-mode 1))
 #+end_src
@@ -321,13 +318,16 @@ Constants:
 - Minimal setup
 #+begin_src emacs-lisp
 (use-package context-navigator
-  :init
-  (setq context-navigator-global-key "C-c n")   ;; or nil if you prefer M-x
-  (setq context-navigator-autoload t
-        context-navigator-autosave t)
+  :custom
+  (context-navigator-global-key "C-c n")   ;; or nil if you prefer M-x
+  (context-navigator-autoload t)
+  (context-navigator-autosave t)
   :config
   (context-navigator-mode 1))
 #+end_src
+
+#+RESULTS:
+: t
 
 - Advanced setup (icons, indicators, widths, counters, auto‑project, language)
 #+begin_src emacs-lisp
@@ -369,6 +369,10 @@ Constants:
   :config
   (context-navigator-mode 1))
 #+end_src
+
+#+RESULTS:
+: t
+: t
 
 * GPTel integration (one‑way)
 
