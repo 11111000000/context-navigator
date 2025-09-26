@@ -165,12 +165,18 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
          ;; Always render an indicator; when PRESENT is nil it will be gray
          (state-icon (context-navigator-render--indicator present))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
-         ;; Build prefix via buffer-local getter when available
-         (prefix (cond
-                  ((and (stringp path) (not (string-empty-p path))
-                        (functionp context-navigator-render--prefix-getter))
-                   (funcall context-navigator-render--prefix-getter path))
-                  (t "")))
+         ;; Build prefix via buffer-local getter when available; ensure outside-project gets ".../"
+         (root (context-navigator-render--state-root))
+         (rel (context-navigator-render--relpath path root))
+         (outside (and (stringp rel) (string-prefix-p ".." rel)))
+         (prefix (let ((pfx (cond
+                             ((and (stringp path) (not (string-empty-p path))
+                                   (functionp context-navigator-render--prefix-getter))
+                              (funcall context-navigator-render--prefix-getter path))
+                             (t ""))))
+                   (if (and (or (null pfx) (string-empty-p pfx)) outside)
+                       ".../"
+                     pfx)))
          (prefix-prop (if (and (stringp prefix) (> (length prefix) 0))
                           (propertize prefix 'face context-navigator-render-prefix-dim-face)
                         ""))
@@ -267,7 +273,7 @@ Return an alist of (name . minimal-prefix)."
 
 (defun context-navigator-render--build-short-prefix-map (items root)
   "Return hash: abs-path -> short directory prefix \"a/b/\" relative to ROOT.
-Items with paths outside ROOT get an empty prefix.
+Items with paths outside ROOT get a \".../\" prefix.
 
 Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITEMS-HASH)."
   (let* ((root-key (and (stringp root) (not (string-empty-p root))
@@ -319,7 +325,7 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
                 (when (and (stringp p) (not (string-empty-p p)))
                   (let ((rel (context-navigator-render--relpath p root)))
                     (if (string-prefix-p ".." rel)
-                        (puthash p "" acc)
+                        (puthash p ".../" acc)
                       (let* ((dirs (car (context-navigator-render--split-relpath rel)))
                              (parts nil)
                              (i 0)
@@ -341,12 +347,13 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
             acc)))))
 
 (defun context-navigator-render--relative-prefix (p root)
-  "Return directory prefix relative to ROOT for path P, or empty string."
+  "Return directory prefix relative to ROOT for path P, or \".../\" when outside ROOT."
   (let* ((rel (context-navigator-render--relpath p root))
          (dir (file-name-directory rel)))
-    (if (and dir (> (length dir) 0))
-        dir
-      "")))
+    (cond
+     ((and (stringp rel) (string-prefix-p ".." rel)) ".../")
+     ((and dir (> (length dir) 0)) dir)
+     (t ""))))
 
 (defun context-navigator-render--full-prefix (p)
   "Return absolute directory for P (with trailing slash trimmed by caller)."
@@ -358,14 +365,19 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
   (let ((short-map (when (eq mode 'short)
                      (context-navigator-render--build-short-prefix-map items root))))
     (pcase mode
-      ('off (lambda (_p) ""))
+      ('off (lambda (p)
+              (let ((rel (context-navigator-render--relpath p root)))
+                (if (and (stringp rel) (string-prefix-p ".." rel)) ".../" ""))))
       ('short (lambda (p) (or (and short-map (gethash p short-map)) "")))
       ('relative (lambda (p) (context-navigator-render--relative-prefix p root)))
       ('full (lambda (p)
-               (let ((d (context-navigator-render--full-prefix p)))
-                 (if (and d (> (length d) 0))
-                     (file-name-as-directory d)
-                   ""))))
+               (let ((rel (context-navigator-render--relpath p root)))
+                 (if (and (stringp rel) (string-prefix-p ".." rel))
+                     ".../"
+                   (let ((d (context-navigator-render--full-prefix p)))
+                     (if (and d (> (length d) 0))
+                         (file-name-as-directory d)
+                       ""))))))
       (_ (lambda (_p) "")))))
 
 (defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
