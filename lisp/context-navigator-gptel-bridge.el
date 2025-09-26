@@ -89,22 +89,33 @@ Order of preference:
     chosen))
 
 (defun context-navigator-gptel--raw-keys ()
-  "Best-effort stable keys directly from raw gptel list."
-  (let ((raw (context-navigator-gptel--context-list))
-        (keys '()))
-    (dolist (e raw)
-      (cond
-       ((stringp e)
-        (push (format "file:%s" e) keys))
-       ((and (consp e) (stringp (car e)))
-        (push (format "file:%s" (car e)) keys))
-       ((and (consp e) (bufferp (car e)))
-        (let* ((buf (car e))
-               (p   (and (buffer-live-p buf)
-                         (buffer-local-value 'buffer-file-name buf)))
-               (nm  (and (buffer-live-p buf) (buffer-name buf))))
-          (push (format "buf:%s:%s" (or nm "") (or p "")) keys)))))
-    (delete-dups (nreverse keys))))
+  "Best-effort stable keys directly from raw gptel list (including selections)."
+  (let* ((raw (context-navigator-gptel--context-list))
+         (flat (and (sequencep raw)
+                    (mapcan
+                     (lambda (entry)
+                       (let ((it (ignore-errors (context-navigator-gptel--entry->item entry))))
+                         (cond
+                          ((null it) nil)
+                          ((context-navigator-item-p it) (list it))
+                          ((and (listp it) (cl-every #'context-navigator-item-p it)) it)
+                          ((and (vectorp it))
+                           (let (res)
+                             (dotimes (i (length it))
+                               (let ((elt (aref it i)))
+                                 (when (context-navigator-item-p elt)
+                                   (push elt res))))
+                             (nreverse res)))
+                          ((and (listp it) (context-navigator-item-p (car it))) it)
+                          ((listp it)
+                           (let (res)
+                             (dolist (el it)
+                               (when (context-navigator-item-p el) (push el res)))
+                             (nreverse res)))
+                          (t nil))))
+                     raw)))
+         (uniq (and flat (context-navigator-model-uniq flat))))
+    (and uniq (mapcar #'context-navigator-model-item-key uniq))))
 
 (defun context-navigator-gptel--raw-items-fallback ()
   "Best-effort items from raw gptel list (files and whole buffers).
@@ -566,12 +577,64 @@ Return count of successful operations."
       (context-navigator-gptel--apply-diff adds rems upds))))
 
 (defun context-navigator-gptel-present-p (item)
-  "Return non-nil if ITEM is currently present in gptel context."
+  "Return non-nil if ITEM is currently present in gptel context.
+
+Tries normal pull; if not found (especially for selections), falls back to
+reading raw gptel entries and parsing them directly (including a last-resort
+`gptel-context--collect' when available)."
   (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
          (keys (and (listp lst)
                     (mapcar #'context-navigator-model-item-key lst)))
          (key (context-navigator-model-item-key item)))
-    (and (member key keys) t)))
+    (or (and (member key keys) t)
+        ;; Fallback for selections and odd cases when `pull' misses entries.
+        (let* ((type (ignore-errors (context-navigator-item-type item)))
+               (raw (or (ignore-errors (context-navigator-gptel--context-list))
+                        (and (fboundp 'gptel-context--collect)
+                             (ignore-errors (gptel-context--collect)))))
+               (flat (and (sequencep raw)
+                          (mapcan
+                           (lambda (entry)
+                             (let ((it (ignore-errors (context-navigator-gptel--entry->item entry))))
+                               (cond
+                                ((null it) nil)
+                                ((context-navigator-item-p it) (list it))
+                                ((and (listp it) (cl-every #'context-navigator-item-p it)) it)
+                                ((and (vectorp it))
+                                 (let (res)
+                                   (dotimes (i (length it))
+                                     (let ((elt (aref it i)))
+                                       (when (context-navigator-item-p elt)
+                                         (push elt res))))
+                                   (nreverse res)))
+                                ((and (listp it) (context-navigator-item-p (car it))) it)
+                                ((listp it)
+                                 (let (res)
+                                   (dolist (el it)
+                                     (when (context-navigator-item-p el) (push el res)))
+                                   (nreverse res)))
+                                (t nil))))
+                           raw)))
+               (uniq (and flat (context-navigator-model-uniq flat))))
+          (cond
+           ;; For selections, prefer value equality by type/path/beg/end, ignore name/size/enabled
+           ((eq type 'selection)
+            (or (and uniq
+                     (cl-some
+                      (lambda (x)
+                        (and (eq (context-navigator-item-type x) 'selection)
+                             (equal (context-navigator-item-path x)
+                                    (context-navigator-item-path item))
+                             (equal (context-navigator-item-beg x)
+                                    (context-navigator-item-beg item))
+                             (equal (context-navigator-item-end x)
+                                    (context-navigator-item-end item))))
+                      uniq))
+                ;; As an extra guard, if keys also match, treat as present
+                (and uniq (member key (mapcar #'context-navigator-model-item-key uniq)))))
+           ;; For other types, key match is sufficient
+           (t
+            (and uniq (member key (mapcar #'context-navigator-model-item-key uniq)))))))))
 
 (cl-defun context-navigator-gptel-add-one (item)
   "Add ITEM to gptel context (best-effort). Return t on success."
