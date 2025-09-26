@@ -48,6 +48,7 @@ Each group shows display name with item count in parentheses."
             (add-text-properties 0 (length s)
                                  (list 'context-navigator-group-slug slug
                                        'context-navigator-group-display disp
+                                       'context-navigator-interactive t
                                        'mouse-face 'highlight
                                        'keymap context-navigator-view--group-line-keymap
                                        'local-map context-navigator-view--group-line-keymap
@@ -91,6 +92,10 @@ the groups view is collapsed."
                                           (get-text-property 0 'context-navigator-stats-toggle s))))
                       (when is-header
                         (let ((km (make-sparse-keymap)))
+                          ;; Inherit main mode keymap so n/p, j/k, arrows work here.
+                          (when (and (boundp 'context-navigator-view-mode-map)
+                                     (keymapp context-navigator-view-mode-map))
+                            (set-keymap-parent km context-navigator-view-mode-map))
                           (define-key km [mouse-1] #'context-navigator-view-stats-toggle)
                           (define-key km (kbd "RET")       #'context-navigator-view-stats-toggle)
                           (define-key km (kbd "C-m")       #'context-navigator-view-stats-toggle)
@@ -102,6 +107,8 @@ the groups view is collapsed."
                                                (list 'mouse-face 'highlight
                                                      'help-echo "Click/TAB/RET — toggle stats"
                                                      'context-navigator-stats-toggle t
+                                                     'context-navigator-header t
+                                                     'context-navigator-interactive t
                                                      'keymap km
                                                      'local-map km)
                                                s))

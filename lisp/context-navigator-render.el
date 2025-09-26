@@ -140,7 +140,8 @@ indicator sits centered and appears moderately large relative to item text."
   (let ((s (copy-sequence line)))
     (add-text-properties 0 (length s)
                          (list 'context-navigator-key key
-                               'context-navigator-item item)
+                               'context-navigator-item item
+                               'context-navigator-interactive t)
                          s)
     s))
 

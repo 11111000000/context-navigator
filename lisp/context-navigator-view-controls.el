@@ -275,7 +275,8 @@ Returns a propertized string or nil when not visible."
         (when (> (length s) 0)
           (let ((props (list 'mouse-face 'highlight
                              'help-echo help-str
-                             'context-navigator-key key)))
+                             'context-navigator-key key
+                             'context-navigator-interactive t)))
             (when km
               (setq props (append props (list 'keymap km 'local-map km))))
             (when (eq type 'toggle)

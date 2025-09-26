@@ -53,6 +53,8 @@
                    m))))
     (add-text-properties 0 (length s)
                          (list 'context-navigator-title t
+                               'context-navigator-header t
+                               'context-navigator-interactive t
                                'mouse-face 'highlight
                                'help-echo "Click/TAB/RET — collapse/expand"
                                'keymap km

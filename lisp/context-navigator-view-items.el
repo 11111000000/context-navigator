@@ -18,6 +18,7 @@
 (require 'context-navigator-core)
 (require 'context-navigator-stats)
 (require 'context-navigator-view-title)
+(require 'context-navigator-log)
 
 ;;;###autoload
 (defun context-navigator-view--items-header-toggle-lines (total-width)
@@ -171,6 +172,27 @@ REST is a list of item lines."
                     context-navigator-view--sorted-gen gen
                     context-navigator-view--sorted-root root)
               s)))
+         ;; Debug: diagnose duplicates/mismatches between model items and the cached sorted list
+         (_ (ignore-errors
+              (let* ((model-keys  (mapcar #'context-navigator-model-item-key (or items '())))
+                     (sorted-keys (mapcar #'context-navigator-model-item-key (or sorted-items '())))
+                     (mk (length model-keys))
+                     (sk (length sorted-keys)))
+                (context-navigator-debug :debug :ui
+                                         "items-base-lines: model=%d sorted=%d gen=%s cache-gen=%s root=%s"
+                                         mk sk gen context-navigator-view--sorted-gen root)
+                (when (not (= mk sk))
+                  (context-navigator-debug :warn :ui
+                                           "len-mismatch: model-keys=%S, sorted-keys=%S"
+                                           model-keys sorted-keys))
+                (let* ((ht (make-hash-table :test 'equal))
+                       (dups nil))
+                  (dolist (k sorted-keys)
+                    (puthash k (1+ (gethash k ht 0)) ht))
+                  (maphash (lambda (k n) (when (> n 1) (push (cons k n) dups))) ht)
+                  (when dups
+                    (context-navigator-debug :warn :ui
+                                             "duplicate keys in sorted list: %S" (nreverse dups)))))))
          (left-width (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
          (item-lines (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
                        (context-navigator-render-build-item-lines sorted-items
@@ -183,6 +205,7 @@ REST is a list of item lines."
          (up (let ((s (copy-sequence "..")))
                (add-text-properties 0 (length s)
                                     (list 'context-navigator-groups-up t
+                                          'context-navigator-interactive t
                                           'mouse-face 'highlight
                                           'help-echo (context-navigator-i18n :status-up-to-groups)
                                           'face 'shadow)
@@ -264,6 +287,8 @@ REST is a list of item lines."
                                                (list 'mouse-face 'highlight
                                                      'help-echo "Click/TAB/RET — toggle stats"
                                                      'context-navigator-stats-toggle t
+                                                     'context-navigator-header t
+                                                     'context-navigator-interactive t
                                                      'keymap km
                                                      'local-map km)
                                                s))
@@ -306,6 +331,37 @@ Returns the list of lines that were rendered."
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)
       lines)))
+
+(defun context-navigator-view-debug-dump-lines ()
+  "Scan Navigator buffer for duplicate item lines and log their keys and counts.
+
+Use M-x context-navigator-log-toggle to enable logs, then run this command
+inside the Navigator buffer."
+  (interactive)
+  (let ((buf (current-buffer)))
+    (unless (eq major-mode 'context-navigator-view-mode)
+      (user-error "Run inside the Context Navigator buffer"))
+    (save-excursion
+      (goto-char (point-min))
+      (let ((line 1)
+            (ht (make-hash-table :test 'equal)))
+        (while (< (point) (point-max))
+          (let* ((bol (line-beginning-position))
+                 (eol (line-end-position))
+                 (p (text-property-not-all bol eol 'context-navigator-item nil)))
+            (when p
+              (let* ((it (get-text-property p 'context-navigator-item))
+                     (k (and it (context-navigator-model-item-key it))))
+                (when k
+                  (puthash k (1+ (gethash k ht 0)) ht)
+                  (context-navigator-debug :trace :ui "ln=%d key=%s" line k)))))
+          (setq line (1+ line))
+          (forward-line 1))
+        (let (dups)
+          (maphash (lambda (k n) (when (> n 1) (push (cons k n) dups))) ht)
+          (if dups
+              (context-navigator-debug :warn :ui "buffer duplicate item-lines: %S" (nreverse dups))
+            (context-navigator-debug :debug :ui "buffer: no duplicate item-lines")))))))
 
 (provide 'context-navigator-view-items)
 ;;; context-navigator-view-items.el ends here

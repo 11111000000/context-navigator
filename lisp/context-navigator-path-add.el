@@ -546,8 +546,10 @@ so auto-push works even when gptel buffer is hidden."
         (setq added (1+ added))))
     (let* ((cur (and (boundp 'context-navigator--state) context-navigator--state))
            (old (and (context-navigator-state-p cur) (context-navigator-state-items cur)))
-           (merged (append (or old '()) (nreverse new-items))))
-      (context-navigator-set-items merged))
+           (merged (append (or old '()) (nreverse new-items)))
+           ;; Deduplicate by stable key so re-adding the same file won't create duplicates.
+           (dedup (context-navigator-model-uniq merged)))
+      (context-navigator-set-items dedup))
     added))
 
 (cl-defun context-navigator-add-files-from-names (tokens &optional _interactive)
