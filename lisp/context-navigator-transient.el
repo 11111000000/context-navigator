@@ -276,19 +276,41 @@ Files larger than this threshold are skipped."
         (kill-buffer buf)))))
 
 (defun context-navigator-transient--add-files (files)
-  "Add FILES (list of paths) as enabled items."
-  (let ((new-items '()))
-    (dolist (p files)
-      (when (and (stringp p) (file-exists-p p) (not (file-directory-p p)))
-        (let* ((it (context-navigator-item-create
-                    :type 'file
-                    :name (file-name-nondirectory p)
-                    :path (expand-file-name p)
-                    :enabled t)))
-          (ignore-errors (context-navigator-add-item it))
-          (push it new-items))))
-    (context-navigator-transient--apply-items-batched (nreverse new-items))
-    (message (context-navigator-i18n :added-files) (length files))))
+  "Add FILES (list of paths) as enabled items.
+
+Deduplicate by absolute path against existing items of type 'file or 'buffer:
+if an item already references the same file (by item :path or the live buffer's
+buffer-file-name), replace it instead of creating a duplicate."
+  (let* ((abs (delq nil (mapcar (lambda (p) (and (stringp p) (expand-file-name p))) files)))
+         (aset (let ((h (make-hash-table :test 'equal)))
+                 (dolist (p abs) (puthash p t h)) h))
+         (st (ignore-errors (context-navigator--state-get)))
+         (old (and (context-navigator-state-p st) (context-navigator-state-items st)))
+         (keep
+          (cl-remove-if
+           (lambda (it)
+             (let* ((p (context-navigator-item-path it))
+                    (bp (and (bufferp (context-navigator-item-buffer it))
+                             (buffer-live-p (context-navigator-item-buffer it))
+                             (buffer-local-value 'buffer-file-name (context-navigator-item-buffer it))))
+                    (pp (and (stringp p) (expand-file-name p)))
+                    (bb (and (stringp bp) (expand-file-name bp))))
+               (or (and pp (gethash pp aset))
+                   (and bb (gethash bb aset)))))
+           (or old '())))
+         (new-items (delq nil
+                          (mapcar (lambda (p)
+                                    (when (and (stringp p) (file-exists-p p) (not (file-directory-p p)))
+                                      (context-navigator-item-create
+                                       :type 'file
+                                       :name (file-name-nondirectory p)
+                                       :path (expand-file-name p)
+                                       :enabled t)))
+                                  files)))
+         (merged (append keep new-items)))
+    (context-navigator-set-items merged)
+    (context-navigator-transient--apply-items-batched new-items)
+    (message (context-navigator-i18n :added-files) (length new-items))))
 
 ;;;###autoload
 (defun context-navigator-add-universal ()
@@ -326,16 +348,12 @@ TRAMP/remote: show a warning and confirm before proceeding."
             ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
             (context-navigator-transient--add-files files))))))
 
-   ;; Active region -> selection item (robust even when transient-mark-mode is off)
-   ((let ((mk (mark t)))
-      (and (number-or-marker-p mk)
-           (not (equal mk (point)))))
+   ;; Active region -> selection item (only when region is active; C-g cancels)
+   ((use-region-p)
     (let* ((b   (current-buffer))
            (p   (buffer-file-name b))
-           (mk  (mark t))
-           (mpos (if (markerp mk) (marker-position mk) mk))
-           (beg (min (point) mpos))
-           (end (max (point) mpos))
+           (beg (region-beginning))
+           (end (region-end))
            (nm (if p
                    (format "%s:%s-%s" (file-name-nondirectory p) beg end)
                  (format "%s:%s-%s" (buffer-name b) beg end)))
@@ -343,10 +361,8 @@ TRAMP/remote: show a warning and confirm before proceeding."
                 :type 'selection :name nm
                 :path p :buffer b :beg beg :end end :enabled t)))
       (ignore-errors (context-navigator-add-item it))
-      ;; Clear mark so subsequent calls don't treat stale mark as selection
-      (ignore-errors
-        (set-marker (mark-marker) nil (current-buffer))
-        (setq mark-active nil))
+      ;; Deactivate region so subsequent calls don't treat stale marks as selection
+      (ignore-errors (deactivate-mark t))
       (context-navigator-transient--apply-items-batched (list it))
       (message "%s" (context-navigator-i18n :added-selection))))
    ;; File-backed buffer -> file

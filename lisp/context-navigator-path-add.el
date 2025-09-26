@@ -532,24 +532,39 @@ so auto-push works even when gptel buffer is hidden."
             (ignore-errors (context-navigator-gptel-apply (or items '())))))))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
-  "Append FILES as enabled file items to the model in one batch. Return count added."
-  (let ((added 0)
-        (new-items nil))
-    (dolist (p files)
-      (when (and (stringp p) (file-exists-p p) (file-regular-p p))
-        (push (context-navigator-item-create
-               :type 'file
-               :name (file-name-nondirectory p)
-               :path (expand-file-name p)
-               :enabled t)
-              new-items)
-        (setq added (1+ added))))
-    (let* ((cur (and (boundp 'context-navigator--state) context-navigator--state))
-           (old (and (context-navigator-state-p cur) (context-navigator-state-items cur)))
-           (merged (append (or old '()) (nreverse new-items)))
-           ;; Deduplicate by stable key so re-adding the same file won't create duplicates.
-           (dedup (context-navigator-model-uniq merged)))
-      (context-navigator-set-items dedup))
+  "Append FILES as enabled file items to the model in one batch. Return count added.
+
+Ensures uniqueness by absolute path: existing items (file/buffer) that reference
+the same file are replaced instead of duplicated."
+  (let* ((abs (delq nil (mapcar (lambda (p) (and (stringp p) (expand-file-name p))) files)))
+         (aset (let ((h (make-hash-table :test 'equal)))
+                 (dolist (p abs) (puthash p t h)) h))
+         (st (ignore-errors (context-navigator--state-get)))
+         (old (and (context-navigator-state-p st) (context-navigator-state-items st)))
+         (keep
+          (cl-remove-if
+           (lambda (it)
+             (let* ((p (context-navigator-item-path it))
+                    (bp (and (bufferp (context-navigator-item-buffer it))
+                             (buffer-live-p (context-navigator-item-buffer it))
+                             (buffer-local-value 'buffer-file-name (context-navigator-item-buffer it))))
+                    (pp (and (stringp p) (expand-file-name p)))
+                    (bb (and (stringp bp) (expand-file-name bp))))
+               (or (and pp (gethash pp aset))
+                   (and bb (gethash bb aset)))))
+           (or old '())))
+         (new-items (delq nil
+                          (mapcar (lambda (p)
+                                    (when (and (stringp p) (file-exists-p p) (file-regular-p p))
+                                      (context-navigator-item-create
+                                       :type 'file
+                                       :name (file-name-nondirectory p)
+                                       :path (expand-file-name p)
+                                       :enabled t)))
+                                  files)))
+         (added (length new-items))
+         (merged (append keep new-items)))
+    (context-navigator-set-items merged)
     added))
 
 (cl-defun context-navigator-add-files-from-names (tokens &optional _interactive)
