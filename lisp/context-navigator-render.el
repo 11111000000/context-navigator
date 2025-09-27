@@ -160,15 +160,24 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
          (path (or (context-navigator-item-path item) ""))
          (enabled (not (null (context-navigator-item-enabled item))))
          (keys-list context-navigator-render--gptel-keys)
+         (root2 (context-navigator-render--state-root))
+         (abs-path (and (stringp path) (not (string-empty-p path))
+                        (if (file-name-absolute-p path)
+                            (expand-file-name path)
+                          (and (stringp root2)
+                               (expand-file-name path (file-name-as-directory (expand-file-name root2)))))))
+         (key-abs (and abs-path (format "file:%s" abs-path)))
          ;; Reflect actual presence in gptel regardless of enabled flag.
-         (present (and keys-list (member key keys-list)))
+         (present (and keys-list
+                       (or (member key keys-list)
+                           (and key-abs (member key-abs keys-list)))))
          ;; Always render an indicator; when PRESENT is nil it will be gray
          (state-icon (context-navigator-render--indicator present))
          (icon (and (functionp icon-fn) (or (funcall icon-fn item) "")))
          ;; Build prefix via buffer-local getter when available; ensure outside-project gets ".../"
          (root (context-navigator-render--state-root))
          (rel (context-navigator-render--relpath path root))
-         (outside (and (stringp rel) (string-prefix-p ".." rel)))
+         (outside (and (stringp rel) (string-prefix-p "../" rel)))
          (prefix (let ((pfx (cond
                              ((and (stringp path) (not (string-empty-p path))
                                    (functionp context-navigator-render--prefix-getter))
@@ -296,7 +305,7 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
             (let ((p (context-navigator-item-path it)))
               (when (and (stringp p) (not (string-empty-p p)))
                 (let ((rel (context-navigator-render--relpath p root)))
-                  (when (not (string-prefix-p ".." rel))
+                  (when (not (string-prefix-p "../" rel))
                     (let* ((dirs+base (context-navigator-render--split-relpath rel))
                            (dirs (car dirs+base)))
                       (when dirs
@@ -324,7 +333,7 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
               (let ((p (context-navigator-item-path it)))
                 (when (and (stringp p) (not (string-empty-p p)))
                   (let ((rel (context-navigator-render--relpath p root)))
-                    (if (string-prefix-p ".." rel)
+                    (if (string-prefix-p "../" rel)
                         (puthash p ".../" acc)
                       (let* ((dirs (car (context-navigator-render--split-relpath rel)))
                              (parts nil)
@@ -351,7 +360,7 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
   (let* ((rel (context-navigator-render--relpath p root))
          (dir (file-name-directory rel)))
     (cond
-     ((and (stringp rel) (string-prefix-p ".." rel)) ".../")
+     ((and (stringp rel) (string-prefix-p "../" rel)) ".../")
      ((and dir (> (length dir) 0)) dir)
      (t ""))))
 
@@ -367,12 +376,12 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
     (pcase mode
       ('off (lambda (p)
               (let ((rel (context-navigator-render--relpath p root)))
-                (if (and (stringp rel) (string-prefix-p ".." rel)) ".../" ""))))
+                (if (and (stringp rel) (string-prefix-p "../" rel)) ".../" ""))))
       ('short (lambda (p) (or (and short-map (gethash p short-map)) "")))
       ('relative (lambda (p) (context-navigator-render--relative-prefix p root)))
       ('full (lambda (p)
                (let ((rel (context-navigator-render--relpath p root)))
-                 (if (and (stringp rel) (string-prefix-p ".." rel))
+                 (if (and (stringp rel) (string-prefix-p "../" rel))
                      ".../"
                    (let ((d (context-navigator-render--full-prefix p)))
                      (if (and d (> (length d) 0))

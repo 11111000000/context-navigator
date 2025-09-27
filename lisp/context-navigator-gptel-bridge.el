@@ -407,7 +407,15 @@ publish :gptel-change and handlers try to pull immediately."
   (pcase (context-navigator-item-type item)
     ('file
      (when (context-navigator-gptel--can-add-file)
-       (let ((p (context-navigator-item-path item)))
+       (let* ((p0 (context-navigator-item-path item))
+              (root (and (fboundp 'context-navigator--state-get)
+                         (let* ((st (ignore-errors (context-navigator--state-get))))
+                           (and st (ignore-errors (context-navigator-state-last-project-root st))))))
+              (p (cond
+                  ((and (stringp p0) (file-name-absolute-p p0)) (expand-file-name p0))
+                  ((and (stringp p0) (stringp root))
+                   (expand-file-name p0 (file-name-as-directory (expand-file-name root))))
+                  (t p0))))
          (when (and (stringp p) (file-readable-p p))
            (context-navigator--silence-messages (gptel-context-add-file p))
            t))))
