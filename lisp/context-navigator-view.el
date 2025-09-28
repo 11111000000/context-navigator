@@ -205,7 +205,14 @@ Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the he
 
 ;; Helpers
 
-
+(defun context-navigator-view--invalidate-render-caches (&optional also-headerline)
+  "Invalidate render caches for the Navigator view buffer.
+When ALSO-HEADERLINE is non-nil, also reset header-line cache locals."
+  (setq-local context-navigator-render--last-hash nil)
+  (setq-local context-navigator-view--last-render-key nil)
+  (when also-headerline
+    (setq-local context-navigator-headerline--cache-key nil)
+    (setq-local context-navigator-headerline--cache-str nil)))
 
 ;; Lightweight buffer/window hook installers used by the view buffer.
 ;; These are minimal, safe implementations that avoid void-function errors
@@ -441,8 +448,7 @@ background."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (context-navigator-view--invalidate-render-caches))))
   (context-navigator-events-debounce
    :sidebar-render 0.12
    #'context-navigator-view--render-if-visible))
@@ -1402,8 +1408,7 @@ Do not highlight purely decorative separators."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (context-navigator-view--invalidate-render-caches))))
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-toggle-auto-project ()
@@ -1415,8 +1420,7 @@ Do not highlight purely decorative separators."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (context-navigator-view--invalidate-render-caches))))
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-push-now ()
@@ -1427,8 +1431,7 @@ Do not highlight purely decorative separators."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (context-navigator-view--invalidate-render-caches))))
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-razor-run ()
@@ -1506,8 +1509,7 @@ Buffers are opened in background; we do not change window focus."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil))))
+        (context-navigator-view--invalidate-render-caches))))
   (context-navigator-view--render-if-visible))
 
 (defun context-navigator-view-clear-gptel ()
@@ -1522,8 +1524,7 @@ Buffers are opened in background; we do not change window focus."
     (when (buffer-live-p buf)
       (with-current-buffer buf
         ;; Force fresh render and reset cached indicators so UI reflects cleared gptel.
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil)
+        (context-navigator-view--invalidate-render-caches)
         ;; Clear the cached gptel keys snapshot so lamps update immediately.
         (setq-local context-navigator-view--gptel-keys nil)
         (setq-local context-navigator-view--gptel-keys-hash (sxhash-equal '())))))
