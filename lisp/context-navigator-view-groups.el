@@ -78,47 +78,14 @@ the groups view is collapsed."
          (active (and (context-navigator-state-p state)
                       (context-navigator-state-current-group-slug state)))
          ;; Build Stats lines (independent from main collapse flag, like in items view)
-         (raw-stats (and active
-                         (fboundp 'context-navigator-stats-footer-lines)
-                         (let ((context-navigator-view--collapsed-p nil))
-                           (context-navigator-stats-footer-lines total-width))))
          (stats-lines
-          (and raw-stats
-               (let ((first t))
-                 (mapcar
-                  (lambda (s)
-                    (let* ((s (copy-sequence s))
-                           (is-header (or first
-                                          (get-text-property 0 'context-navigator-stats-toggle s))))
-                      (when is-header
-                        (let ((km (make-sparse-keymap)))
-                          ;; Inherit main mode keymap so n/p, j/k, arrows work here.
-                          (when (and (boundp 'context-navigator-view-mode-map)
-                                     (keymapp context-navigator-view-mode-map))
-                            (set-keymap-parent km context-navigator-view-mode-map))
-                          (define-key km [mouse-1] #'context-navigator-view-stats-toggle)
-                          (define-key km (kbd "RET")       #'context-navigator-view-stats-toggle)
-                          (define-key km (kbd "C-m")       #'context-navigator-view-stats-toggle)
-                          (define-key km (kbd "TAB")       #'context-navigator-view-stats-toggle)
-                          (define-key km (kbd "<tab>")     #'context-navigator-view-stats-toggle)
-                          (define-key km [tab]             #'context-navigator-view-stats-toggle)
-                          (define-key km (kbd "C-i")       #'context-navigator-view-stats-toggle)
-                          (add-text-properties 0 (length s)
-                                               (list 'mouse-face 'highlight
-                                                     'help-echo "Click/TAB/RET — toggle stats"
-                                                     'context-navigator-stats-toggle t
-                                                     'context-navigator-header t
-                                                     'context-navigator-interactive t
-                                                     'keymap km
-                                                     'local-map km)
-                                               s))
-                        (setq first nil))
-                      (unless is-header
-                        (add-text-properties 0 (length s)
-                                             (list 'context-navigator-stats-line t)
-                                             s))
-                      s))
-                  raw-stats))))
+          (and active
+               (fboundp 'context-navigator-stats-interactive-lines)
+               (let ((context-navigator-view--collapsed-p nil))
+                 (context-navigator-stats-interactive-lines
+                  total-width
+                  (and (boundp 'context-navigator-view-mode-map)
+                       context-navigator-view-mode-map)))))
          (groups-lines (context-navigator-view--groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
          (body (if stats-lines

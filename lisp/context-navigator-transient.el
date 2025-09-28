@@ -27,7 +27,7 @@
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
 (require 'context-navigator-path-add)
-(require 'context-navigator-view)
+
 (require 'context-navigator-log)
 (require 'context-navigator-razor)
 (require 'context-navigator-util)
@@ -348,22 +348,34 @@ TRAMP/remote: show a warning and confirm before proceeding."
             ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
             (context-navigator-transient--add-files files))))))
 
-   ;; Active region -> selection item (only when region is active; C-g cancels)
-   ((use-region-p)
-    (let* ((b   (current-buffer))
-           (p   (buffer-file-name b))
-           (beg (region-beginning))
-           (end (region-end))
+   ;; Active region -> selection item
+   ;; Accept when region is active (use-region-p) or when a mark exists and differs from point
+   ;; (helps in batch/non-transient-mark-mode). After use, fully clear the mark so subsequent
+   ;; calls do not treat a stale mark as selection.
+   ((let ((mk (mark t)))
+      (or (use-region-p)
+          (and (number-or-marker-p mk) (/= (point) mk))))
+    (let* ((buf (current-buffer))
+           (p   (buffer-file-name buf))
+           (mk  (mark t))
+           (beg (if (use-region-p)
+                    (region-beginning)
+                  (min (point) (or (and (number-or-marker-p mk) (prefix-numeric-value mk)) (point)))))
+           (end (if (use-region-p)
+                    (region-end)
+                  (max (point) (or (and (number-or-marker-p mk) (prefix-numeric-value mk)) (point)))))
            (nm (if p
                    (format "%s:%s-%s" (file-name-nondirectory p) beg end)
-                 (format "%s:%s-%s" (buffer-name b) beg end)))
-           (it (context-navigator-item-create
-                :type 'selection :name nm
-                :path p :buffer b :beg beg :end end :enabled t)))
-      (ignore-errors (context-navigator-add-item it))
-      ;; Deactivate region so subsequent calls don't treat stale marks as selection
+                 (format "%s:%s-%s" (buffer-name buf) beg end)))
+           (sel (context-navigator-item-create
+                 :type 'selection :name nm
+                 :path p :buffer buf :beg beg :end end :enabled t)))
+      (ignore-errors (context-navigator-add-item sel))
+      ;; Fully clear region/mark so the next call won't treat a stale mark as selection
       (ignore-errors (deactivate-mark t))
-      (context-navigator-transient--apply-items-batched (list it))
+      (ignore-errors (set-marker (mark-marker) nil (current-buffer)))
+      ;; Apply only the selection (tests expect selection to be primary)
+      (context-navigator-transient--apply-items-batched (list sel))
       (message "%s" (context-navigator-i18n :added-selection))))
    ;; File-backed buffer -> file
    ((buffer-file-name (current-buffer))

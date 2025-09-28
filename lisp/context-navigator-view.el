@@ -58,21 +58,7 @@
   :type '(choice (const auto) (const icons) (const text))
   :group 'context-navigator)
 
-(defcustom context-navigator-openable-count-ttl 1.0
-  "TTL (seconds) for cached openable buffers count in the sidebar footer."
-  :type 'number :group 'context-navigator)
 
-(defcustom context-navigator-openable-soft-cap 100
-  "Soft cap for counting openable buffers. Counting short-circuits at this value."
-  :type 'integer :group 'context-navigator)
-
-(defcustom context-navigator-openable-remote-mode 'lazy
-  "How to treat remote/TRAMP paths when counting openable buffers:
-- lazy   : do not call file-exists-p; consider a file openable when no live buffer exists
-- strict : verify file existence with file-exists-p (may be slow on TRAMP)
-- off    : ignore remote files when counting"
-  :type '(choice (const lazy) (const strict) (const off))
-  :group 'context-navigator)
 
 (defcustom context-navigator-gptel-indicator-poll-interval 0
   "Polling interval (seconds) to refresh gptel indicators while the sidebar is visible.
@@ -93,14 +79,14 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
 (declare-function context-navigator-context-clear-current-group "context-navigator-core" ())
 (declare-function context-navigator-context-unload "context-navigator-core" ())
-;; group commands (core)
-(declare-function context-navigator-groups-open "context-navigator-core" ())
-(declare-function context-navigator-group-switch "context-navigator-core" (&optional slug))
-(declare-function context-navigator-group-create "context-navigator-core" (&optional display-name))
-(declare-function context-navigator-group-rename "context-navigator-core" (&optional old-slug new-display))
-(declare-function context-navigator-group-delete "context-navigator-core" (&optional slug))
-(declare-function context-navigator-group-duplicate "context-navigator-core" (&optional src-slug new-display))
-(declare-function context-navigator-group-edit-description "context-navigator-core" (&optional slug new-desc))
+;; group commands (from groups module)
+(declare-function context-navigator-groups-open "context-navigator-groups" ())
+(declare-function context-navigator-group-switch "context-navigator-groups" (&optional slug))
+(declare-function context-navigator-group-create "context-navigator-groups" (&optional display-name))
+(declare-function context-navigator-group-rename "context-navigator-groups" (&optional old-slug new-display))
+(declare-function context-navigator-group-delete "context-navigator-groups" (&optional slug))
+(declare-function context-navigator-group-duplicate "context-navigator-groups" (&optional src-slug new-display))
+(declare-function context-navigator-group-edit-description "context-navigator-groups" (&optional slug new-desc))
 
 (defconst context-navigator-view--buffer-name "*context-navigator*")
 
@@ -166,17 +152,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
   (context-navigator-view-toggle-collapse)
   (context-navigator-view--render-if-visible))
 
-(defcustom context-navigator-view-spinner-frames
-  '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-  "Frames used by the sidebar loading spinner (list of single-frame strings)."
-  :type '(repeat string)
-  :group 'context-navigator)
 
-(defcustom context-navigator-view-spinner-interval
-  0.1
-  "Spinner animation interval in seconds for the sidebar loading indicator."
-  :type 'number
-  :group 'context-navigator)
 
 (defvar-local context-navigator-view--spinner-timer nil)          ;; loading spinner timer
 (defvar-local context-navigator-view--spinner-index 0)
@@ -187,10 +163,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
   '((side . left) (slot . -1))
   "Default parameters for the sidebar window.")
 
-(defcustom context-navigator-view-spinner-degrade-threshold
-  0.25
-  "If spinner timer slips by more than this (seconds), degrade to a static indicator until load completes."
-  :type 'number :group 'context-navigator)
+
 
 (defcustom context-navigator-view-header-props
   '(context-navigator-header)
@@ -231,22 +204,7 @@ Note: status toggles [→gptel:on/off] [auto-proj:on/off] are rendered in the he
 
 ;; Helpers
 
-(defun context-navigator-view--wrap-segments (segments total-width)
-  "Wrap SEGMENTS (list of strings) into lines within TOTAL-WIDTH.
-Returns a list of line strings."
-  (let ((acc '())
-        (cur ""))
-    (dolist (seg segments)
-      (let* ((sw (string-width seg))
-             (cw (string-width cur)))
-        (if (<= (+ cw sw) total-width)
-            (setq cur (concat cur seg))
-          (when (> (length cur) 0)
-            (push cur acc))
-          (setq cur seg))))
-    (when (> (length cur) 0)
-      (push cur acc))
-    (nreverse acc)))
+
 
 ;; Lightweight buffer/window hook installers used by the view buffer.
 ;; These are minimal, safe implementations that avoid void-function errors
@@ -288,11 +246,7 @@ it can become responsive to focus changes."
   (ignore-errors (context-navigator-view-counters-refresh-openable)))
 
 
-(defalias 'context-navigator-view--make-toggle-segments
-  'context-navigator-view-controls--build-toggles)
-(make-obsolete 'context-navigator-view--make-toggle-segments
-               'context-navigator-view-controls--build-toggles
-               "0.2.2")
+
 
 
 ;; Moved to context-navigator-view-controls.el (provides `context-navigator-view-controls-lines').
@@ -313,31 +267,10 @@ it can become responsive to focus changes."
 ;; We alias old symbols to the new canonical implementations (old -> new),
 ;; then call `make-obsolete' so callers see a clear warning but code continues to work.
 
-;; Controls (header/footer) aliases
-(defalias 'context-navigator-view--footer-control-segments
-  'context-navigator-view-controls-segments)
-(make-obsolete 'context-navigator-view--footer-control-segments
-               'context-navigator-view-controls-segments
-               "0.2.2")
 
-(defalias 'context-navigator-view--footer-control-lines
-  'context-navigator-view-controls-lines)
-(make-obsolete 'context-navigator-view--footer-control-lines
-               'context-navigator-view-controls-lines
-               "0.2.2")
-
-(defalias 'context-navigator-view--header-toggle-lines
-  'context-navigator-view-controls-lines)
-(make-obsolete 'context-navigator-view--header-toggle-lines
-               'context-navigator-view-controls-lines
-               "0.2.2")
 
 ;; Items / Groups footer -> canonical names (items already provides alias)
-(defalias 'context-navigator-view--groups-footer-lines
-  'context-navigator-view--groups-help-lines)
-(make-obsolete 'context-navigator-view--groups-footer-lines
-               'context-navigator-view--groups-help-lines
-               "0.2.2")
+
 
 ;; Note: context-navigator-view--items-footer-lines is already aliased inside
 ;; context-navigator-view-items.el to context-navigator-view--items-extra-lines
@@ -367,6 +300,23 @@ it can become responsive to focus changes."
 (defun context-navigator-view--collect-closable-buffers ()
   "Delegate closable-buffers collection to counters module."
   (ignore-errors (context-navigator-view-counters-collect-closable)))
+
+;; Legacy wrappers for controls/segments (thin delegators to controls module)
+
+(defun context-navigator-view--wrap-segments (segments total-width)
+  "Wrap SEGMENTS into lines within TOTAL-WIDTH using controls module."
+  (when (fboundp 'context-navigator-view-controls--wrap-segments)
+    (context-navigator-view-controls--wrap-segments segments total-width)))
+
+;; Minimal legacy aliases to keep unit-tests happy
+(defalias 'context-navigator-view--footer-control-segments
+  'context-navigator-view-controls-segments)
+(defalias 'context-navigator-view--footer-control-lines
+  'context-navigator-view-controls-lines)
+(defalias 'context-navigator-view--header-toggle-lines
+  'context-navigator-view-controls-lines)
+(defalias 'context-navigator-view--groups-footer-lines
+  'context-navigator-view--groups-help-lines)
 
 ;; Loading spinner helpers ----------------------------------------------------
 
@@ -530,62 +480,8 @@ hard to restore the sidebar afterward."
            (is-sidebar (and (window-live-p selected-win)
                             (window-parameter selected-win 'context-navigator-view)
                             (eq (window-buffer selected-win) (current-buffer))))
-           (open-in-other (or preview is-sidebar)))
-      (pcase (context-navigator-item-type item)
-        ('file
-         (let ((f (context-navigator-item-path item)))
-           (when (and (stringp f) (file-exists-p f))
-             (if open-in-other
-                 (find-file-other-window f)
-               (find-file f)))))
-        ('buffer
-         (let ((buf (or (context-navigator-item-buffer item)
-                        (and (context-navigator-item-path item)
-                             (find-file-noselect (context-navigator-item-path item))))))
-           (when (buffer-live-p buf)
-             (let ((buf-win (get-buffer-window buf 0)))
-               (if (and buf-win (not (window-parameter buf-win 'context-navigator-view)))
-                   ;; Buffer is visible in a normal window: jump there.
-                   (select-window buf-win)
-                 ;; Otherwise open in other window if requested, else in current window.
-                 (if open-in-other
-                     (switch-to-buffer-other-window buf)
-                   (switch-to-buffer buf)))))))
-        ('selection
-         (let* ((f   (context-navigator-item-path item))
-                (buf (or (context-navigator-item-buffer item)
-                         (and (stringp f) (file-exists-p f)
-                              (find-file-noselect f))))
-                (b   (context-navigator-item-beg item))
-                (e   (context-navigator-item-end item))
-                (valid-pos (and (integerp b) (integerp e))))
-           (cond
-            ;; If a live buffer exists: prefer selecting its non-sidebar window.
-            ((and (bufferp buf) (buffer-live-p buf))
-             (let ((buf-win (get-buffer-window buf 0)))
-               (if (and buf-win (not (window-parameter buf-win 'context-navigator-view)))
-                   (select-window buf-win)
-                 (if open-in-other
-                     (switch-to-buffer-other-window buf)
-                   (switch-to-buffer buf))))
-             (when valid-pos
-               (goto-char (min b e))
-               (push-mark (max b e) t t)))
-            ;; Otherwise open the file: prefer existing non-sidebar window if any.
-            ((and (stringp f) (file-exists-p f))
-             (let* ((existing-buf (get-file-buffer f))
-                    (buf-win (and existing-buf (get-buffer-window existing-buf 0))))
-               (if (and buf-win (not (window-parameter buf-win 'context-navigator-view)))
-                   (select-window buf-win)
-                 (if open-in-other
-                     (find-file-other-window f)
-                   (find-file f))))
-             (when valid-pos
-               (goto-char (min b e))
-               (push-mark (max b e) t t)))
-            (t
-             (message "Cannot locate selection target")))))
-        (_ (message "Unknown item"))))))
+           (prefer-other (or preview is-sidebar)))
+      (context-navigator-open-item item prefer-other))))
 
 (defun context-navigator-view-visit ()
   "Visit item at point."
@@ -750,21 +646,7 @@ On title line: toggle collapse. On Stats header: toggle stats. Wrap at end."
       (setq pos (context-navigator-view--find-prev-interactive-pos (point-max))))
     (if pos (goto-char pos) (message "No interactive elements"))))
 
-(defun context-navigator-view--remove-at-point ()
-  "Remove the item at point from gptel context."
-  (interactive)
-  (when-let* ((item (context-navigator-view--at-item)))
-    (let* ((cur (context-navigator-view--state-items))
-           (key (context-navigator-model-item-key item))
-           (keep (cl-remove-if (lambda (it)
-                                 (string= (context-navigator-model-item-key it) key))
-                               cur)))
-      (ignore-errors (context-navigator-gptel-apply keep))
-      ;; model обновится через :gptel-change → core sync
-      (message "Removed from context: %s" (or (context-navigator-item-name item) key)))))
-(make-obsolete 'context-navigator-view--remove-at-point
-               'context-navigator-view-delete-from-model
-               "0.2.1")
+
 
 (defun context-navigator-view-toggle-enabled ()
   "Toggle inclusion of the item at point in gptel sync (model :enabled).
@@ -875,7 +757,12 @@ Order of operations:
       (context-navigator-view--remove-subs))
     (dolist (win (get-buffer-window-list buf nil t))
       (when (window-live-p win)
-        (delete-window win)))))
+        (delete-window win)))
+    ;; Remove window-balance protections when Navigator windows are gone.
+    (ignore-errors
+      (require 'context-navigator-view-windows)
+      (when (fboundp 'context-navigator-view-windows-teardown)
+        (context-navigator-view-windows-teardown)))))
 
 (defun context-navigator-view--subscribe-model-events ()
   "Subscribe to generic model refresh events."
@@ -1019,9 +906,8 @@ Guard against duplicate subscriptions."
     (context-navigator-view--subscribe-load-events)
     (context-navigator-view--subscribe-groups-events)
     (context-navigator-view--subscribe-project-events)
-    ;; gptel events + advices + initial cache
+    ;; gptel events + initial cache (advices are installed by gptel-bridge)
     (context-navigator-view--subscribe-gptel-events)
-    (ignore-errors (context-navigator-gptel-on-change-register))
     (context-navigator-view--init-gptel-cache)
     ;; Hooks and initial compute
     ;; Install buffer-list and window selection hooks (may be no-ops in tests,
@@ -1065,9 +951,7 @@ Guard against duplicate subscriptions."
   ;; Cancel gptel poll timer if running.
   (when (timerp context-navigator-view--gptel-poll-timer)
     (cancel-timer context-navigator-view--gptel-poll-timer)
-    (setq context-navigator-view--gptel-poll-timer nil))
-  ;; Also unregister gptel advices installed for UI updates.
-  (ignore-errors (context-navigator-gptel-on-change-unregister)))
+    (setq context-navigator-view--gptel-poll-timer nil)))
 
 (defun context-navigator-view--format-bindings (pairs map)
   "Format help lines for PAIRS using MAP.
@@ -1382,6 +1266,11 @@ Do not highlight purely decorative separators."
       (dolist (w (get-buffer-window-list buf nil t))
         (when (window-live-p w)
           (set-window-parameter w 'context-navigator-view 'sidebar)))
+      ;; Ensure window-balance protections are active when Navigator is in use.
+      (ignore-errors
+        (require 'context-navigator-view-windows)
+        (when (fboundp 'context-navigator-view-windows-setup)
+          (context-navigator-view-windows-setup)))
       (select-window win))
     win))
 
@@ -1433,7 +1322,7 @@ Do not highlight purely decorative separators."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                                   (not (eq w (selected-window)))))
+                                              (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -1449,6 +1338,11 @@ Do not highlight purely decorative separators."
       (set-window-buffer win buf)
       (when (window-live-p win)
         (set-window-parameter win 'context-navigator-view 'buffer))
+      ;; Ensure window-balance protections are active in buffer mode as well.
+      (ignore-errors
+        (require 'context-navigator-view-windows)
+        (when (fboundp 'context-navigator-view-windows-setup)
+          (context-navigator-view-windows-setup)))
       (with-current-buffer buf
         (context-navigator-view-mode)
         (setq-local buffer-read-only t)
@@ -1466,7 +1360,12 @@ Do not highlight purely decorative separators."
       (dolist (w (window-list (selected-frame) 'no-minibuffer))
         (when (and (window-live-p w)
                    (eq (window-buffer w) buf))
-          (delete-window w))))))
+          (delete-window w)))
+      ;; Remove window-balance protections if no Navigator windows remain.
+      (ignore-errors
+        (require 'context-navigator-view-windows)
+        (when (fboundp 'context-navigator-view-windows-teardown)
+          (context-navigator-view-windows-teardown))))))
 
 ;;;###autoload
 (defun context-navigator-buffer-toggle ()

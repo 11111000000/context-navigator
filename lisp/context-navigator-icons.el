@@ -94,5 +94,37 @@ with surrounding item text and appear visually centered."
                   ;; Small raise to visually center the icon relative to item text.
                   'display '(raise 0.12)))))
 
+;; Unified UI indicator (present/absent) --------------------------------------
+
+(defun context-navigator-indicator-string (present &optional prefer-icons)
+  "Return a small indicator string for PRESENT state.
+When PREFER-ICONS is non-nil and an icon provider is available, use icons;
+otherwise fall back to a colored text bullet.
+
+- present → green ●
+- absent  → gray  ○
+
+The visual size and vertical alignment of text bullets are adjusted so the
+indicator sits centered and appears moderately large relative to item text."
+  (let* ((use-icons (and prefer-icons (fboundp 'context-navigator-icons-for-indicator)))
+         (state (if present 'ok 'absent)))
+    (cond
+     (use-icons
+      (let ((icon (ignore-errors (context-navigator-icons-for-indicator state))))
+        (if (and (stringp icon) (> (length icon) 0))
+            icon
+          (let* ((raw (if present "●" "○"))
+                 (color (if present "green4" "gray")))
+            (propertize raw
+                        'face (list :foreground color :height 0.75)
+                        'display '(raise 0.08))))))
+
+     (t
+      (let* ((raw (if present "●" "○"))
+             (color (if present "green4" "gray")))
+        (propertize raw
+                    'face (list :foreground color :height 0.75)
+                    'display '(raise 0.08)))))))
+
 (provide 'context-navigator-icons)
 ;;; context-navigator-icons.el ends here

@@ -11,6 +11,23 @@
 
 (require 'subr-x)
 
+(defcustom context-navigator-view-spinner-frames
+  '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  "Frames used by the sidebar loading spinner (list of single-frame strings)."
+  :type '(repeat string)
+  :group 'context-navigator)
+
+(defcustom context-navigator-view-spinner-interval
+  0.1
+  "Spinner animation interval in seconds for the sidebar loading indicator."
+  :type 'number
+  :group 'context-navigator)
+
+(defcustom context-navigator-view-spinner-degrade-threshold
+  0.25
+  "If spinner timer slips by more than this (seconds), degrade to a static indicator until load completes."
+  :type 'number :group 'context-navigator)
+
 ;; Buffer-local state variables are declared in the view module; declare here
 ;; for the byte-compiler’s sake (do not change bindings).
 (defvar context-navigator-view--spinner-timer nil)
@@ -20,8 +37,6 @@
 (defvar context-navigator-view--buffer-name "*context-navigator*")
 
 ;; Settings and a render trigger are provided by the view module.
-(defvar context-navigator-view-spinner-interval 0.1)
-(defvar context-navigator-view-spinner-degrade-threshold 0.25)
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
 
 (defun context-navigator-view-spinner-start ()

@@ -16,6 +16,7 @@
 (require 'subr-x)
 (require 'context-navigator-model)
 (require 'context-navigator-log)
+(require 'context-navigator-icons)
 
 (defgroup context-navigator-render nil
   "Rendering settings for context-navigator."
@@ -87,34 +88,18 @@ Plist: (:key KEY :map HASH), where
 
 (defun context-navigator-render--indicator (present)
   "Return indicator string (or nil) based only on PRESENT in gptel.
-- present → green ●
-- absent  → gray  ○
 
-When style is 'off, return nil. When style is 'icons or 'auto with icon
-provider available, return icon glyph; otherwise return colored text bullet.
-
-The visual size and vertical alignment of text bullets are adjusted so the
-indicator sits centered and appears moderately large relative to item text."
+Respects `context-navigator-render-indicator-style':
+- off   → nil
+- icons/auto → try icons, fallback to text
+- text  → force text bullet"
   (let ((style (or context-navigator-render-indicator-style 'auto)))
     (cond
      ((eq style 'off) nil)
-     ((and (memq style '(icons auto))
-           (fboundp 'context-navigator-icons-for-indicator))
-      (let* ((state (if present 'ok 'absent))
-             (icon (ignore-errors (context-navigator-icons-for-indicator state))))
-        (if (and (stringp icon) (> (length icon) 0))
-            icon
-          (let* ((raw (if present "●" "○"))
-                 (color (if present "green4" "gray")))
-            (propertize raw
-                        'face (list :foreground color :height 0.75)
-                        'display '(raise 0.08))))))
+     ((eq style 'text)
+      (context-navigator-indicator-string present nil))
      (t
-      (let* ((raw (if present "●" "○"))
-             (color (if present "green4" "gray")))
-        (propertize raw
-                    'face (list :foreground color :height 0.75)
-                    'display '(raise 0.08)))))))
+      (context-navigator-indicator-string present t)))))
 
 (defun context-navigator-render--left-column (state-icon icon name)
   "Build left column string from STATE-ICON, ICON and NAME."
@@ -203,12 +188,7 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
          (line (context-navigator-render--compose-line (concat " " left) right left-width)))
     (context-navigator-render--propertize-line line key item)))
 
-(defun context-navigator-render--header-lines (header)
-  "Build header title and separator lines."
-  (let* ((title (or header "Context"))
-         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
-    (list hl sep)))
+
 
 (defun context-navigator-render--state-root ()
   "Return last known project root from state, or nil."
@@ -389,26 +369,7 @@ Optimized: results are cached buffer-locally across renders keyed by (ROOT . ITE
                        ""))))))
       (_ (lambda (_p) "")))))
 
-(defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
-  "Return list of propertized lines for ITEMS with HEADER line first.
-ICON-FN is a function (item -> string|nil) to decorate items.
-When LEFT-WIDTH is non-nil, align left column to that width."
-  (let* ((header-lines (context-navigator-render--header-lines header))
-         (root (context-navigator-render--state-root))
-         (n (length (or items '())))
-         (configured (or context-navigator-render-path-prefix-mode 'short))
-         (mode (if (and (eq configured 'short)
-                        (integerp context-navigator-render-short-prefix-cutoff)
-                        (> n context-navigator-render-short-prefix-cutoff))
-                   'relative
-                 configured))
-         ;; Install getter for this render pass
-         (context-navigator-render--prefix-getter
-          (context-navigator-render--make-prefix-getter mode root items)))
-    (append header-lines
-            (mapcar (lambda (it)
-                      (context-navigator-render--format-line it icon-fn left-width))
-                    items))))
+
 
 (defun context-navigator-render-build-item-lines (items &optional icon-fn left-width)
   "Return list of propertized lines for ITEMS only (no header/separator).
@@ -496,6 +457,21 @@ so that re-renders triggered by timers do not cause the cursor/selection to jump
           ;; Restore window-start for smooth scrolling restoration
           (when (and (window-live-p win) old-start)
             (set-window-start win old-start t)))))))
+
+(defun context-navigator-render--header-lines (header)
+  "Build header title and separator lines."
+  (let* ((title (or header "Context"))
+         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
+         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
+    (list hl sep)))
+
+(defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
+  "Return list of propertized lines for ITEMS with HEADER line first.
+ICON-FN is a function (item -> string|nil) to decorate items.
+When LEFT-WIDTH is non-nil, align left column to that width."
+  (let* ((header-lines (context-navigator-render--header-lines header)))
+    (append header-lines
+            (context-navigator-render-build-item-lines items icon-fn left-width))))
 
 (provide 'context-navigator-render)
 ;;; context-navigator-render.el ends here

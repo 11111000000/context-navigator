@@ -18,6 +18,7 @@
 (require 'context-navigator-icons)
 (require 'context-navigator-i18n)
 (require 'context-navigator-util)
+(require 'context-navigator-view-ui)
 
 ;; Forward decls to avoid cycles
 (declare-function context-navigator--state-get "context-navigator-core" ())
@@ -262,6 +263,10 @@ when an icon name is unavailable in the installed icon set."
         (setq context-navigator-stats--cache (list :stamp now :data pl))
         pl))))
 
+;; UI helpers ------------------------------------------------------------------
+
+
+
 ;; Public API -----------------------------------------------------------------
 
 (defun context-navigator-stats-invalidate ()
@@ -351,6 +356,45 @@ when an icon name is unavailable in the installed icon set."
                              (context-navigator-i18n :enabled) (or t-en 0)
                              (context-navigator-i18n :total) (or t-all 0))))
           (list s row1 row2 row3))))))
+
+(defun context-navigator-stats-interactive-lines (total-width &optional parent-map)
+  "Return Stats block lines wrapped with interactive props/keymaps.
+This is a thin wrapper around `context-navigator-stats-footer-lines' that:
+- marks the header as interactive with a unified keymap (mouse/TAB/RET),
+- marks content lines with 'context-navigator-stats-line,
+- inherits key bindings from PARENT-MAP when provided.
+
+TOTAL-WIDTH is forwarded to `context-navigator-stats-footer-lines'."
+  (let ((raw (condition-case nil
+                 (context-navigator-stats-footer-lines total-width)
+               (error nil))))
+    (when (and (listp raw) raw)
+      (let ((first t))
+        (mapcar
+         (lambda (s)
+           (let ((str (copy-sequence s)))
+             (when first
+               (setq first nil)
+               (let ((km (ignore-errors
+                           (context-navigator-view-ui-make-keymap
+                            #'context-navigator-stats-toggle parent-map))))
+                 (when (keymapp km)
+                   (add-text-properties
+                    0 (length str)
+                    (list
+                     'mouse-face 'highlight
+                     'help-echo "Click/TAB/RET — toggle stats"
+                     'context-navigator-stats-toggle t
+                     'context-navigator-header t
+                     'context-navigator-interactive t
+                     'keymap km
+                     'local-map km)
+                    str))))
+             (add-text-properties 0 (length str)
+                                  (list 'context-navigator-stats-line t)
+                                  str)
+             str))
+         raw)))))
 
 (provide 'context-navigator-stats)
 ;;; context-navigator-stats.el ends here

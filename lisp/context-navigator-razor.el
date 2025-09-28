@@ -24,6 +24,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-log)
 (require 'context-navigator-i18n)
+(require 'context-navigator-util)
 
 
 (defgroup context-navigator-razor nil
@@ -277,13 +278,7 @@
       (context-navigator-redo)
     (message "Nothing to redo")))
 
-(defun context-navigator-razor--human-size (bytes)
-  (cond
-   ((null bytes) "?")
-   ((< bytes 1024) (format "%d B" bytes))
-   ((< bytes 1048576) (format "%.1f KB" (/ bytes 1024.0)))
-   ((< bytes 1073741824) (format "%.1f MB" (/ bytes 1048576.0)))
-   (t (format "%.1f GB" (/ bytes 1073741824.0)))))
+
 
 (defun context-navigator-razor--org-source ()
   "Return cons (TEXT . SRC-META) where SRC-META is plist (:region t|nil :remote N)."
@@ -364,7 +359,7 @@
              (> bytes context-navigator-razor-large-bytes-threshold))
     (yes-or-no-p
      (format (context-navigator-i18n :razor-large-warn)
-             (context-navigator-razor--human-size bytes)))))
+             (context-navigator-human-size bytes)))))
 
 (defun context-navigator-razor--system-prompt ()
   "Return cautious system prompt."
@@ -815,9 +810,9 @@ Return plist:
     (ignore-errors
       (context-navigator-debug :warn :razor
                                "Abort: user declined large payload ~%s"
-                               (context-navigator-razor--human-size bytes)))
+                               (context-navigator-human-size bytes)))
     (message (context-navigator-i18n :razor-abort-large)
-             (context-navigator-razor--human-size bytes))
+             (context-navigator-human-size bytes))
     t)
    (t nil)))
 

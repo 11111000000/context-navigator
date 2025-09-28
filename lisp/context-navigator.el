@@ -5,7 +5,7 @@
 ;; Maintainer: Peter Kosov <11111000000@email.com>
 ;; URL: https://github.com/11111000000/context-navigator
 ;; Keywords: convenience, tools
-;; Version: 1.2.5
+;; Version: 1.3.0
 ;; Package-Requires: ((emacs "29.1") (transient "0.3.0"))
 
 ;;; Commentary:
@@ -38,19 +38,19 @@
 ;;;###autoload
 (autoload 'context-navigator-context-unload "context-navigator-core" "Unload/clear context and switch to global." t)
 ;;;###autoload
-(autoload 'context-navigator-groups-open "context-navigator-core" "Open groups list (publish event for sidebar)." t)
+(autoload 'context-navigator-groups-open "context-navigator-groups" "Open groups list (publish event for sidebar)." t)
 ;;;###autoload
-(autoload 'context-navigator-group-switch "context-navigator-core" "Switch active group." t)
+(autoload 'context-navigator-group-switch "context-navigator-groups" "Switch active group." t)
 ;;;###autoload
-(autoload 'context-navigator-group-create "context-navigator-core" "Create a new group." t)
+(autoload 'context-navigator-group-create "context-navigator-groups" "Create a new group." t)
 ;;;###autoload
-(autoload 'context-navigator-group-rename "context-navigator-core" "Rename a group." t)
+(autoload 'context-navigator-group-rename "context-navigator-groups" "Rename a group." t)
 ;;;###autoload
-(autoload 'context-navigator-group-delete "context-navigator-core" "Delete a group." t)
+(autoload 'context-navigator-group-delete "context-navigator-groups" "Delete a group." t)
 ;;;###autoload
-(autoload 'context-navigator-group-duplicate "context-navigator-core" "Duplicate a group." t)
+(autoload 'context-navigator-group-duplicate "context-navigator-groups" "Duplicate a group." t)
 ;;;###autoload
-(autoload 'context-navigator-group-edit-description "context-navigator-core" "Edit description for a group." t)
+(autoload 'context-navigator-group-edit-description "context-navigator-groups" "Edit description for a group." t)
 
 ;; Sidebar entry points (autoloaded)
 ;;;###autoload
@@ -80,8 +80,8 @@
 (defun context-navigator-version ()
   "Return version string for Context Navigator."
   (interactive)
-  (message "context-navigator — 1.2.5")
-  "1.2.5")
+  (message "context-navigator — 1.3.0")
+  "1.3.0")
 
 ;;;###autoload
 (defun context-navigator-start ()

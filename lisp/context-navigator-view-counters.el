@@ -29,6 +29,22 @@
   "Counters helpers for Context Navigator view."
   :group 'context-navigator)
 
+(defcustom context-navigator-openable-count-ttl 1.0
+  "TTL (seconds) for cached openable buffers count in the sidebar footer."
+  :type 'number :group 'context-navigator)
+
+(defcustom context-navigator-openable-soft-cap 100
+  "Soft cap for counting openable buffers. Counting short-circuits at this value."
+  :type 'integer :group 'context-navigator)
+
+(defcustom context-navigator-openable-remote-mode 'lazy
+  "How to treat remote/TRAMP paths when counting openable buffers:
+- lazy   : do not call file-exists-p; consider a file openable when no live buffer exists
+- strict : verify file existence with file-exists-p (may be slow on TRAMP)
+- off    : ignore remote files when counting"
+  :type '(choice (const lazy) (const strict) (const off))
+  :group 'context-navigator)
+
 ;; Helper: candidate check copied/adapted from view
 (defun context-navigator-view-counters--openable--candidate-p (item)
   "Return non-nil if ITEM can be opened in background (file-backed).

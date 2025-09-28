@@ -251,10 +251,12 @@ Note: Always show all items by default. Local filter (f) can show only enabled."
     (setq context-navigator-mf--gptel-keys keys)))
 
 (defun context-navigator-multifile--indicator (present)
-  (let ((raw (if present "●" "○"))
-        (color (if present "green4" "gray")))
-    (propertize raw 'face (list :foreground color :height 0.8)
-                'display '(raise 0.08))))
+  "Return unified present/absent indicator for Multifile headers."
+  (or (ignore-errors (context-navigator-indicator-string present t))
+      (let ((raw (if present "●" "○"))
+            (color (if present "green4" "gray")))
+        (propertize raw 'face (list :foreground color :height 0.75)
+                    'display '(raise 0.08)))))
 
 (defun context-navigator-multifile--icon (item)
   (or (ignore-errors (context-navigator-icons-for-item item)) ""))
