@@ -10,6 +10,8 @@
 ;; It avoids heavy dependencies on view internals to reduce coupling.
 ;;; Code:
 
+(require 'context-navigator-i18n)
+
 (defvar context-navigator-view--title-line-keymap nil
   "Keymap used by title-line segments (kept for compatibility).")
 
@@ -56,7 +58,7 @@
                                'context-navigator-header t
                                'context-navigator-interactive t
                                'mouse-face 'highlight
-                               'help-echo "Click/TAB/RET — collapse/expand"
+                               'help-echo (context-navigator-i18n :title-toggle-hint)
                                'keymap km
                                'local-map km)
                          s)

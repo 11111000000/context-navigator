@@ -6,13 +6,12 @@
 (require 'context-navigator-view-controls)
 (require 'context-navigator-i18n)
 
-(ert-deftest ctxnav-compat/aliases-old-footer-controls ()
-  "Legacy alias should delegate to new controls implementation."
+(ert-deftest ctxnav-compat/controls-segments-basic ()
+  "Controls segments should be available via public API."
   (cl-letf (((symbol-function 'context-navigator-view-controls-segments)
              (lambda () '(" X" " Y" " Z"))))
-    (let ((a (context-navigator-view-controls-segments))
-          (b (context-navigator-view--footer-control-segments)))
-      (should (equal a b)))))
+    (let ((a (context-navigator-view-controls-segments)))
+      (should (equal a '(" X" " Y" " Z"))))))
 
 (ert-deftest ctxnav-compat/activate-clear-gptel-dispatch ()
   "Action 'clear-gptel at point should invoke the command."

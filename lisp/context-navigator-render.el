@@ -458,20 +458,15 @@ so that re-renders triggered by timers do not cause the cursor/selection to jump
           (when (and (window-live-p win) old-start)
             (set-window-start win old-start t)))))))
 
-(defun context-navigator-render--header-lines (header)
-  "Build header title and separator lines."
-  (let* ((title (or header "Context"))
-         (hl (propertize (format " %s" title) 'face 'mode-line-emphasis))
-         (sep (propertize (make-string (max 8 (min 120 (length hl))) ?─) 'face 'shadow)))
-    (list hl sep)))
 
-(defun context-navigator-render-build-lines (items header &optional icon-fn left-width)
-  "Return list of propertized lines for ITEMS with HEADER line first.
-ICON-FN is a function (item -> string|nil) to decorate items.
-When LEFT-WIDTH is non-nil, align left column to that width."
-  (let* ((header-lines (context-navigator-render--header-lines header)))
-    (append header-lines
-            (context-navigator-render-build-item-lines items icon-fn left-width))))
+
+
+
+
+
+(defun context-navigator-render-build-lines (items &optional _header icon-fn left-width)
+  "Compatibility wrapper kept after refactor: build item lines only; HEADER is ignored."
+  (context-navigator-render-build-item-lines items icon-fn left-width))
 
 (provide 'context-navigator-render)
 ;;; context-navigator-render.el ends here

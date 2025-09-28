@@ -20,8 +20,8 @@
   "Disabled items should render name with context-navigator-disabled-face (icon/indicator untouched)."
   (let* ((it (context-navigator-item-create :type 'file :path "/tmp/a" :name "a" :enabled nil))
          ;; No keys needed for this test
-         (lines (context-navigator-render-build-lines (list it) "Hdr" nil 40))
-         (line (nth 2 lines)))
+         (lines (context-navigator-render-build-item-lines (list it) nil 40))
+         (line (car lines)))
     (should (stringp line))
     (should (ctxnav-render-test--line-has-disabled-face line))))
 

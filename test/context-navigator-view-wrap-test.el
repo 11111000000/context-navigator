@@ -6,7 +6,7 @@
 (ert-deftest ctxnav-sidebar/wrap-segments-basic ()
   "Wrap helper should split segments to fit within width."
   (let* ((segs '(" AAA" " BBB" " CCC" " DDD"))
-         (lines (context-navigator-view--wrap-segments segs 10)))
+         (lines (context-navigator-view-controls--wrap-segments segs 10)))
     ;; Each line width must be <= 10 and preserve order
     (dolist (ln lines)
       (should (<= (string-width ln) 10)))

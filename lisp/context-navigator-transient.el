@@ -40,7 +40,7 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
   (interactive "P")
   (if (fboundp 'context-navigator-view-activate)
       (call-interactively 'context-navigator-view-activate)
-    (message "[Context Navigator] Activate command not available yet.")))
+    (message "%s" (context-navigator-i18n :activate-not-available))))
 
 (defgroup context-navigator-add nil
   "Settings for universal add operations."
@@ -64,7 +64,7 @@ Files larger than this threshold are skipped."
   "Context Navigator"
   [["Panel/Project"
     ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-toggle)
-    ("S" "Display Mode" context-navigator-display-mode-toggle)
+    ("S" (lambda () (context-navigator-i18n :tr-display-mode)) context-navigator-display-mode-toggle)
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
@@ -76,7 +76,7 @@ Files larger than this threshold are skipped."
     ("b" (lambda () (or (ignore-errors (context-navigator-i18n :select-by-name)) "Select by name"))
      context-navigator-select-by-name)
     ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)
-    ("m" "Multifile view" context-navigator-multifile-open)]
+    ("m" (lambda () (context-navigator-i18n :tr-multifile)) context-navigator-multifile-open)]
    ["GPTel"
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
@@ -85,17 +85,17 @@ Files larger than this threshold are skipped."
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
      :if (lambda () (derived-mode-p 'org-mode)))]
-   ["Logs"
-    ("D" "Toggle logs" context-navigator-log-toggle)
-    ("L" "Open logs" context-navigator-log-open)
-    ("K" "Clear logs" context-navigator-log-clear)
-    ("V" "Set level" context-navigator-log-set-level)
-    ("F" "Toggle file log" context-navigator-log-toggle-file-persistence)]])
+   [(lambda () (context-navigator-i18n :tr-logs))
+    ("D" (lambda () (context-navigator-i18n :tr-logs-toggle)) context-navigator-log-toggle)
+    ("L" (lambda () (context-navigator-i18n :tr-logs-open)) context-navigator-log-open)
+    ("K" (lambda () (context-navigator-i18n :tr-logs-clear)) context-navigator-log-clear)
+    ("V" (lambda () (context-navigator-i18n :tr-logs-set-level)) context-navigator-log-set-level)
+    ("F" (lambda () (context-navigator-i18n :tr-logs-toggle-file)) context-navigator-log-toggle-file-persistence)]])
 
 ;;;###autoload
 (transient-define-prefix context-navigator-view-transient ()
   "Navigator menu"
-  [[:description (lambda () "Navigate")
+  [[:description (lambda () (context-navigator-i18n :tr-navigate))
                  ("RET" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate-safe)
                  ("SPC" (lambda () (context-navigator-i18n :help-preview))  context-navigator-view-preview)
                  ("n"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
@@ -109,7 +109,7 @@ Files larger than this threshold are skipped."
                               (context-navigator-i18n :groups-help-back)
                             (context-navigator-i18n :items-help-view-groups)))
                   context-navigator-view-go-up)]
-   [:description (lambda () "Items")
+   [:description (lambda () (context-navigator-i18n :tr-items))
                  :if (lambda () (eq context-navigator-view--mode 'items))
                  ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
                  ("m" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
@@ -130,7 +130,7 @@ Files larger than this threshold are skipped."
                                    (with-current-buffer b
                                      (derived-mode-p 'org-mode)))
                                  (buffer-list)))) ]
-   [:description (lambda () "Groups")
+   [:description (lambda () (context-navigator-i18n :tr-groups))
                  :if (lambda () (eq context-navigator-view--mode 'groups))
                  ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate-safe)
                  ("a"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
@@ -142,16 +142,18 @@ Files larger than this threshold are skipped."
                  ("c"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
                  ("d"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
                  ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
-   ["Session"
+   [(lambda () (context-navigator-i18n :tr-session))
     ("G" (lambda ()
-           (format "Push→gptel: %s"
-                   (if (and (boundp 'context-navigator--push-to-gptel)
-                            context-navigator--push-to-gptel) "ON" "OFF")))
+           (format (context-navigator-i18n :push-state)
+                   (context-navigator-i18n
+                    (if (and (boundp 'context-navigator--push-to-gptel)
+                             context-navigator--push-to-gptel) :on :off))))
      context-navigator-view-toggle-push)
     ("A" (lambda ()
-           (format "Auto-project: %s"
-                   (if (and (boundp 'context-navigator--auto-project-switch)
-                            context-navigator--auto-project-switch) "ON" "OFF")))
+           (format (context-navigator-i18n :auto-project-state)
+                   (context-navigator-i18n
+                    (if (and (boundp 'context-navigator--auto-project-switch)
+                             context-navigator--auto-project-switch) :on :off))))
      context-navigator-view-toggle-auto-project)
     ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-view-clear-gptel)

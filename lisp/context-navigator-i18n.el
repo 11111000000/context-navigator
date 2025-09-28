@@ -124,6 +124,28 @@
      (be . "Выгрузіць кантэкст")
      (zh . "卸载上下文")
      (ja . "コンテキストをアンロード"))
+    ;; Transient/menu small labels introduced for better i18n coverage
+    (:tr-display-mode
+     (en . "Display Mode")
+     (ru . "Режим отображения"))
+    (:tr-multifile
+     (en . "Multifile view")
+     (ru . "Мультифайл просмотр"))
+    (:tr-navigate
+     (en . "Navigate")
+     (ru . "Навигация"))
+    (:tr-items
+     (en . "Items")
+     (ru . "Элементы"))
+    (:tr-groups
+     (en . "Groups")
+     (ru . "Группы"))
+    (:tr-session
+     (en . "Session")
+     (ru . "Сессия"))
+    (:tr-help-exit
+     (en . "Help / Exit")
+     (ru . "Справка / Выход"))
     (:tr-add-universal
      (en . "Add (universal)")
      (ru . "Добавить (универсально)")
@@ -177,6 +199,25 @@
      (be . "Адправіць зараз")
      (zh . "立即推送")
      (ja . "今すぐプッシュ"))
+    ;; Logs (transient section)
+    (:tr-logs
+     (en . "Logs")
+     (ru . "Логи"))
+    (:tr-logs-toggle
+     (en . "Toggle logs")
+     (ru . "Переключить лог"))
+    (:tr-logs-open
+     (en . "Open logs")
+     (ru . "Открыть логи"))
+    (:tr-logs-clear
+     (en . "Clear logs")
+     (ru . "Очистить логи"))
+    (:tr-logs-set-level
+     (en . "Set level")
+     (ru . "Установить уровень"))
+    (:tr-logs-toggle-file
+     (en . "Toggle file log")
+     (ru . "Переключить файл-лог"))
     (:mask-minibuf-prompt
      (en . "File(s) or mask (glob)")
      (ru . "Файл(ы) или маска (glob)")
@@ -337,6 +378,82 @@
      (be . "адправіць зараз")
      (zh . "立即推送")
      (ja . "今すぐプッシュ"))
+    ;; Core/UI runtime messages (general)
+    (:display-mode-changed
+     (en . "Navigator display mode: %s")
+     (ru . "Режим отображения Navigator: %s"))
+    (:gptel-not-available
+     (en . "gptel not available — skipping push (Navigator works fine without it)")
+     (ru . "gptel недоступен — пропускаем отправку (Navigator работает и без него)"))
+    (:pushed-items
+     (en . "Pushed %d items to gptel")
+     (ru . "Отправлено в gptel: %d элементов"))
+    (:push-state
+     (en . "Push→gptel: %s")
+     (ru . "Отправка→gptel: %s"))
+    (:auto-project-state
+     (en . "Auto-project: %s")
+     (ru . "Авто-проект: %s"))
+    (:on
+     (en . "ON")
+     (ru . "ВКЛ"))
+    (:off
+     (en . "OFF")
+     (ru . "ВЫКЛ"))
+    (:removed-dead-items
+     (en . "Removed %d dead buffer item(s)")
+     (ru . "Удалено неактивных буферов: %d"))
+    (:gptel-cleared
+     (en . "gptel context cleared; all items disabled")
+     (ru . "Контекст gptel очищен; все элементы выключены"))
+    (:context-saved
+     (en . "Context saved to %s")
+     (ru . "Контекст сохранён в %s"))
+    (:context-save-failed
+     (en . "Failed to save context")
+     (ru . "Не удалось сохранить контекст"))
+    (:no-active-group
+     (en . "No active group — open groups list to select one")
+     (ru . "Нет активной группы — откройте список групп для выбора"))
+    (:cleared-current-group
+     (en . "Cleared current group's context (%s)")
+     (ru . "Контекст текущей группы очищен (%s)"))
+    (:context-unloaded
+     (en . "Context unloaded (global mode)")
+     (ru . "Контекст выгружен (глобальный режим)"))
+    (:no-items-in-context
+     (en . "No items in the current context.")
+     (ru . "Нет элементов в текущем контексте."))
+    (:select-item-prompt
+     (en . "Context item: ")
+     (ru . "Элемент контекста: "))
+    (:unknown-item-type
+     (en . "Unknown item type")
+     (ru . "Неизвестный тип элемента"))
+    (:restarted
+     (en . "Context Navigator: restarted")
+     (ru . "Context Navigator: перезапущен"))
+    (:no-group-at-point
+     (en . "No group at point")
+     (ru . "Нет группы под курсором"))
+    (:press-h-open-groups-first
+     (en . "Press h to open groups list first")
+     (ru . "Нажмите h, чтобы открыть список групп"))
+    (:no-interactive-elements
+     (en . "No interactive elements")
+     (ru . "Нет интерактивных элементов"))
+    (:opened-context-buffers-bg
+     (en . "Opened %d context buffer(s) in background")
+     (ru . "Открыто буферов контекста в фоне: %d"))
+    (:closed-context-buffers
+     (en . "Closed %d context buffer(s)")
+     (ru . "Закрыто буферов контекста: %d"))
+    (:deleted-from-model
+     (en . "Deleted from model: %s")
+     (ru . "Удалено из модели: %s"))
+    (:group-file-unreadable-hint
+     (en . "Context Navigator: group '%s' file looks unreadable. Press h to open groups, then d to delete.")
+     (ru . "Context Navigator: файл группы '%s' выглядит нечитаемым. Нажмите h, чтобы открыть группы, затем d, чтобы удалить."))
     ;; Razor (Occam) -----------------------------------------------------------
     (:tr-razor
      (en . "Occam filter (org)")
@@ -471,6 +588,25 @@
      (be . "Паўтарыць")
      (zh . "重做")
      (ja . "やり直し"))
+    ;; Razor runtime/system messages (additional)
+    (:razor-only-org-mode
+     (en . "Occam filter is available only in org-mode buffers")
+     (ru . "Бритва Оккама доступна только в буферах org-mode"))
+    (:razor-no-enabled-items
+     (en . "No enabled items in current group")
+     (ru . "Нет включённых элементов в текущей группе"))
+    (:razor-error
+     (en . "Razor error: %S")
+     (ru . "Ошибка Razor: %S"))
+    (:history-not-available
+     (en . "History not available")
+     (ru . "История недоступна"))
+    (:nothing-to-undo
+     (en . "Nothing to undo")
+     (ru . "Нечего отменять"))
+    (:nothing-to-redo
+     (en . "Nothing to redo")
+     (ru . "Нечего повторять"))
     (:clear-group
      (en . "clear group")
      (ru . "очистить группу")
@@ -531,6 +667,40 @@
      (be . "група: %s")
      (zh . "分组: %s")
      (ja . "グループ: %s"))
+    ;; Groups CRUD/prompts (new)
+    (:group-created
+     (en . "Created group: %s (%s)")
+     (ru . "Создана группа: %s (%s)"))
+    (:group-rename-prompt
+     (en . "New name for %s: ")
+     (ru . "Новое имя для %s: "))
+    (:group-renamed
+     (en . "Renamed group: %s → %s (%s)")
+     (ru . "Переименована группа: %s → %s (%s)"))
+    (:group-delete-confirm
+     (en . "Delete group '%s'? ")
+     (ru . "Удалить группу '%s'? "))
+    (:group-deleted
+     (en . "Deleted group: %s")
+     (ru . "Удалена группа: %s"))
+    (:group-duplicate-prompt
+     (en . "New name for duplicate of %s: ")
+     (ru . "Новое имя для копии %s: "))
+    (:group-duplicated
+     (en . "Duplicated group %s → %s (%s)")
+     (ru . "Дублирована группа %s → %s (%s)"))
+    (:group-edit-desc-default
+     (en . "Edit description (default %s): ")
+     (ru . "Изменить описание (по умолчанию %s): "))
+    (:group-edit-desc-for
+     (en . "Description for %s (empty to clear): ")
+     (ru . "Описание для %s (пусто — очистить): "))
+    (:group-desc-cleared
+     (en . "Description cleared for %s")
+     (ru . "Описание очищено для %s"))
+    (:group-desc-updated
+     (en . "Description updated for %s")
+     (ru . "Описание обновлено для %s"))
     (:loading
      (en . "Loading…")
      (ru . "Загрузка…")
@@ -1146,6 +1316,12 @@
      (zh . "显示此帮助")
      (ja . "このヘルプを表示"))
 
+    (:activate-not-available
+     (en . "[Context Navigator] Activate command not available yet.")
+     (ru . "[Context Navigator] Команда активации ещё недоступна."))
+    (:debug-run-in-nav-buffer
+     (en . "Run inside the Context Navigator buffer")
+     (ru . "Выполните внутри буфера Context Navigator"))
     ;; Stats footer (minimal set)
     (:stats
      (en . "Stats")
@@ -1207,6 +1383,131 @@
      (be . "усяго")
      (zh . "合计")
      (ja . "合計"))
+    (:item-enabled
+     (en . "Enabled: %s")
+     (ru . "Включено: %s")
+     (fr . "Activé : %s")
+     (de . "Aktiviert: %s")
+     (es . "Habilitado: %s")
+     (uk . "Увімкнено: %s")
+     (be . "Уключана: %s")
+     (zh . "已启用：%s")
+     (ja . "有効: %s"))
+    (:item-disabled
+     (en . "Disabled: %s")
+     (ru . "Выключено: %s")
+     (fr . "Désactivé : %s")
+     (de . "Deaktiviert: %s")
+     (es . "Deshabilitado: %s")
+     (uk . "Вимкнено: %s")
+     (be . "Адключана: %s")
+     (zh . "已禁用：%s")
+     (ja . "無効: %s"))
+    ;; Messages for single-item gptel toggle feedback
+    (:gptel-added-one
+     (en . "Added to gptel: %s")
+     (ru . "Добавлено в gptel: %s"))
+    (:gptel-removed-one
+     (en . "Removed from gptel: %s")
+     (ru . "Удалено из gptel: %s"))
+    (:gptel-no-change
+     (en . "No change for: %s")
+     (ru . "Без изменений для: %s"))
+    (:stats-toggle-hint
+     (en . "Click/TAB/RET — toggle stats")
+     (ru . "Клик/TAB/RET — переключить статистику"))
+    (:title-toggle-hint
+     (en . "Click/TAB/RET — collapse/expand")
+     (ru . "Клик/TAB/RET — свернуть/развернуть"))
+    (:mf-section-hint
+     (en . "Click/TAB — collapse/expand; RET: visit/edit; t: toggle; d: delete; p: push")
+     (ru . "Клик/TAB — свернуть/развернуть; RET: открыть/редактировать; t: переключить; d: удалить; p: отправить"))
+    (:mf-action-visit
+     (en . "RET/mouse-1: visit")
+     (ru . "RET/mouse-1: открыть"))
+    (:mf-action-toggle
+     (en . "t/mouse-1: toggle enable")
+     (ru . "t/mouse-1: переключить"))
+    (:mf-action-delete
+     (en . "d/mouse-1: delete")
+     (ru . "d/mouse-1: удалить"))
+    (:mf-action-push
+     (en . "p/mouse-1: push")
+     (ru . "p/mouse-1: отправить"))
+    (:mf-collapse-hint
+     (en . "Collapse/expand all previews (z)")
+     (ru . "Свернуть/развернуть все превью (z)"))
+    (:mf-filter-hint
+     (en . "Toggle filter: enabled/all (f)")
+     (ru . "Переключить фильтр: включённые/все (f)"))
+    (:mf-edit-all-hint
+     (en . "Open edit buffers for all selections (E)")
+     (ru . "Открыть редактирование для всех выделений (E)"))
+    (:mf-close-hint
+     (en . "Close Multifile (q)")
+     (ru . "Закрыть Multifile (q)"))
+
+    ;; Multifile runtime hints/messages
+    (:mf-title
+     (en . "🧭 Context Multifile View")
+     (ru . "🧭 Мультифайл просмотр"))
+    (:mf-end-of-sections
+     (en . "End of sections")
+     (ru . "Конец разделов"))
+    (:mf-start-of-sections
+     (en . "Start of sections")
+     (ru . "Начало разделов"))
+    (:mf-unknown-item
+     (en . "Unknown item")
+     (ru . "Неизвестный элемент"))
+    (:no-item-at-point
+     (en . "No item at point")
+     (ru . "Нет элемента под курсором"))
+    (:mf-no-path
+     (en . "<no path>")
+     (ru . "<нет пути>"))
+    (:mf-remote-preview-disabled
+     (en . "<remote preview disabled>")
+     (ru . "<предпросмотр для удалённых отключён>"))
+    (:mf-remote-preview-lazy
+     (en . "<remote preview (lazy): not reading file>")
+     (ru . "<удалённый предпросмотр (ленивый): файл не читается>"))
+    (:mf-unreadable
+     (en . "<unreadable>")
+     (ru . "<недоступно для чтения>"))
+    (:mf-selection-base-missing
+     (en . "<selection: base buffer not available>")
+     (ru . "<выделение: базовый буфер недоступен>"))
+    (:mf-selection-invalid-bounds
+     (en . "<selection: invalid bounds>")
+     (ru . "<выделение: неверные границы>"))
+    (:mf-buffer-only-not-editable
+     (en . "<buffer-only; not editable here>")
+     (ru . "<только буфер; редактирование недоступно>"))
+    (:mf-base-buffer-missing
+     (en . "Base buffer not available")
+     (ru . "Базовый буфер недоступен"))
+    (:mf-selection-not-visiting-file
+     (en . "Selection base buffer is not visiting a file — editing blocked")
+     (ru . "Базовый буфер выделения не открыт как файл — редактирование запрещено"))
+    (:mf-narrowed-edit-hint
+     (en . "Narrowed edit; C-x C-s to save")
+     (ru . "Суженное редактирование; C-x C-s для сохранения"))
+    (:mf-help-fallback
+     (en . "Multifile: j/k/n – navigate, RET – visit/edit, t – toggle, d – delete, p – push, f – filter, E – edit all, q – quit")
+     (ru . "Multifile: j/k/n – переход, RET – открыть/ред., t – переключить, d – удалить, p – отправить, f – фильтр, E – редактировать все, q – выход"))
+    (:mf-filter-enabled-only
+     (en . "Filter: enabled-only")
+     (ru . "Фильтр: только включённые"))
+    (:mf-filter-all
+     (en . "Filter: all items")
+     (ru . "Фильтр: все элементы"))
+    (:mf-open-edit-buffers-confirm
+     (en . "Open %d edit buffers? ")
+     (ru . "Открыть %d буфер(ов) редактирования? "))
+    (:mf-opened-edit-buffers
+     (en . "Opened %d selection edit buffers")
+     (ru . "Открыто буферов редактирования: %d"))
 
     ;; ... (оставить остальные блоки без изменений, дополнив их недостающими переводами)
     )

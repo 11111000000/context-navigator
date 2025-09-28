@@ -137,7 +137,7 @@
                          (define-key m [header-line mouse-1] #'context-navigator-multifile-toggle-collapse-all)
                          (propertize str
                                      'mouse-face 'highlight
-                                     'help-echo (if (eq state 'on) "Collapse all previews (z)" "Expand all previews (z)")
+                                     'help-echo (context-navigator-i18n :mf-collapse-hint)
                                      'keymap m 'local-map m)))
          (seg-filter (let* ((str (context-navigator-multifile--icon-or-label 'mf-filter
                                                                              (if context-navigator-mf--filter-enabled-only 'on 'off)
@@ -147,7 +147,7 @@
                        (define-key m [header-line mouse-1] #'context-navigator-multifile-toggle-filter)
                        (propertize str
                                    'mouse-face 'highlight
-                                   'help-echo "Toggle filter: enabled/all (f)"
+                                   'help-echo (context-navigator-i18n :mf-filter-hint)
                                    'keymap m 'local-map m)))
          (seg-edit-all (let* ((str (context-navigator-multifile--icon-or-label 'mf-edit-all nil "[Edit All]"))
                               (m (make-sparse-keymap)))
@@ -155,7 +155,7 @@
                          (define-key m [header-line mouse-1] #'context-navigator-multifile-edit-all)
                          (propertize str
                                      'mouse-face 'highlight
-                                     'help-echo "Open edit buffers for all selections (E)"
+                                     'help-echo (context-navigator-i18n :mf-edit-all-hint)
                                      'keymap m 'local-map m)))
          (seg-close (let* ((str (context-navigator-multifile--icon-or-label 'mf-close nil "[×]"))
                            (m (make-sparse-keymap)))
@@ -163,7 +163,7 @@
                       (define-key m [header-line mouse-1] #'context-navigator-multifile-close)
                       (propertize str
                                   'mouse-face 'highlight
-                                  'help-echo "Close Multifile (q)"
+                                  'help-echo (context-navigator-i18n :mf-close-hint)
                                   'keymap m 'local-map m))))
     (concat seg-collapse seg-filter seg-edit-all seg-close)))
 
@@ -269,6 +269,69 @@ Note: Always show all items by default. Local filter (f) can show only enabled."
         p)
     (error p)))
 
+(defun context-navigator-multifile--header-present-p (item)
+  "Return non-nil when ITEM's key is present in the current gptel cache."
+  (let ((key (context-navigator-model-item-key item)))
+    (and context-navigator-mf--gptel-keys
+         (member key context-navigator-mf--gptel-keys))))
+
+(defun context-navigator-multifile--header-left-string (item)
+  "Build the left part of a section header (indicator, icon, [on]/[off], name)."
+  (let* ((present (context-navigator-multifile--header-present-p item))
+         (ind (context-navigator-multifile--indicator present))
+         (ic  (context-navigator-multifile--icon item))
+         (en  (and (context-navigator-item-enabled item) t))
+         (en-tag (propertize (if en "[on]" "[off]") 'face (if en 'success 'shadow)))
+         ;; Place [on]/[off] before the name to match test expectations.
+         (name (or (context-navigator-item-name item)
+                   (context-navigator-model-item-key item))))
+    (string-trim (mapconcat #'identity (delq nil (list ind ic en-tag name)) " "))))
+
+(defun context-navigator-multifile--header-right-string (item root)
+  "Build the right-aligned relative path string for the header, if any."
+  (let* ((path (or (context-navigator-item-path item) ""))
+         (rel  (context-navigator-multifile--relpath path root)))
+    (if (and (stringp rel) (not (string-empty-p rel)))
+        (format " — %s" rel)
+      "")))
+
+(defun context-navigator-multifile--make-action (label cmd hint item)
+  "Create a propertized, clickable action segment for LABEL bound to CMD."
+  (let* ((s (copy-sequence (format " [%s]" label)))
+         (km (let ((m (make-sparse-keymap)))
+               (define-key m [mouse-1] cmd)
+               (define-key m (kbd "RET") cmd)
+               m)))
+    (add-text-properties 0 (length s)
+                         (list 'mouse-face 'highlight
+                               'help-echo hint
+                               'keymap km
+                               'local-map km
+                               'cn-mf-action t
+                               'cn-item item)
+                         s)
+    s))
+
+(defun context-navigator-multifile--apply-header-properties (item)
+  "Apply header line properties/keymaps to the last inserted header line."
+  (let* ((hend (save-excursion (forward-line -1) (line-end-position)))
+         (hbeg (save-excursion (forward-line -1) (line-beginning-position)))
+         (km (let ((m (make-sparse-keymap)))
+               ;; Mouse/TAB toggle collapse for this section
+               (define-key m [mouse-1] #'context-navigator-multifile-mouse-toggle-section)
+               (define-key m (kbd "TAB")   #'context-navigator-multifile-toggle-section)
+               (define-key m (kbd "<tab>") #'context-navigator-multifile-toggle-section)
+               (define-key m [tab]         #'context-navigator-multifile-toggle-section)
+               (define-key m (kbd "C-i")   #'context-navigator-multifile-toggle-section)
+               m)))
+    (put-text-property hbeg hend 'cn-mf-section t)
+    (put-text-property hbeg hend 'cn-item item)
+    (put-text-property hbeg hend 'mouse-face 'highlight)
+    (put-text-property hbeg hend 'keymap km)
+    (put-text-property hbeg hend 'local-map km)
+    (put-text-property hbeg hend 'help-echo
+                       (context-navigator-i18n :mf-section-hint))))
+
 (defun context-navigator-multifile--insert-header (item root)
   "Insert section header for ITEM, return start position.
 
@@ -276,65 +339,21 @@ Header shows:
 - gptel indicator + icon + name [+ enabled status]
 - relative path on the right
 - clickable actions: [visit] [t] [d] [p]"
-  (let* ((key (context-navigator-model-item-key item))
-         (name (or (context-navigator-item-name item) key))
-         (path (or (context-navigator-item-path item) ""))
-         (rel  (context-navigator-multifile--relpath path root))
-         (present (and context-navigator-mf--gptel-keys
-                       (member key context-navigator-mf--gptel-keys)))
-         (ind  (context-navigator-multifile--indicator present))
-         (ic   (context-navigator-multifile--icon item))
-         (en   (and (context-navigator-item-enabled item) t))
-         (en-tag (if en
-                     (propertize "[on]" 'face 'success)
-                   (propertize "[off]" 'face 'shadow)))
-         ;; Place [on]/[off] before the name to match test expectations.
-         (left (string-trim (mapconcat #'identity (delq nil (list ind ic en-tag name)) " ")))
-         (right (if (and (stringp rel) (not (string-empty-p rel)))
-                    (format " — %s" rel) "")))
+  (let* ((key   (context-navigator-model-item-key item))
+         (left  (context-navigator-multifile--header-left-string item))
+         (right (context-navigator-multifile--header-right-string item root)))
     (let ((start (point)))
       ;; Base header text
       (insert (format "%s%s" left right))
       ;; Actions: build clickable segments and append
-      (let ((mk (lambda (label cmd hint)
-                  (let* ((s (copy-sequence (format " [%s]" label)))
-                         (km (let ((m (make-sparse-keymap)))
-                               (define-key m [mouse-1] cmd)
-                               (define-key m (kbd "RET") cmd)
-                               m)))
-                    (add-text-properties 0 (length s)
-                                         (list 'mouse-face 'highlight
-                                               'help-echo hint
-                                               'keymap km
-                                               'local-map km
-                                               'cn-mf-action t
-                                               'cn-item item)
-                                         s)
-                    s))))
-        (let* ((seg-visit (funcall mk "visit" #'context-navigator-multifile-visit "RET/mouse-1: visit"))
-               (seg-t     (funcall mk "t"     #'context-navigator-multifile-toggle "t/mouse-1: toggle enable"))
-               (seg-d     (funcall mk "d"     #'context-navigator-multifile-delete "d/mouse-1: delete"))
-               (seg-p     (funcall mk "p"     #'context-navigator-multifile-push   "p/mouse-1: push")))
-          (insert " " seg-visit seg-t seg-d seg-p)))
+      (let* ((seg-visit (context-navigator-multifile--make-action "visit" #'context-navigator-multifile-visit (context-navigator-i18n :mf-action-visit) item))
+             (seg-t     (context-navigator-multifile--make-action "t"     #'context-navigator-multifile-toggle (context-navigator-i18n :mf-action-toggle) item))
+             (seg-d     (context-navigator-multifile--make-action "d"     #'context-navigator-multifile-delete (context-navigator-i18n :mf-action-delete) item))
+             (seg-p     (context-navigator-multifile--make-action "p"     #'context-navigator-multifile-push   (context-navigator-i18n :mf-action-push) item)))
+        (insert " " seg-visit seg-t seg-d seg-p))
       (insert "\n")
       ;; Apply header properties precisely on the header line we just inserted
-      (let* ((hend (save-excursion (forward-line -1) (line-end-position)))
-             (hbeg (save-excursion (forward-line -1) (line-beginning-position)))
-             (km (let ((m (make-sparse-keymap)))
-                   ;; Mouse click/TAB on header toggles collapse/expand of this section
-                   (define-key m [mouse-1] #'context-navigator-multifile-mouse-toggle-section)
-                   (define-key m (kbd "TAB")   #'context-navigator-multifile-toggle-section)
-                   (define-key m (kbd "<tab>") #'context-navigator-multifile-toggle-section)
-                   (define-key m [tab]         #'context-navigator-multifile-toggle-section)
-                   (define-key m (kbd "C-i")   #'context-navigator-multifile-toggle-section)
-                   m)))
-        (put-text-property hbeg hend 'cn-mf-section t)
-        (put-text-property hbeg hend 'cn-item item)
-        (put-text-property hbeg hend 'mouse-face 'highlight)
-        (put-text-property hbeg hend 'keymap km)
-        (put-text-property hbeg hend 'local-map km)
-        (put-text-property hbeg hend 'help-echo
-                           "Click/TAB: collapse/expand; RET: visit/edit; t: toggle; d: delete; p: push"))
+      (context-navigator-multifile--apply-header-properties item)
       (push (cons start key) context-navigator-mf--pos->key)
       start)))
 
@@ -342,7 +361,7 @@ Header shows:
   (let* ((remote (and (stringp path) (file-remote-p path)))
          (mode context-navigator-mf-remote-preview-mode))
     (cond
-     ((null path) (insert "  <no path>\n"))
+     ((null path) (insert (format "  %s\n" (context-navigator-i18n :mf-no-path))))
      ((and remote (eq mode 'off))
       (insert "  <remote preview disabled>\n"))
      ((and remote (eq mode 'lazy))
@@ -381,9 +400,9 @@ Header shows:
          (e (context-navigator-item-end item)))
     (cond
      ((not (buffer-live-p buf))
-      (insert "  <selection: base buffer not available>\n"))
+      (insert (format "  %s\n" (context-navigator-i18n :mf-selection-base-missing))))
      ((or (not (integerp b)) (not (integerp e)))
-      (insert "  <selection: invalid bounds>\n"))
+      (insert (format "  %s\n" (context-navigator-i18n :mf-selection-invalid-bounds))))
      (t
       (let* ((s (with-current-buffer buf
                   (buffer-substring-no-properties (max (point-min) (min b e))
@@ -402,8 +421,9 @@ Header shows:
      (let* ((p (context-navigator-item-path item)))
        (if (and (stringp p) (file-exists-p p))
            (context-navigator-multifile--insert-preview-file p)
-         (insert "  <buffer-only; not editable here>\n"))))
-    (_ (insert "  <unknown item>\n"))))
+         (insert (format "  %s\n" (context-navigator-i18n :mf-buffer-only-not-editable))))))
+    (_ (insert (format "  %s\n" (context-navigator-i18n :mf-unknown-item))))))
+
 
 (defun context-navigator-multifile--render ()
   "Render the Multifile View."
@@ -418,7 +438,7 @@ Header shows:
     (setq context-navigator-mf--pos->key nil)
     (context-navigator-multifile--pull-items)
     (context-navigator-multifile--update-gptel-keys)
-    (insert "🧭 Context Multifile View\n\n")
+    (insert "Context Multifile View" "\n\n")
     (dolist (it (or context-navigator-mf--items '()))
       (context-navigator-multifile--insert-header it root)
       (let ((key (context-navigator-model-item-key it)))
@@ -475,7 +495,7 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
   (let ((pos (next-single-property-change (point) 'cn-mf-section nil (point-max))))
     (when pos (goto-char pos))
     (unless pos
-      (message "End of sections"))))
+      (message "%s" (context-navigator-i18n :mf-end-of-sections)))))
 
 (defun context-navigator-multifile-prev ()
   "Move to the previous section."
@@ -488,13 +508,13 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
       (setq p (previous-single-property-change (max (1- p) (point-min)) 'cn-mf-section nil (point-min))))
     (if pos
         (goto-char pos)
-      (message "Start of sections"))))
+      (message "%s" (context-navigator-i18n :mf-start-of-sections)))))
 
 (defun context-navigator-multifile-visit ()
   "Visit item at point (file/buffer/selection jump)."
   (interactive)
   (let ((it (context-navigator-multifile--item-at-point)))
-    (unless it (user-error "No item at point"))
+    (unless it (user-error "%s" (context-navigator-i18n :no-item-at-point)))
     (setq context-navigator-mf--last-item-key (context-navigator-model-item-key it))
     (pcase (context-navigator-item-type it)
       ('file
@@ -519,7 +539,7 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
            (when (and (integerp b) (integerp e))
              (goto-char (min b e))
              (push-mark (max b e) t t)))))
-      (_ (message "Unknown item type")))))
+      (_ (message "%s" (context-navigator-i18n :mf-unknown-item))))))
 
 (defun context-navigator-multifile--indirect-after-save ()
   "After-save hook: auto-push current model to gptel when enabled."
@@ -533,7 +553,7 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
   "Edit selection at point via indirect buffer + narrow-to-region."
   (interactive)
   (let ((it (context-navigator-multifile--item-at-point)))
-    (unless it (user-error "No item at point"))
+    (unless it (user-error "%s" (context-navigator-i18n :no-item-at-point)))
     (setq context-navigator-mf--last-item-key (context-navigator-model-item-key it))
     (pcase (context-navigator-item-type it)
       ('selection
@@ -542,9 +562,9 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
                         (and (stringp p) (file-exists-p p)
                              (find-file-noselect p)))))
          (unless (buffer-live-p base)
-           (user-error "Base buffer not available"))
+           (user-error "%s" (context-navigator-i18n :mf-base-buffer-missing)))
          (unless (buffer-local-value 'buffer-file-name base)
-           (user-error "Selection base buffer is not visiting a file — editing blocked"))
+           (user-error "%s" (context-navigator-i18n :mf-selection-not-visiting-file)))
          (let* ((key (context-navigator-model-item-key it))
                 (slug (substring key 0 (min 40 (length key))))
                 (name (generate-new-buffer-name (format "*cn-edit:%s*" slug)))
@@ -577,7 +597,7 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
                                       (when (eq b dead)
                                         (remhash k context-navigator-mf--key->indirect)))
                                     context-navigator-mf--key->indirect))))))
-                 (message "Narrowed edit; C-x C-s to save")))))))
+                 (message "%s" (context-navigator-i18n :mf-narrowed-edit-hint))))))))
       (_
        (context-navigator-multifile-visit)))))
 
@@ -585,7 +605,7 @@ Scan the whole line for 'cn-item and, if needed, walk upward to the nearest head
   "Toggle enabled flag for item at point."
   (interactive)
   (let* ((it (context-navigator-multifile--item-at-point)))
-    (unless it (user-error "No item at point"))
+    (unless it (user-error "%s" (context-navigator-i18n :no-item-at-point)))
     (setq context-navigator-mf--last-item-key (context-navigator-model-item-key it))
     (let* ((key (context-navigator-model-item-key it)))
       (ignore-errors (context-navigator-toggle-item key))
@@ -625,8 +645,8 @@ For file/buffer items, remove from the model."
             (when killed
               (context-navigator-multifile--render))
             (unless killed
-              (user-error "No item at point")))
-        (user-error "No item at point")))
+              (user-error "%s" (context-navigator-i18n :no-item-at-point))))
+        (user-error "%s" (context-navigator-i18n :no-item-at-point))))
     (let* ((key (context-navigator-model-item-key it)))
       (pcase (context-navigator-item-type it)
         ('selection
@@ -647,7 +667,7 @@ For file/buffer items, remove from the model."
   "Toggle gptel membership for item at point."
   (interactive)
   (let ((it (context-navigator-multifile--item-at-point)))
-    (unless it (user-error "No item at point"))
+    (unless it (user-error "%s" (context-navigator-i18n :no-item-at-point)))
     (setq context-navigator-mf--last-item-key (context-navigator-model-item-key it))
     (ignore-errors (context-navigator-gptel-toggle-one it))
     (context-navigator-multifile--update-gptel-keys)
@@ -657,7 +677,7 @@ For file/buffer items, remove from the model."
   "RET: edit for selection; otherwise visit."
   (interactive)
   (let ((it (context-navigator-multifile--item-at-point)))
-    (unless it (user-error "No item at point"))
+    (unless it (user-error "%s" (context-navigator-i18n :no-item-at-point)))
     (setq context-navigator-mf--last-item-key (context-navigator-model-item-key it))
     (if (eq (context-navigator-item-type it) 'selection)
         (context-navigator-multifile-edit)
@@ -668,9 +688,9 @@ For file/buffer items, remove from the model."
   (interactive)
   (setq context-navigator-mf--filter-enabled-only
         (not context-navigator-mf--filter-enabled-only))
-  (message (if context-navigator-mf--filter-enabled-only
-               "Filter: enabled-only"
-             "Filter: all items"))
+  (message "%s" (if context-navigator-mf--filter-enabled-only
+                    (context-navigator-i18n :mf-filter-enabled-only)
+                  (context-navigator-i18n :mf-filter-all)))
   (context-navigator-multifile--render))
 
 (defun context-navigator-multifile-toggle-collapse-all ()
@@ -691,7 +711,7 @@ For file/buffer items, remove from the model."
         (call-interactively 'context-navigator-view-transient)
       (funcall 'context-navigator-view-transient)))
    (t
-    (message "Multifile: j/k/n – navigate, RET – visit/edit, t – toggle, d – delete, p – push, f – filter, E – edit all, q – quit"))))
+    (message "%s" (context-navigator-i18n :mf-help-fallback)))))
 
 (defun context-navigator-multifile-edit-all ()
   "Open indirect buffers for all selection items (with threshold confirmation).
@@ -702,9 +722,9 @@ Uses section header positions to locate items robustly (no name search)."
                                  (or context-navigator-mf--items '())))
          (n (length sels))
          (go (or (<= n context-navigator-mf-open-all-threshold)
-                 (yes-or-no-p (format "Open %d edit buffers? " n)))))
+                 (yes-or-no-p (format (context-navigator-i18n :mf-open-edit-buffers-confirm) n)))))
     (if (not go)
-        (message "Aborted")
+        (message "%s" (context-navigator-i18n :aborted))
       (save-excursion
         (dolist (it sels)
           (let* ((key (context-navigator-model-item-key it))
@@ -712,7 +732,7 @@ Uses section header positions to locate items robustly (no name search)."
             (when pos
               (goto-char pos)
               (ignore-errors (context-navigator-multifile-edit))))))
-      (message "Opened %d selection edit buffers" n))))
+      (message (context-navigator-i18n :mf-opened-edit-buffers) n))))
 
 
 ;;;###autoload

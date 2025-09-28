@@ -7,7 +7,7 @@
 ;; Split out of context-navigator-view.el to reduce coupling.
 ;;
 ;; This module does not require the full view to avoid cycles; it declares the
-;; helpers it uses from the view. The view should (require 'context-navigator-view-controls)
+;; helpers it uses from the view. The view should
 ;; to expose the public controls API.
 ;;
 ;; Refactoring note:
@@ -19,6 +19,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'context-navigator-view-ui)
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-controls-icons)
@@ -71,7 +72,7 @@ Used as the header-line background in the Navigator buffer."
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
   '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
-         razor :gap multifile open-buffers close-buffers :gap clear-group)
+         razor :gap multifile open-buffers close-buffers :gap clear-gptel clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
@@ -107,7 +108,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [→]")
-                      (_ (format " [→gptel: %s]" (if (eq state 'on) "on" "off"))))))
+                      (_ (format " [→gptel: %s]" (context-navigator-i18n (if (eq state 'on) :on :off)))))))
       (auto-project
        :type toggle
        :icon-key auto-project
@@ -122,8 +123,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [A]")
-                      (_ (format " [%s: %s]" (funcall tr :auto-proj)
-                                 (if (eq state 'on) "on" "off")))))
+                      (_ (format " [%s: %s]" (context-navigator-i18n :auto-proj) (context-navigator-i18n (if (eq state 'on) :on :off))))))
        :face-fn ,(lambda (_style state)
                    ;; Only used when no graphic icons are available.
                    (list :foreground (if (eq state 'on) "green4" "gray"))))
@@ -163,7 +163,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                            (context-navigator-razor-spinner-frame)))
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (funcall tr :tr-razor))
+                        (format " [%s]" (context-navigator-i18n :tr-razor))
                       " [R]")))
       (push-now
        :type action
@@ -174,7 +174,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (funcall tr :push-now))) " [P]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :push-now))) " [P]")))
       (open-buffers
        :type action
        :icon-key open-buffers
@@ -184,7 +184,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (funcall tr :open-buffers))) " [O]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :open-buffers))) " [O]")))
       (close-buffers
        :type action
        :icon-key close-buffers
@@ -194,7 +194,18 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (funcall tr :close-buffers))) " [K]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :close-buffers))) " [K]")))
+      (clear-gptel
+       :type action
+       :icon-key clear-gptel
+       :command context-navigator-view-clear-gptel
+       :help ,(lambda () (funcall tr :clear-tip))
+       :enabled-p ,(lambda () t)
+       :visible-p ,(lambda () t)
+       :label-fn ,(lambda (style _s)
+                    (if (eq style 'text)
+                        (format " [%s]" (context-navigator-i18n :clear-gptel))
+                      " [C]")))
       (clear-group
        :type action
        :icon-key clear-group
@@ -204,7 +215,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (funcall tr :clear-group))) " [C]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :clear-group))) " [E]")))
       (toggle-all-gptel
        :type action
        :icon-key toggle-all-gptel
@@ -214,12 +225,12 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (funcall tr :toggle-all-gptel))) " [T]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel))) " [T]")))
       (multifile
        :type action
        :icon-key multifile
        :command context-navigator-multifile-open
-       :help "Open Multifile view"
+       :help ,(lambda () (funcall tr :tr-multifile))
        :enabled-p ,(lambda () t)
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
@@ -267,10 +278,7 @@ Returns a propertized string or nil when not visible."
              (s (copy-sequence (or label "")))
              (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0))
              (km (when (and cmd enabled-p)
-                   (let ((m (make-sparse-keymap)))
-                     (define-key m [mouse-1] cmd)
-                     (define-key m [header-line mouse-1] cmd)
-                     m)))
+                   (ignore-errors (context-navigator-view-ui-make-keymap cmd))))
              (help-str (context-navigator-view-controls--plist-fn help)))
         (when (> (length s) 0)
           (let ((props (list 'mouse-face 'highlight

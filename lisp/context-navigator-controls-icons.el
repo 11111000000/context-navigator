@@ -114,6 +114,14 @@ For stateful toggles (push, auto-project) use `context-navigator-controls-toggle
                 :value-type (choice face (plist :key-type symbol :value-type sexp)))
   :group 'context-navigator-controls-icons)
 
+(defcustom context-navigator-controls-icon-local-prefixes
+  '("mf-")
+  "List of key name prefixes treated as \"local-only\" icon keys (e.g. Multifile header controls).
+Audit and consistency checks can treat keys with these prefixes as local UI-only and not
+flag them as unused in the global header-line registry."
+  :type '(repeat string)
+  :group 'context-navigator-controls-icons)
+
 (defcustom context-navigator-controls-toggle-on-face
   '(:foreground "gray85")
   "Face attributes or symbol for toggle icons when enabled (ON).

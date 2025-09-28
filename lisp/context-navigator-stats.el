@@ -326,7 +326,7 @@ when an icon name is unavailable in the installed icon set."
       ;; Make header clickable
       (add-text-properties 0 (length s)
                            (list 'mouse-face 'highlight
-                                 'help-echo "Toggle stats (s)"
+                                 'help-echo (context-navigator-i18n :stats-toggle-hint)
                                  'keymap km 'local-map km
                                  'context-navigator-stats-toggle t
                                  'face 'mode-line-emphasis)
@@ -383,7 +383,7 @@ TOTAL-WIDTH is forwarded to `context-navigator-stats-footer-lines'."
                     0 (length str)
                     (list
                      'mouse-face 'highlight
-                     'help-echo "Click/TAB/RET — toggle stats"
+                     'help-echo (context-navigator-i18n :stats-toggle-hint)
                      'context-navigator-stats-toggle t
                      'context-navigator-header t
                      'context-navigator-interactive t

@@ -9,8 +9,8 @@
   (let* ((long-name (make-string 80 ?x))
          (context-navigator-render-truncate-name 20)
          (it (context-navigator-item-create :type 'file :path "/tmp/file" :name long-name :enabled t))
-         (lines (context-navigator-render-build-lines (list it) "Hdr" nil 40))
-         (line (nth 2 lines)))
+         (lines (context-navigator-render-build-item-lines (list it) nil 40))
+         (line (car lines)))
     (should (stringp line))
     ;; Expect an ellipsis … in the rendered name
     (should (string-match-p "…" line))

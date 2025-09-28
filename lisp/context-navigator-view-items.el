@@ -278,7 +278,7 @@ inside the Navigator buffer."
   (interactive)
   (let ((buf (current-buffer)))
     (unless (eq major-mode 'context-navigator-view-mode)
-      (user-error "Run inside the Context Navigator buffer"))
+      (user-error "%s" (context-navigator-i18n :debug-run-in-nav-buffer)))
     (save-excursion
       (goto-char (point-min))
       (let ((line 1)

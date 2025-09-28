@@ -253,7 +253,7 @@
   (interactive)
   (if (fboundp 'context-navigator-snapshot-push)
       (context-navigator-snapshot-push)
-    (message "History not available")))
+    (message "%s" (context-navigator-i18n :history-not-available))))
 
 (defun context-navigator-razor--apply-snapshot (snapshot)
   "Apply SNAPSHOT items to model and push to gptel when auto-push is ON."
@@ -268,7 +268,7 @@
   (interactive)
   (if (fboundp 'context-navigator-undo)
       (context-navigator-undo)
-    (message "Nothing to undo")))
+    (message "%s" (context-navigator-i18n :nothing-to-undo))))
 
 ;;;###autoload
 (defun context-navigator-razor-redo ()
@@ -276,7 +276,7 @@
   (interactive)
   (if (fboundp 'context-navigator-redo)
       (context-navigator-redo)
-    (message "Nothing to redo")))
+    (message "%s" (context-navigator-i18n :nothing-to-redo))))
 
 
 
@@ -791,7 +791,7 @@ Return plist:
   (cond
    ((= total-enabled 0)
     (ignore-errors (context-navigator-debug :info :razor "Abort: no enabled items"))
-    (message "No enabled items in current group")
+    (message "%s" (context-navigator-i18n :razor-no-enabled-items))
     t)
    ;; TRAMP confirm only when there are remote items
    ((and context-navigator-razor-remote-include
@@ -906,7 +906,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
               (ignore-errors
                 (context-navigator-debug :error :razor "Callback error: %S" err))
               (context-navigator-razor--notify-stop)
-              (message "Razor error: %S" err)))))
+              (message (context-navigator-i18n :razor-error) err)))))
       #'cb)))
 
 (defun context-navigator-razor--request (sys user total-enabled model-items)
@@ -920,7 +920,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
   (interactive)
   (unless (derived-mode-p 'org-mode)
     (ignore-errors (context-navigator-debug :warn :razor "Not in org-mode; abort"))
-    (user-error "Occam filter is available only in org-mode buffers"))
+    (user-error "%s" (context-navigator-i18n :razor-only-org-mode)))
   (let* ((input (context-navigator-razor--collect-run-input))
          (org-text (plist-get input :org-text))
          (items-pl (plist-get input :items-pl))

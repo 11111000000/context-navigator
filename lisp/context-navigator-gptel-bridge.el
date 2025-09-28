@@ -401,6 +401,12 @@ publish :gptel-change and handlers try to pull immediately."
 (defun context-navigator-gptel--can-remove () (fboundp 'gptel-context-remove))
 (defun context-navigator-gptel--can-remove-all () (fboundp 'gptel-context-remove-all))
 
+(defun context-navigator-gptel-clear-all-now ()
+  "Best-effort clear of gptel context (silences echo and *Messages*)."
+  (when (context-navigator-gptel--can-remove-all)
+    (let ((inhibit-message t) (message-log-max nil))
+      (ignore-errors (gptel-context-remove-all)))))
+
 (defun context-navigator-gptel--add-item (item)
   "Try to add ITEM to gptel context. Return t on success."
   (context-navigator-gptel--ensure-loaded)

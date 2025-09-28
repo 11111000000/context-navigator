@@ -178,8 +178,7 @@ Steps:
       (string-equal (downcase a) (downcase b))
     (string-equal a b)))
 
-(defun context-navigator-path-add--basename (p)
-  (file-name-nondirectory p))
+
 
 (defun context-navigator-path-add--has-dirsep-p (s)
   "Return non-nil when S contains a directory separator (/ or \\)."
@@ -416,7 +415,7 @@ Fallback (when primary found nothing):
           ;; basename (with ext) -> list of files
           (let ((ht (make-hash-table :test (if casefold 'equal 'equal))))
             (dolist (p index)
-              (let* ((bn (context-navigator-path-add--basename p))
+              (let* ((bn (file-name-nondirectory p))
                      (k  (if casefold (downcase bn) bn)))
                 (puthash k (cons p (gethash k ht)) ht)))
             ht))
@@ -424,7 +423,7 @@ Fallback (when primary found nothing):
           ;; basename sans extension -> list of files
           (let ((ht (make-hash-table :test (if casefold 'equal 'equal))))
             (dolist (p index)
-              (let* ((bn (context-navigator-path-add--basename p))
+              (let* ((bn (file-name-nondirectory p))
                      (nx (file-name-sans-extension bn))
                      (k  (if casefold (downcase nx) nx)))
                 (puthash k (cons p (gethash k ht)) ht)))
@@ -447,7 +446,7 @@ Fallback (when primary found nothing):
             (push tok acc-unres))))
        (t
         ;; Search through project index
-        (let* ((bn (context-navigator-path-add--basename tok)))
+        (let* ((bn (file-name-nondirectory tok)))
           (cond
            ;; Bare basename without extension → search by sans-extension map
            ((and (not (context-navigator-path-add--has-dirsep-p tok))

@@ -101,7 +101,7 @@ Note: returns only local, writable roots to avoid switching to non-writable loca
       (let ((abs (directory-file-name (expand-file-name root))))
         (and (context-navigator-project--writable-root-p abs) abs)))))
 
-(defun context-navigator-project--interesting-buffer-p (buffer)
+(defun context-navigator-project--interesting-buffer-p-impl (buffer)
   "Return non-nil if BUFFER should trigger project switching.
 
 Considers:
@@ -120,6 +120,8 @@ Excludes minibuffers, child-frame popups and corfu internal buffers."
                                    context-navigator-project-nonfile-modes)))
                     (and is-nonfile
                          (context-navigator-project-current-root buffer))))))))
+(defalias 'context-navigator-project--interesting-buffer-p
+  'context-navigator-project--interesting-buffer-p-impl)
 
 (defun context-navigator-project--maybe-publish-switch (&optional buffer)
   "Publish :project-switch only when the project root actually changes.

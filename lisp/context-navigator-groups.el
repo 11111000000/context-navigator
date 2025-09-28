@@ -127,7 +127,7 @@
       (make-directory (file-name-directory file) t)
       (ignore-errors (context-navigator-persist-save '() root slug))
       (ignore-errors (context-navigator--load-group-for-root root slug))
-      (message "Created group: %s (%s)" name slug)
+      (message (context-navigator-i18n :group-created) name slug)
       slug)))
 
 ;;;###autoload
@@ -139,7 +139,7 @@
          (old-slug (or old-slug
                        (cdr (assoc (completing-read "Rename group: " cand nil t) cand))))
          (_ (when (equal old-slug "default") (user-error "Cannot rename 'default'")))
-         (new-display (or new-display (read-string (format "New name for %s: " old-slug))))
+         (new-display (or new-display (read-string (format (context-navigator-i18n :group-rename-prompt) old-slug))))
          (new-display (string-trim new-display))
          (_ (when (string-empty-p new-display)
               (user-error "Invalid name")))
@@ -161,7 +161,7 @@
         (setf (context-navigator-state-current-group-slug cur*) new-slug))
       (when cur* (context-navigator--set-state cur*)))
     (context-navigator-groups-open)
-    (message "Renamed group: %s → %s (%s)" old-slug new-display new-slug)
+    (message (context-navigator-i18n :group-renamed) old-slug new-display new-slug)
     new-slug))
 
 ;;;###autoload
@@ -177,7 +177,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
       (user-error "Cannot delete 'default'"))
     (let ((need-confirm (and (not noninteractive) (not no-confirm))))
       (when (or (not need-confirm)
-                (yes-or-no-p (format "Delete group '%s'? " slug)))
+                (yes-or-no-p (format (context-navigator-i18n :group-delete-confirm) slug)))
         (let ((file (context-navigator-persist-context-file root slug)))
           (when (file-exists-p file)
             (ignore-errors (delete-file file))))
@@ -201,7 +201,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
           (when deleted-active
             (ignore-errors (context-navigator--load-group-for-root root "default")))))))
   (context-navigator-groups-open)
-  (message "Deleted group: %s" slug)
+  (message (context-navigator-i18n :group-deleted) slug)
   t)
 
 ;;;###autoload
@@ -212,7 +212,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
          (cand (context-navigator--groups-candidates root))
          (src (or src-slug
                   (cdr (assoc (completing-read "Duplicate group: " cand nil t) cand))))
-         (new-display (or new-display (read-string (format "New name for duplicate of %s: " src))))
+         (new-display (or new-display (read-string (format (context-navigator-i18n :group-duplicate-prompt) src))))
          (new-display (string-trim new-display))
          (_ (when (string-empty-p new-display)
               (user-error "Invalid name")))
@@ -225,7 +225,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
           (copy-file src-file dst-file t)
         (ignore-errors (context-navigator-persist-save '() root dst))))
     (context-navigator-groups-open)
-    (message "Duplicated group %s → %s (%s)" src new-display dst)
+    (message (context-navigator-i18n :group-duplicated) src new-display dst)
     dst))
 
 ;;;###autoload
@@ -239,7 +239,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
          (slug (or slug
                    (cdr (assoc (completing-read
                                 (if cur
-                                    (format "Edit description (default %s): " cur)
+                                    (format (context-navigator-i18n :group-edit-desc-default) cur)
                                   "Edit description for group: ")
                                 cand nil t nil nil
                                 (car (rassoc cur cand)))
@@ -250,7 +250,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
          (alist (and (plist-member st :descriptions) (plist-get st :descriptions)))
          (old (and (listp alist) (cdr (assoc slug alist))))
          (input (or new-desc
-                    (read-string (format "Description for %s (empty to clear): " slug) old)))
+                    (read-string (format (context-navigator-i18n :group-edit-desc-for) slug) old)))
          (desc (string-trim input))
          (alist* (let ((clean (and (listp alist)
                                    (cl-remove-if (lambda (cell) (equal (car-safe cell) slug)) alist))))
@@ -261,9 +261,9 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
     (context-navigator--state-write root st)
     (context-navigator-groups-open)
     (force-mode-line-update t)
-    (message (if (string-empty-p desc)
-                 "Cleared description for %s" "Saved description for %s: %s")
-             slug (unless (string-empty-p desc) desc))
+    (if (string-empty-p desc)
+        (message (context-navigator-i18n :group-desc-cleared) slug)
+      (message (context-navigator-i18n :group-desc-updated) slug))
     desc))
 
 (provide 'context-navigator-groups)

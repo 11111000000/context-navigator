@@ -57,7 +57,7 @@
 (require 'context-navigator-view-controls-unit-test)
 (require 'context-navigator-view-controls-icons-test)
 (require 'context-navigator-headerline-test)
-(require 'context-navigator-compat-aliases-test)
+
 
 ;; Additional tests
 (require 'context-navigator-view-counters-test)

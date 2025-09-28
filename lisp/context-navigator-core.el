@@ -138,12 +138,14 @@ Creates <root>/.context/default.el (or ~/.context/default.el in global mode)."
 
 When enabled the package will short-circuit common balancing commands (e.g. `balance-windows'
 and `balance-windows-area') when the sidebar is present so the sidebar window is not resized
-or removed. This is enabled by default."
+or removed. Implemented by the `context-navigator-view-windows' module via lightweight advices
+installed while the Navigator is visible. This is enabled by default."
   :type 'boolean :group 'context-navigator)
 
 (defcustom context-navigator-protect-buffer-windows nil
   "When non-nil, protect Navigator buffer windows (magit-like mode) from balance operations.
-Disabled by default."
+Implemented by the `context-navigator-view-windows' module via lightweight advices installed
+while the Navigator buffer is visible. Disabled by default."
   :type 'boolean :group 'context-navigator)
 
 (defcustom context-navigator-display-mode 'sidebar
@@ -238,7 +240,7 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
       (customize-save-variable 'context-navigator-display-mode context-navigator-display-mode)))
   (ignore-errors (context-navigator-close))
   (ignore-errors (context-navigator-open))
-  (message "Navigator display mode: %s" context-navigator-display-mode))
+  (message (context-navigator-i18n :display-mode-changed) context-navigator-display-mode))
 
 (cl-defstruct (context-navigator-state
                (:constructor context-navigator--state-make))
@@ -379,7 +381,7 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
         (progn
           (context-navigator--apply-snapshot prev)
           (message "%s" (context-navigator-i18n :razor-undo)))
-      (message "Nothing to undo"))))
+      (message "%s" (context-navigator-i18n :nothing-to-undo)))))
 
 ;;;###autoload
 (defun context-navigator-redo ()
@@ -391,7 +393,7 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
         (progn
           (context-navigator--apply-snapshot next)
           (message "%s" (context-navigator-i18n :razor-redo)))
-      (message "Nothing to redo"))))
+      (message "%s" (context-navigator-i18n :nothing-to-redo)))))
 
 (defun context-navigator--log (fmt &rest args)
   "Log via centralized logger at :info level under :core topic."
@@ -548,7 +550,8 @@ If no sidebar windows are present, behave like `delete-other-windows'."
   "Toggle session flag to push Navigator context to gptel."
   (interactive)
   (setq context-navigator--push-to-gptel (not context-navigator--push-to-gptel))
-  (message "Navigator → gptel push: %s" (if context-navigator--push-to-gptel "on" "off"))
+  (message (context-navigator-i18n :push-state)
+           (context-navigator-i18n (if context-navigator--push-to-gptel :on :off)))
   (context-navigator-refresh))
 
 (defun context-navigator-toggle-auto-project-switch ()
@@ -565,7 +568,8 @@ the generic picker:
 or global (nil) when nothing is found."
   (interactive)
   (setq context-navigator--auto-project-switch (not context-navigator--auto-project-switch))
-  (message "Auto project switch: %s" (if context-navigator--auto-project-switch "on" "off"))
+  (message (context-navigator-i18n :auto-project-state)
+           (context-navigator-i18n (if context-navigator--auto-project-switch :on :off)))
   ;; Force a quick UI refresh for toggles
   (context-navigator-refresh)
   ;; On enabling auto-project, ensure mode is on and then publish a project switch.
@@ -606,23 +610,23 @@ Graceful when gptel is absent: show an informative message and do nothing."
   (interactive)
   (if (not (context-navigator-gptel-available-p))
       (progn
-        (message "gptel not available — skipping push (Navigator works fine without it)")
+        (message "%s" (context-navigator-i18n :gptel-not-available))
         nil)
     ;; Try a best-effort clear, then apply desired state.
-    (when (fboundp 'gptel-context-remove-all)
-      (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all))))
+    (ignore-errors (context-navigator-gptel-clear-all-now))
     (let* ((st (context-navigator--state-get))
            (items (and st (context-navigator-state-items st))))
       (ignore-errors (context-navigator-gptel-apply (or items '())))
-      (message "Pushed %d items to gptel" (length (or items '()))))))
+      (message (context-navigator-i18n :pushed-items) (length (or items '()))))))
 
 (defun context-navigator-clear-gptel-now ()
   "Clear gptel context and disable all items in the current model."
   (interactive)
   ;; Clear gptel context first (best-effort)
-  (if (fboundp 'gptel-context-remove-all)
-      (ignore-errors (gptel-context-remove-all))
-    (ignore-errors (context-navigator-gptel-apply '())))
+  (ignore-errors
+    (if (context-navigator-gptel-available-p)
+        (context-navigator-gptel-clear-all-now)
+      (context-navigator-gptel-apply '())))
   ;; Disable all items in the model so they are not re-pushed
   (let* ((st (context-navigator--state-get))
          (items (and st (context-navigator-state-items st))))
@@ -643,7 +647,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
         (context-navigator-set-items disabled))))
   ;; Notify listeners and report
   (ignore-errors (context-navigator-events-publish :gptel-change :cleared))
-  (message "gptel context cleared; all items disabled"))
+  (message "%s" (context-navigator-i18n :gptel-cleared)))
 
 (defun context-navigator-switch-to-current-buffer-project ()
   "Switch Navigator to the project of the current buffer (manual)."
@@ -682,9 +686,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (context-navigator--gptel-cancel-batch)
     ;; Reset gptel полностью перед загрузкой новой группы (если push включён), асинхронно.
     (when context-navigator--push-to-gptel
-      (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
+      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
     (context-navigator-events-publish :group-switch-start root slug)
     (context-navigator-persist-load-group-async
      root slug
@@ -859,10 +861,8 @@ Otherwise start immediately."
           ;; Clear only gptel before loading context of the new project; keep old items visible
           ;; while loading (the View shows a spinner when loading-p is set).
           (when context-navigator--push-to-gptel
-            ;; Avoid blocking UI by performing a remove-all asynchronously.
-            (if (fboundp 'gptel-context-remove-all)
-                (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-              (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
+            ;; Avoid blocking UI by performing a clear asynchronously (bridge handles capability).
+            (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
           (context-navigator--load-context-for-root root))))))
 
 
@@ -890,10 +890,8 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
       (context-navigator--set-state new))
     ;; Clear only gptel before loading the new context; keep current items until load succeeds.
     (when context-navigator--push-to-gptel
-      ;; Async clear to avoid blocking interactive manual load command.
-      (if (fboundp 'gptel-context-remove-all)
-          (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-        (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
+      ;; Async clear to avoid blocking interactive manual load command (bridge handles capability).
+      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
     (context-navigator--log "Manual load -> %s" (or root "~"))
     (context-navigator--load-context-for-root root)))
 
@@ -908,9 +906,9 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
     (if (and (stringp slug) (not (string-empty-p slug)))
         (let ((file (ignore-errors (context-navigator-persist-save items root slug))))
           (if file
-              (message "Context saved to %s" (abbreviate-file-name file))
-            (message "Failed to save context")))
-      (message "No active group — open groups list to select one"))))
+              (message (context-navigator-i18n :context-saved) (abbreviate-file-name file))
+            (message "%s" (context-navigator-i18n :context-save-failed))))
+      (message "%s" (context-navigator-i18n :no-active-group)))))
 
 ;;;###autoload
 (defun context-navigator-context-clear-current-group ()
@@ -927,8 +925,8 @@ Also clears gptel context when push→gptel is enabled."
           (when (and (boundp 'context-navigator--push-to-gptel)
                      context-navigator--push-to-gptel)
             (ignore-errors (context-navigator-clear-gptel-now)))
-          (message "Cleared current group's context (%s)" slug))
-      (message "No active group — open groups list to select one"))))
+          (message (context-navigator-i18n :cleared-current-group) slug))
+      (message "%s" (context-navigator-i18n :no-active-group)))))
 
 ;;;###autoload
 (defun context-navigator-context-unload ()
@@ -947,9 +945,7 @@ Removes all gptel context entries and resets state flags safely."
     (context-navigator--set-state new))
   ;; Clear gptel asynchronously (do not block UI)
   (when context-navigator--push-to-gptel
-    (if (fboundp 'gptel-context-remove-all)
-        (run-at-time 0 nil (lambda () (ignore-errors (let ((inhibit-message t) (message-log-max nil)) (gptel-context-remove-all)))))
-      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-apply '()))))))
+    (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
   ;; Clear model (inhibited autosave prevents accidental writes)
   (context-navigator-set-items '())
   ;; Drop inhibits and notify done
@@ -960,7 +956,7 @@ Removes all gptel context entries and resets state flags safely."
     (setf (context-navigator-state-loading-p new2) nil)
     (context-navigator--set-state new2))
   (context-navigator-events-publish :context-load-done nil nil)
-  (message "Context unloaded (global mode)"))
+  (message "%s" (context-navigator-i18n :context-unloaded)))
 
 ;;;###autoload
 (define-minor-mode context-navigator-mode
@@ -1025,7 +1021,7 @@ Prunes dead buffer items (non-live buffers). Return the new state."
          (cur (context-navigator--state-get))
          (new (context-navigator--state-with-items (context-navigator--state-copy cur) pruned)))
     (when (> removed 0)
-      (message "Removed %d dead buffer item(s)" removed))
+      (message (context-navigator-i18n :removed-dead-items) removed))
     (context-navigator--set-state new)
     (context-navigator-events-publish :model-refreshed new)
     ;; Immediate autosave on any change (in addition to debounced autosave):
@@ -1213,7 +1209,7 @@ Also triggers an immediate project switch so header shows actual project."
       (when root
         (context-navigator-events-publish :project-switch root)
         (ignore-errors (context-navigator-groups-open))))
-    (message "Context Navigator: restarted")))
+    (message "%s" (context-navigator-i18n :restarted))))
 
 ;; --- Item open/selection-by-name ------------------------------------------------
 
@@ -1266,7 +1262,7 @@ For selection items, activate the region (mark active) after opening."
                (funcall safe-goto beg)
                (push-mark end t t)
                (when (fboundp 'recenter) (recenter)))))))
-      (_ (message "Unknown item type")))))
+      (_ (message "%s" (context-navigator-i18n :unknown-item-type))))))
 
 (defun context-navigator--format-item-candidate (item)
   "Return a human-readable label for ITEM: \"<name> — <path-or-buffer>\"."
@@ -1302,7 +1298,7 @@ For selections, activate the region after opening."
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (if (not (and (listp items) (> (length items) 0)))
-        (message "Нет элементов в текущем контексте.")
+        (message "%s" (context-navigator-i18n :no-items-in-context))
       (let* ((base-alist
               (mapcar (lambda (it) (cons (context-navigator--format-item-candidate it) it))
                       items))
@@ -1318,7 +1314,7 @@ For selections, activate the region after opening."
                        (cons (format "%s (%d)" lbl cnt) (cdr cell))
                      cell)))
                base-alist))
-             (prompt "Элемент контекста: ")
+             (prompt (context-navigator-i18n :select-item-prompt))
              (prefer-other (context-navigator--window-on-sidebar-p))
              (choice
               (cond

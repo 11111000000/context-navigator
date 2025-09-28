@@ -41,6 +41,7 @@
 (require 'context-navigator-view-indicators)
 (require 'context-navigator-view-counters)
 (require 'context-navigator-view-spinner)
+(require 'context-navigator-view-windows)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -254,8 +255,7 @@ it can become responsive to focus changes."
 
 ;; Controls moved to context-navigator-view-controls.el
 ;; Keep compiler happy with declarations; actual definitions provided by the module.
-(declare-function context-navigator-view-controls--build-toggles "context-navigator-view-controls" ())
-(declare-function context-navigator-view-controls--build-actions "context-navigator-view-controls" ())
+
 (declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
 (declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
 
@@ -301,23 +301,6 @@ it can become responsive to focus changes."
   "Delegate closable-buffers collection to counters module."
   (ignore-errors (context-navigator-view-counters-collect-closable)))
 
-;; Legacy wrappers for controls/segments (thin delegators to controls module)
-
-(defun context-navigator-view--wrap-segments (segments total-width)
-  "Wrap SEGMENTS into lines within TOTAL-WIDTH using controls module."
-  (when (fboundp 'context-navigator-view-controls--wrap-segments)
-    (context-navigator-view-controls--wrap-segments segments total-width)))
-
-;; Minimal legacy aliases to keep unit-tests happy
-(defalias 'context-navigator-view--footer-control-segments
-  'context-navigator-view-controls-segments)
-(defalias 'context-navigator-view--footer-control-lines
-  'context-navigator-view-controls-lines)
-(defalias 'context-navigator-view--header-toggle-lines
-  'context-navigator-view-controls-lines)
-(defalias 'context-navigator-view--groups-footer-lines
-  'context-navigator-view--groups-help-lines)
-
 ;; Loading spinner helpers ----------------------------------------------------
 
 (defun context-navigator-view--spinner-start ()
@@ -331,6 +314,7 @@ Degrades to a static indicator when timer slippage exceeds threshold."
 
 
 ;; Controls API declarations are defined earlier to avoid duplication.
+
 
 
 ;; Groups rendering helpers moved to context-navigator-view-groups.el
@@ -610,7 +594,7 @@ when none exists."
       (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
     (if pos
         (goto-char pos)
-      (message "No interactive elements"))))
+      (message "%s" (context-navigator-i18n :no-interactive-elements)))))
 
 (defun context-navigator-view-tab-next ()
   "Move point to the next interactive element.
@@ -631,7 +615,7 @@ On title line: toggle collapse. On Stats header: toggle stats. Wrap at end."
            (pos (context-navigator-view--find-next-interactive-pos cur-end)))
       (unless pos
         (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
-      (if pos (goto-char pos) (message "No interactive elements")))))
+      (if pos (goto-char pos) (message "%s" (context-navigator-i18n :no-interactive-elements))))))
 
 (defun context-navigator-view-tab-previous ()
   "Move point to the previous interactive element. Wrap at start."
@@ -644,7 +628,7 @@ On title line: toggle collapse. On Stats header: toggle stats. Wrap at end."
          (pos (context-navigator-view--find-prev-interactive-pos cur-beg)))
     (unless pos
       (setq pos (context-navigator-view--find-prev-interactive-pos (point-max))))
-    (if pos (goto-char pos) (message "No interactive elements"))))
+    (if pos (goto-char pos) (message "%s" (context-navigator-i18n :no-interactive-elements)))))
 
 
 
@@ -700,7 +684,7 @@ existing debounced autosave."
              (idx (and st2 (context-navigator-state-index st2)))
              (it2 (and idx (gethash key idx)))
              (en (and it2 (context-navigator-item-enabled it2))))
-        (message (if en "Enabled: %s" "Disabled: %s") name))
+        (message (context-navigator-i18n (if en :item-enabled :item-disabled)) name))
       ;; Refresh UI and advance to the next item
       (context-navigator-view--schedule-render)
       (context-navigator-view--render-if-visible)
@@ -726,9 +710,9 @@ Order of operations:
       (context-navigator-view--render-if-visible)
       (context-navigator-view-next-item)
       (pcase res
-        (:added   (message "Added to gptel: %s" (or (context-navigator-item-name item) key)))
-        (:removed (message "Removed from gptel: %s" (or (context-navigator-item-name item) key)))
-        (_        (message "No change for: %s" (or (context-navigator-item-name item) key)))))))
+        (:added   (message (context-navigator-i18n :gptel-added-one) (or (context-navigator-item-name item) key)))
+        (:removed (message (context-navigator-i18n :gptel-removed-one) (or (context-navigator-item-name item) key)))
+        (_        (message (context-navigator-i18n :gptel-no-change) (or (context-navigator-item-name item) key)))))))
 
 (defun context-navigator-view-delete-from-model ()
   "Delete the item at point from the model permanently and apply to gptel."
@@ -742,7 +726,7 @@ Order of operations:
            (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
       (when (and items (boundp 'context-navigator--push-to-gptel) context-navigator--push-to-gptel)
         (ignore-errors (context-navigator-gptel-apply items)))
-      (message "Deleted from model: %s" (or (context-navigator-item-name item) key)))))
+      (message (context-navigator-i18n :deleted-from-model) (or (context-navigator-item-name item) key)))))
 
 (defun context-navigator-view-refresh ()
   "Force re-render of the sidebar, if visible."
@@ -760,7 +744,6 @@ Order of operations:
         (delete-window win)))
     ;; Remove window-balance protections when Navigator windows are gone.
     (ignore-errors
-      (require 'context-navigator-view-windows)
       (when (fboundp 'context-navigator-view-windows-teardown)
         (context-navigator-view-windows-teardown)))))
 
@@ -825,7 +808,7 @@ Order of operations:
                           (slug (and st (context-navigator-state-current-group-slug st)))
                           (file (and slug (ignore-errors (context-navigator-persist-context-file root slug)))))
                      (when (and (stringp file) (file-exists-p file))
-                       (message "Context Navigator: group '%s' file looks unreadable. Press h to open groups, then d to delete." (or slug "<unknown>")))
+                       (message (context-navigator-i18n :group-file-unreadable-hint) (or slug "<unknown>")))
                      (when context-navigator-auto-open-groups-on-error
                        (setq context-navigator-view--mode 'groups)
                        (ignore-errors (context-navigator-groups-open)))))
@@ -1141,7 +1124,7 @@ MAP is a keymap to search for COMMAND bindings."
     (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
     ;; Clear group (explicit shortcut matching UI hint)
-    (define-key m (kbd "D")   #'context-navigator-view-clear-group)
+    (define-key m (kbd "E")   #'context-navigator-view-clear-group)
     ;; Groups-specific keys
     (define-key m (kbd "u")   #'context-navigator-view-go-up)      ;; show groups from items (Up)
     (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
@@ -1268,7 +1251,6 @@ Do not highlight purely decorative separators."
           (set-window-parameter w 'context-navigator-view 'sidebar)))
       ;; Ensure window-balance protections are active when Navigator is in use.
       (ignore-errors
-        (require 'context-navigator-view-windows)
         (when (fboundp 'context-navigator-view-windows-setup)
           (context-navigator-view-windows-setup)))
       (select-window win))
@@ -1322,7 +1304,7 @@ Do not highlight purely decorative separators."
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                              (not (eq w (selected-window)))))
+                                                   (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)
@@ -1340,7 +1322,6 @@ Do not highlight purely decorative separators."
         (set-window-parameter win 'context-navigator-view 'buffer))
       ;; Ensure window-balance protections are active in buffer mode as well.
       (ignore-errors
-        (require 'context-navigator-view-windows)
         (when (fboundp 'context-navigator-view-windows-setup)
           (context-navigator-view-windows-setup)))
       (with-current-buffer buf
@@ -1363,7 +1344,6 @@ Do not highlight purely decorative separators."
           (delete-window w)))
       ;; Remove window-balance protections if no Navigator windows remain.
       (ignore-errors
-        (require 'context-navigator-view-windows)
         (when (fboundp 'context-navigator-view-windows-teardown)
           (context-navigator-view-windows-teardown))))))
 
@@ -1462,7 +1442,7 @@ Do not highlight purely decorative separators."
     (if (and org-buf (fboundp 'context-navigator-razor-run))
         (with-current-buffer org-buf
           (call-interactively 'context-navigator-razor-run))
-      (message "Open an org-mode buffer to run Occam filter"))))
+      (message "%s" (context-navigator-i18n :razor-only-org-mode)))))
 
 ;;;###autoload
 (defun context-navigator-view-open-all-buffers ()
@@ -1500,7 +1480,7 @@ Buffers are opened in background; we do not change window focus."
              (setq count (1+ count)))))
         (_ nil)))
     (context-navigator-view--schedule-render)
-    (message "Opened %d context buffer(s) in background" count)))
+    (message (context-navigator-i18n :opened-context-buffers-bg) count)))
 
 (defun context-navigator-view-close-all-buffers ()
   "Close all live buffers that belong to items in the current model."
@@ -1513,7 +1493,7 @@ Buffers are opened in background; we do not change window focus."
         (ignore-errors (kill-buffer b))
         (setq count (1+ count))))
     (context-navigator-view--schedule-render)
-    (message "Closed %d context buffer(s)" count)))
+    (message (context-navigator-i18n :closed-context-buffers) count)))
 
 (defun context-navigator-view-clear-group ()
   "Clear current group's items and redraw immediately."
@@ -1644,7 +1624,7 @@ Buffers are opened in background; we do not change window focus."
      ((eq tgl 'auto) (context-navigator-view-toggle-auto-project))
      ((eq context-navigator-view--mode 'groups)
       (or (context-navigator-view--open-group-at-point)
-          (message "No group at point")))
+          (message "%s" (context-navigator-i18n :no-group-at-point))))
      (t
       (if (get-text-property (point) 'context-navigator-groups-up)
           (context-navigator-view-go-up)
@@ -1663,7 +1643,7 @@ Buffers are opened in background; we do not change window focus."
   (if (eq context-navigator-view--mode 'groups)
       (if-let* ((cell (context-navigator-view--at-group)))
           (ignore-errors (context-navigator-group-delete (car cell)))
-        (message "No group at point"))
+        (message "%s" (context-navigator-i18n :no-group-at-point)))
     (context-navigator-view-delete-from-model)))
 
 (defun context-navigator-view-go-up ()
@@ -1687,7 +1667,7 @@ Buffers are opened in background; we do not change window focus."
         (when (and slug (stringp slug))
           (setq context-navigator-view--mode 'items)
           (context-navigator-view--schedule-render)))
-    (message "Press h to open groups list first")))
+    (message "%s" (context-navigator-i18n :press-h-open-groups-first))))
 
 (defun context-navigator-view-group-rename ()
   "Rename selected group (groups mode)."
@@ -1695,7 +1675,7 @@ Buffers are opened in background; we do not change window focus."
   (if (eq context-navigator-view--mode 'groups)
       (let ((slug (car (or (context-navigator-view--at-group) '(nil)))))
         (ignore-errors (context-navigator-group-rename slug)))
-    (message "Press h to open groups list first")))
+    (message "%s" (context-navigator-i18n :press-h-open-groups-first))))
 
 (defun context-navigator-view-group-duplicate ()
   "Duplicate selected group (groups mode)."
@@ -1703,7 +1683,7 @@ Buffers are opened in background; we do not change window focus."
   (if (eq context-navigator-view--mode 'groups)
       (let ((slug (car (or (context-navigator-view--at-group) '(nil)))))
         (ignore-errors (context-navigator-group-duplicate slug)))
-    (message "Press h to open groups list first")))
+    (message "%s" (context-navigator-i18n :press-h-open-groups-first))))
 
 (defun context-navigator-view-group-edit-description ()
   "Edit description for selected group (groups mode) or current group otherwise."
@@ -1739,6 +1719,8 @@ Buffers are opened in background; we do not change window focus."
     (context-navigator-stats-toggle))
   (context-navigator-view--schedule-render)
   (context-navigator-view--render-if-visible))
+
+
 
 (provide 'context-navigator-view)
 ;;; context-navigator-view.el ends here
