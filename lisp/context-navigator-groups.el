@@ -21,6 +21,8 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-events)
 (require 'context-navigator-log)
+(require 'context-navigator-ui)
+(require 'context-navigator-i18n)
 (require 'context-navigator-project)
 
 ;; Minimal Core declarations (do not require core to avoid cycles)
@@ -116,10 +118,10 @@
   (interactive)
   (let* ((root (or (context-navigator--current-root)
                    (ignore-errors (context-navigator-project-current-root (current-buffer)))))
-         (name (or display-name (read-string "New group name: ")))
+         (name (or display-name (read-string (context-navigator-i18n :group-create-prompt))))
          (name (string-trim name)))
     (when (string-empty-p name)
-      (user-error "Invalid name"))
+      (context-navigator-ui-error :invalid-name))
     (ignore-errors (context-navigator-events-cancel :autosave))
     (let* ((slug (context-navigator-persist-slugify name))
            (file (context-navigator-persist-context-file root slug)))
@@ -127,7 +129,7 @@
       (make-directory (file-name-directory file) t)
       (ignore-errors (context-navigator-persist-save '() root slug))
       (ignore-errors (context-navigator--load-group-for-root root slug))
-      (message (context-navigator-i18n :group-created) name slug)
+      (context-navigator-ui-info :group-created name slug)
       slug)))
 
 ;;;###autoload
@@ -138,11 +140,11 @@
          (cand (context-navigator--groups-candidates root))
          (old-slug (or old-slug
                        (cdr (assoc (completing-read "Rename group: " cand nil t) cand))))
-         (_ (when (equal old-slug "default") (user-error "Cannot rename 'default'")))
+         (_ (when (equal old-slug "default") (context-navigator-ui-error :cannot-rename-default)))
          (new-display (or new-display (read-string (format (context-navigator-i18n :group-rename-prompt) old-slug))))
          (new-display (string-trim new-display))
          (_ (when (string-empty-p new-display)
-              (user-error "Invalid name")))
+              (context-navigator-ui-error :invalid-name)))
          (new-slug (context-navigator-persist-slugify new-display)))
     (unless (equal old-slug new-slug)
       (context-navigator--assert-unique-slug root new-slug))
@@ -161,7 +163,7 @@
         (setf (context-navigator-state-current-group-slug cur*) new-slug))
       (when cur* (context-navigator--set-state cur*)))
     (context-navigator-groups-open)
-    (message (context-navigator-i18n :group-renamed) old-slug new-display new-slug)
+    (context-navigator-ui-info :group-renamed old-slug new-display new-slug)
     new-slug))
 
 ;;;###autoload
@@ -174,10 +176,10 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
          (slug (or slug
                    (cdr (assoc (completing-read "Delete group: " cand nil t) cand)))))
     (when (equal slug "default")
-      (user-error "Cannot delete 'default'"))
+      (context-navigator-ui-error :cannot-delete-default))
     (let ((need-confirm (and (not noninteractive) (not no-confirm))))
       (when (or (not need-confirm)
-                (yes-or-no-p (format (context-navigator-i18n :group-delete-confirm) slug)))
+                (context-navigator-ui-ask :group-delete-confirm slug))
         (let ((file (context-navigator-persist-context-file root slug)))
           (when (file-exists-p file)
             (ignore-errors (delete-file file))))
@@ -201,7 +203,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
           (when deleted-active
             (ignore-errors (context-navigator--load-group-for-root root "default")))))))
   (context-navigator-groups-open)
-  (message (context-navigator-i18n :group-deleted) slug)
+  (context-navigator-ui-info :group-deleted slug)
   t)
 
 ;;;###autoload
@@ -215,7 +217,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
          (new-display (or new-display (read-string (format (context-navigator-i18n :group-duplicate-prompt) src))))
          (new-display (string-trim new-display))
          (_ (when (string-empty-p new-display)
-              (user-error "Invalid name")))
+              (context-navigator-ui-error :invalid-name)))
          (dst (context-navigator-persist-slugify new-display)))
     (context-navigator--assert-unique-slug root dst)
     (let* ((src-file (context-navigator-persist-context-file root src))
@@ -225,7 +227,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
           (copy-file src-file dst-file t)
         (ignore-errors (context-navigator-persist-save '() root dst))))
     (context-navigator-groups-open)
-    (message (context-navigator-i18n :group-duplicated) src new-display dst)
+    (context-navigator-ui-info :group-duplicated src new-display dst)
     dst))
 
 ;;;###autoload
@@ -245,7 +247,7 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
                                 (car (rassoc cur cand)))
                                cand))))
          (_ (when (or (null slug) (string-empty-p slug))
-              (user-error "No group selected")))
+              (context-navigator-ui-error :no-group-selected)))
          (st (context-navigator--state-read root))
          (alist (and (plist-member st :descriptions) (plist-get st :descriptions)))
          (old (and (listp alist) (cdr (assoc slug alist))))
@@ -262,8 +264,8 @@ When NO-CONFIRM is non-nil or in batch mode, do not prompt."
     (context-navigator-groups-open)
     (force-mode-line-update t)
     (if (string-empty-p desc)
-        (message (context-navigator-i18n :group-desc-cleared) slug)
-      (message (context-navigator-i18n :group-desc-updated) slug))
+        (context-navigator-ui-info :group-desc-cleared slug)
+      (context-navigator-ui-info :group-desc-updated slug))
     desc))
 
 (provide 'context-navigator-groups)

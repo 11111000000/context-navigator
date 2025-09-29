@@ -689,6 +689,21 @@
     (:group-duplicated
      (en . "Duplicated group %s → %s (%s)")
      (ru . "Дублирована группа %s → %s (%s)"))
+    (:group-create-prompt
+     (en . "New group name: ")
+     (ru . "Новое имя группы: "))
+    (:cannot-rename-default
+     (en . "Cannot rename 'default'")
+     (ru . "Нельзя переименовать 'default'"))
+    (:cannot-delete-default
+     (en . "Cannot delete 'default'")
+     (ru . "Нельзя удалить 'default'"))
+    (:invalid-name
+     (en . "Invalid name")
+     (ru . "Некорректное имя"))
+    (:no-group-selected
+     (en . "No group selected")
+     (ru . "Группа не выбрана"))
     (:group-edit-desc-default
      (en . "Edit description (default %s): ")
      (ru . "Изменить описание (по умолчанию %s): "))
@@ -1449,7 +1464,7 @@
 
     ;; Multifile runtime hints/messages
     (:mf-title
-     (en . "🧭 Context Multifile View")
+     (en . "Context Multifile View")
      (ru . "🧭 Мультифайл просмотр"))
     (:mf-end-of-sections
      (en . "End of sections")
@@ -1528,10 +1543,16 @@
      (t 'en))))
 
 (defun context-navigator-i18n--lang ()
-  "Return current language symbol."
-  (if (eq context-navigator-language 'auto)
-      (context-navigator-i18n--lang-from-locale)
-    context-navigator-language))
+  "Return current language symbol.
+
+In noninteractive sessions (ERT/CI) force English ('en) for stable test output.
+When running interactively, respect `context-navigator-language' and the
+locale-based fallback when it is set to 'auto."
+  (if noninteractive
+      'en
+    (if (eq context-navigator-language 'auto)
+        (context-navigator-i18n--lang-from-locale)
+      context-navigator-language)))
 
 (defun context-navigator-i18n (key)
   "Return localized string for KEY."
@@ -1541,6 +1562,19 @@
     (or val
         (and row (cdr (assq 'en (cdr row))))
         (format "%s" key))))
+
+;; Note: language selection in noninteractive (ERT/CI) is handled inside
+;; `context-navigator-i18n--lang' to ensure deterministic English output for tests.
+
+;; Test/runtime helpers and safe aliases
+;; In noninteractive (CI/ERT) sessions prefer stable English strings unless
+;; the user explicitly overrides context-navigator-language.
+(when (and noninteractive (not (bound-and-true-p context-navigator-language)))
+  (setq context-navigator-language 'en))
+
+;; Provide a safe "_" alias for concise i18n calls in code/tests.
+(unless (fboundp '_)
+  (defalias '_ #'context-navigator-i18n))
 
 (provide 'context-navigator-i18n)
 ;;; context-navigator-i18n.el ends here

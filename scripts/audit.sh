@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/audit.sh — Refactor status audit (non-test)
-# Prints a concise overview of repository state relevant to the 1.3.x refactor.
+# Prints a concise overview of repository state relevant to the 1.2.x refactor.
 # Focus: modules, wrappers/aliases, i18n keys coverage, defun duplicates, require/provide map, LOC.
 
 set -euo pipefail
@@ -57,12 +57,14 @@ sec "Per-file defun counts"
 if [[ -n "${RG}" ]]; then
   # Count defun / cl-defun / defmacro per file
   while IFS= read -r -d '' f; do
-    c="$(${RG} -n --pcre2 '^\s*\((?:cl-)?defun\b|^\s*\(defmacro\b' "${f}" | wc -l | awk '{print $1}')"
+    # Guard against no-match exit (rg returns 1); keep pipefail intact
+    c="$({ ${RG} -n --pcre2 '^\s*\((?:cl-)?defun\b|^\s*\(defmacro\b' "${f}" || true; } | wc -l | awk '{print $1}')"
     printf '%6d  %s\n' "${c}" "${f#./}"
   done < <(find "${LISP_DIR}" -type f -name '*.el' -print0) | sort -n
 else
   while IFS= read -r -d '' f; do
-    c="$(egrep -n '^\s*\((cl-)?defun\b|^\s*\(defmacro\b' "${f}" | wc -l | awk '{print $1}')"
+    # Same guard for grep fallback
+    c="$({ egrep -n '^\s*\((cl-)?defun\b|^\s*\(defmacro\b' "${f}" || true; } | wc -l | awk '{print $1}')"
     printf '%6d  %s\n' "${c}" "${f#./}"
   done < <(find "${LISP_DIR}" -type f -name '*.el' -print0) | sort -n
 fi
@@ -120,8 +122,8 @@ while IFS= read -r -d '' f; do
     }' "${f}" >> "${REQUIRES}"
 done < <(find "${LISP_DIR}" -type f -name '*.el' -print0)
 
-printf '%s\n' "Provides:"; sort "${PROVIDES}"
-printf '\n%s\n' "Requires:"; sort "${REQUIRES}"
+printf '%s\n' "Provides:"; sort -u "${PROVIDES}"
+printf '\n%s\n' "Requires:"; sort -u "${REQUIRES}"
 
 # Sanity: requires missing their provide
 printf '\n%s\n' "Requires with no matching provide (symbol only):"
@@ -276,10 +278,36 @@ if have emacs; then
           (cond
            ;; Direct call
            ((eq fs 'context-navigator-i18n)
-            (cn--emit (car args)))
+            (let ((a1 (car args)))
+              (cond
+               ;; Literal keyword
+               ((keywordp a1) (cn--emit a1))
+               ;; Simple dynamic: (if cond :on :off) — emit both branches
+               ((and (consp a1) (eq (car a1) 'if))
+                (let ((then (nth 2 a1))
+                      (else (nth 3 a1)))
+                  (when (keywordp then) (cn--emit then))
+                  (when (keywordp else) (cn--emit else))))
+               (t nil))))
            ;; tr alias active
            ((and (eq fs 'tr) (plist-get env :tr))
             (cn--emit (car args)))
+           ;; underscore alias (_ key) — treat like direct i18n
+           ((eq fs '_)
+            (cn--emit (car args)))
+           ;; UI wrappers with literal keys
+           ((memq fs '(context-navigator-ui-ask
+                       context-navigator-ui-info
+                       context-navigator-ui-warn
+                       context-navigator-ui-error))
+            (let ((a1 (car args)))
+              (cond
+               ((keywordp a1) (cn--emit a1))
+               ((and (consp a1) (eq (car a1) 'if))
+                (let ((then (nth 2 a1))
+                      (else (nth 3 a1)))
+                  (when (keywordp then) (cn--emit then))
+                  (when (keywordp else) (cn--emit else)))))))
            ;; funcall variants
            ((eq fs 'funcall)
             (let* ((callee (car args))
@@ -324,17 +352,24 @@ if have emacs; then
 ELISP
   CN_LISP_DIR="${LISP_DIR}" emacs --batch -Q -L "${LISP_DIR}" -l "${TMPD}/scan-i18n.el" \
     > "${REF_KEYS_FILE}.raw" 2> "${TMPD}/emacs_i18n_err.log" || true
+  # If Emacs scanner failed or produced no output, warn and allow the subsequent
+  # rg-based patterns to populate the .raw file (fallback).
+  if [[ -s "${TMPD}/emacs_i18n_err.log" || ! -s "${REF_KEYS_FILE}.raw" ]]; then
+    echo "Warning: Emacs i18n scanner failed or produced no output; falling back to rg-only extraction." >&2
+  fi
   # Подстраховка rg для редких форм
   if [[ -n "${RG}" ]]; then
-    ${RG} --no-filename -U --pcre2 '\(context-navigator-i18n(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
     ${RG} --no-filename -U --pcre2 '\([[:space:]]*tr\b(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
     ${RG} --no-filename -U --pcre2 '\(funcall[[:space:]]+tr(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
-    ${RG} --no-filename -U --pcre2 '\(funcall(?s:.)*?context-navigator-i18n(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
-    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+      --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
+    ${RG} --no-filename -U --pcre2 '\(context-navigator-ui-(?:ask|info|warn|error)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
   fi
 elif [[ -n "${RG}" ]]; then
@@ -347,9 +382,11 @@ elif [[ -n "${RG}" ]]; then
     --replace '$1' > "${TMPD}/i18n_refs_funcall.txt" || true
   ${RG} --no-filename -U --pcre2 '\([[:space:]]*tr\b(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
     --replace '$1' > "${TMPD}/i18n_refs_tr_alias.txt" || true
-  ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+  ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
     --replace '$1' > "${TMPD}/i18n_refs_nested.txt" || true
-  cat "${TMPD}/i18n_refs_direct.txt" "${TMPD}/i18n_refs_tr.txt" "${TMPD}/i18n_refs_funcall.txt" "${TMPD}/i18n_refs_tr_alias.txt" "${TMPD}/i18n_refs_nested.txt" 2>/dev/null \
+  ${RG} --no-filename -U --pcre2 '\(context-navigator-ui-(?:ask|info|warn|error)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+    --replace '$1' > "${TMPD}/i18n_refs_ui.txt" || true
+  cat "${TMPD}/i18n_refs_direct.txt" "${TMPD}/i18n_refs_tr.txt" "${TMPD}/i18n_refs_funcall.txt" "${TMPD}/i18n_refs_tr_alias.txt" "${TMPD}/i18n_refs_nested.txt" "${TMPD}/i18n_refs_ui.txt" 2>/dev/null \
     | sort -u > "${REF_KEYS_FILE}"
 else
   I18N_METHOD="grep"
@@ -710,6 +747,7 @@ else
   GP_DIRECT_COUNT="$({ egrep -n '\([[:space:]]*gptel-context\b' -R "${LISP_DIR}" | grep -v 'context-navigator-gptel-bridge.el' | grep -v 'memq\|quote\|:gptel-change' || true; } | wc -l | awk '{print $1}')"
 fi
 
+# Summary KV metrics (compact)
 kv "duplicates (defuns)"                          "${DUP_TOTAL}"
 kv "controls: order∖registry"                     "${CTRL_ORDER_MINUS_REG}"
 kv "controls: registry∖order"                     "${CTRL_REG_MINUS_ORDER}"
@@ -722,6 +760,258 @@ kv "legacy orphans"                               "${ORPHANS_COUNT}"
 kv "legacy dead defs"                             "${DEAD_COUNT}"
 kv "TODO/FIXME markers"                           "${TODO_COUNT}"
 kv "gptel direct calls outside bridge"            "${GP_DIRECT_COUNT}"
+
+# Details: print short actionable lists for non-zero items
+echo
+echo "Details:"
+echo
+
+if [[ "${DUP_TOTAL}" -gt 0 ]]; then
+  echo "Duplicate function definitions (top entries):"
+  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{printf("  %4d  %s\n",$1,$2)}' | head -n 20
+  echo "Locations (sample):"
+  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{print $2}' | head -n 8 \
+    | while read -r name; do
+        echo "  ${name}:"
+        grep -F "^${name}|" "${NAMES_FILE}" \
+          | sed 's#^\([^|]*\)|\([^|]*\)|\(.*\)$#      \3 : \2#' \
+          | sed 's#^\./##' | head -n 6
+      done
+  echo
+fi
+
+if [[ "${CTRL_ORDER_MINUS_REG}" -gt 0 ]]; then
+  echo "Controls: in order but missing in registry:"
+  LC_ALL=C comm -23 "${TMP_ORDER}" "${TMP_REG}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_REG_MINUS_ORDER}" -gt 0 ]]; then
+  echo "Controls: in registry but not listed in order (won't render):"
+  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ORDER}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_REG_MISSING_ICONS}" -gt 0 ]]; then
+  echo "Controls registry keys missing icon definitions:"
+  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ICONS}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_ICONS_UNUSED}" -gt 0 ]]; then
+  echo "Icon keys unused by registry (excl. mf-*):"
+  LC_ALL=C comm -23 "${TMP_ICONS}" "${TMP_REG}" | grep -v '^mf-' | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${I18N_MISSING}" -gt 0 ]]; then
+  echo "i18n: Missing keys (referenced but not defined):"
+  LC_ALL=C comm -23 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${I18N_UNUSED}" -gt 0 ]]; then
+  echo "i18n: Unused keys (defined but not referenced) — review for pruning:"
+  LC_ALL=C comm -13 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${REQMISS_COUNT}" -gt 0 ]]; then
+  echo "Provide/Require: project-internal symbols missing provide:"
+  grep -F -x -v -f "${TMPD}/externals.txt" "${TMPD}/req_missing.txt" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${ORPHANS_COUNT}" -gt 0 ]]; then
+  echo "Legacy wrappers: Orphan references (referenced, not defined):"
+  printf "%b\n" "${ORPHANS}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${DEAD_COUNT}" -gt 0 ]]; then
+  echo "Legacy wrappers: Dead definitions (defined, not referenced):"
+  printf "%b\n" "${DEAD}" | sed 's/^/  /' || true
+  echo
+fi
+
+# Suggestions (print only when non-zero)
+sec "Suggested actions"
+suggested=0
+if [[ "${DUP_TOTAL}" -gt 0 ]]; then
+  echo "- Remove/merge duplicate defuns (see 'Duplicate function definitions' above)"; suggested=1; fi
+if [[ "${CTRL_ORDER_MINUS_REG}" -gt 0 || "${CTRL_REG_MINUS_ORDER}" -gt 0 || "${CTRL_REG_MISSING_ICONS}" -gt 0 ]]; then
+  echo "- Controls: sync order/registry/icon-map (see 'Controls (order/registry/icons) consistency')"; suggested=1; fi
+if [[ "${I18N_MISSING}" -gt 0 ]]; then
+  echo "- i18n: add missing keys or correct call sites"; suggested=1; fi
+if [[ "${I18N_UNUSED}" -gt 0 ]]; then
+  echo "- i18n: consider pruning unused keys (verify first)"; suggested=1; fi
+if [[ "${REQMISS_COUNT}" -gt 0 ]]; then
+  echo "- Provide/Require: add missing provide or mark as external dependency"; suggested=1; fi
+if [[ "${ORPHANS_COUNT}" -gt 0 || "${DEAD_COUNT}" -gt 0 ]]; then
+  echo "- Legacy wrappers: remove dead defs, or update references"; suggested=1; fi
+if [[ "${TODO_COUNT}" -gt 0 ]]; then
+  echo "- Review TODO/FIXME list"; suggested=1; fi
+if [[ "${GP_DIRECT_COUNT}" -gt 0 ]]; then
+  echo "- Route direct gptel-context* calls via the bridge"; suggested=1; fi
+if [[ "${suggested}" -eq 0 ]]; then
+  echo "- No action items. Refactor status looks clean."
+fi
+
+# Final status line and optional strict exit
+FAIL_COUNT=0
+(( FAIL_COUNT += DUP_TOTAL ))
+(( FAIL_COUNT += CTRL_ORDER_MINUS_REG + CTRL_REG_MINUS_ORDER + CTRL_REG_MISSING_ICONS ))
+(( FAIL_COUNT += I18N_MISSING + REQMISS_COUNT + ORPHANS_COUNT + DEAD_COUNT ))
+# TODO/FIXME and direct gptel-calls считаем предупреждением, не фейлом
+
+if [[ "${FAIL_COUNT}" -gt 0 ]]; then
+  kv "STATUS" "ATTENTION (${FAIL_COUNT} issue(s) detected)"
+else
+  kv "STATUS" "OK"
+fi
+
+# If called with --strict, return non-zero on problems
+if [[ "${1:-}" == "--strict" && "${FAIL_COUNT}" -gt 0 ]]; then
+  printf '\nDone (strict: FAIL).\n'
+  exit 1
+fi
+
+printf '\nDone.\n'
+
+# Duplicates (defuns)
+DUP_TOTAL="$(cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | awk '$1>1' | wc -l | awk '{print $1}')"
+
+# Controls diffs/counts (guard against comm errors)
+CTRL_ORDER_MINUS_REG="$({ LC_ALL=C comm -23 "${TMP_ORDER}" "${TMP_REG}"   || true; } | wc -l | awk '{print $1}')"
+CTRL_REG_MINUS_ORDER="$({ LC_ALL=C comm -23 "${TMP_REG}"  "${TMP_ORDER}"  || true; } | wc -l | awk '{print $1}')"
+CTRL_REG_MISSING_ICONS="$({ LC_ALL=C comm -23 "${TMP_REG}"  "${TMP_ICONS}" || true; } | wc -l | awk '{print $1}')"
+# Safe count without grep (pipefail-safe), ignore local mf-* icons
+CTRL_ICONS_UNUSED="$({ LC_ALL=C comm -23 "${TMP_ICONS}" "${TMP_REG}" || true; } | awk 'BEGIN{c=0} !/^mf-/{c++} END{print c}')"
+
+# i18n diffs/counts
+if [[ "${REF_COUNT}" -eq 0 ]]; then
+  # When referenced list is empty, avoid misleading massive "unused" number in summary.
+  I18N_MISSING="0"
+  I18N_UNUSED="0"
+else
+  I18N_MISSING="$({ LC_ALL=C comm -23 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" || true; } | wc -l | awk '{print $1}')"
+  I18N_UNUSED="$({ LC_ALL=C comm -13 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" || true; } | wc -l | awk '{print $1}')"
+fi
+
+# requires without matching provide
+REQMISS_COUNT="$(
+  if [[ -s "${TMPD}/req_missing.txt" ]]; then
+    grep -F -x -v -f "${TMPD}/externals.txt" "${TMPD}/req_missing.txt" | wc -l | awk '{print $1}'
+  else
+    echo 0
+  fi
+)"
+
+# Orphans/Dead counts (from strings above)
+ORPHANS_COUNT="0"
+DEAD_COUNT="0"
+if [[ -n "${ORPHANS}" ]]; then
+  ORPHANS_COUNT="$(printf '%b\n' "${ORPHANS}" | sed -n 's/^[[:space:]]*-[[:space:]].*/x/p' | wc -l | awk '{print $1}')"
+fi
+if [[ -n "${DEAD}" ]]; then
+  DEAD_COUNT="$(printf '%b\n' "${DEAD}" | sed -n 's/^[[:space:]]*-[[:space:]].*/x/p' | wc -l | awk '{print $1}')"
+fi
+
+# TODO/FIXME and GPTel direct calls (outside bridge)
+if [[ -n "${RG}" ]]; then
+  TODO_COUNT="$({ ${RG} -n 'TODO|FIXME' "${LISP_DIR}" || true; } | wc -l | awk '{print $1}')"
+  GP_DIRECT_COUNT="$({ ${RG} -n --pcre2 -g '!lisp/context-navigator-gptel-bridge.el' '\([[:space:]]*gptel-context\b' "${LISP_DIR}" | grep -v 'memq\|quote\|:[[:alnum:]-]*gptel' || true; } | wc -l | awk '{print $1}')"
+else
+  TODO_COUNT="$({ egrep -n 'TODO|FIXME' -R "${LISP_DIR}" || true; } | wc -l | awk '{print $1}')"
+  GP_DIRECT_COUNT="$({ egrep -n '\([[:space:]]*gptel-context\b' -R "${LISP_DIR}" | grep -v 'context-navigator-gptel-bridge.el' | grep -v 'memq\|quote\|:gptel-change' || true; } | wc -l | awk '{print $1}')"
+fi
+
+# Summary KV metrics (compact)
+kv "duplicates (defuns)"                          "${DUP_TOTAL}"
+kv "controls: order∖registry"                     "${CTRL_ORDER_MINUS_REG}"
+kv "controls: registry∖order"                     "${CTRL_REG_MINUS_ORDER}"
+kv "controls: registry missing icons"             "${CTRL_REG_MISSING_ICONS}"
+kv "controls: icons unused (excl. mf-*)"          "${CTRL_ICONS_UNUSED}"
+kv "i18n: missing keys"                           "${I18N_MISSING}"
+kv "i18n: unused keys"                            "${I18N_UNUSED}"
+kv "requires w/o provide (symbol only)"           "${REQMISS_COUNT}"
+kv "legacy orphans"                               "${ORPHANS_COUNT}"
+kv "legacy dead defs"                             "${DEAD_COUNT}"
+kv "TODO/FIXME markers"                           "${TODO_COUNT}"
+kv "gptel direct calls outside bridge"            "${GP_DIRECT_COUNT}"
+
+# Details: print short actionable lists for non-zero items
+echo
+echo "Details:"
+echo
+
+if [[ "${DUP_TOTAL}" -gt 0 ]]; then
+  echo "Duplicate function definitions (top entries):"
+  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{printf("  %4d  %s\n",$1,$2)}' | head -n 20
+  echo "Locations (sample):"
+  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{print $2}' | head -n 8 \
+    | while read -r name; do
+        echo "  ${name}:"
+        grep -F "^${name}|" "${NAMES_FILE}" \
+          | sed 's#^\([^|]*\)|\([^|]*\)|\(.*\)$#      \3 : \2#' \
+          | sed 's#^\./##' | head -n 6
+      done
+  echo
+fi
+
+if [[ "${CTRL_ORDER_MINUS_REG}" -gt 0 ]]; then
+  echo "Controls: in order but missing in registry:"
+  LC_ALL=C comm -23 "${TMP_ORDER}" "${TMP_REG}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_REG_MINUS_ORDER}" -gt 0 ]]; then
+  echo "Controls: in registry but not listed in order (won't render):"
+  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ORDER}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_REG_MISSING_ICONS}" -gt 0 ]]; then
+  echo "Controls registry keys missing icon definitions:"
+  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ICONS}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${CTRL_ICONS_UNUSED}" -gt 0 ]]; then
+  echo "Icon keys unused by registry (excl. mf-*):"
+  LC_ALL=C comm -23 "${TMP_ICONS}" "${TMP_REG}" | grep -v '^mf-' | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${I18N_MISSING}" -gt 0 ]]; then
+  echo "i18n: Missing keys (referenced but not defined):"
+  LC_ALL=C comm -23 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${I18N_UNUSED}" -gt 0 ]]; then
+  echo "i18n: Unused keys (defined but not referenced) — review for pruning:"
+  LC_ALL=C comm -13 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${REQMISS_COUNT}" -gt 0 ]]; then
+  echo "Provide/Require: project-internal symbols missing provide:"
+  grep -F -x -v -f "${TMPD}/externals.txt" "${TMPD}/req_missing.txt" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${ORPHANS_COUNT}" -gt 0 ]]; then
+  echo "Legacy wrappers: Orphan references (referenced, not defined):"
+  printf "%b\n" "${ORPHANS}" | sed 's/^/  /' || true
+  echo
+fi
+
+if [[ "${DEAD_COUNT}" -gt 0 ]]; then
+  echo "Legacy wrappers: Dead definitions (defined, not referenced):"
+  printf "%b\n" "${DEAD}" | sed 's/^/  /' || true
+  echo
+fi
 
 # Suggestions (print only when non-zero)
 sec "Suggested actions"

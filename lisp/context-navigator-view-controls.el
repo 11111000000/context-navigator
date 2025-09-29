@@ -25,17 +25,18 @@
 (require 'context-navigator-controls-icons)
 
 ;; Declarations to avoid load cycles; provided by context-navigator-view or core.
-(declare-function context-navigator-view-open-all-buffers "context-navigator-view" ())
-(declare-function context-navigator-view-close-all-buffers "context-navigator-view" ())
-(declare-function context-navigator-view-clear-group "context-navigator-view" ())
-(declare-function context-navigator-view-push-now "context-navigator-view" ())
-(declare-function context-navigator-view-toggle-all-gptel "context-navigator-view" ())
-(declare-function context-navigator-view-toggle-push "context-navigator-view" ())
-(declare-function context-navigator-view-toggle-auto-project "context-navigator-view" ())
+(declare-function context-navigator-view-open-all-buffers "context-navigator-view-actions" ())
+(declare-function context-navigator-view-close-all-buffers "context-navigator-view-actions" ())
+(declare-function context-navigator-view-clear-group "context-navigator-view-actions" ())
+(declare-function context-navigator-view-push-now "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-all-gptel "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-push "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-auto-project "context-navigator-view-actions" ())
 (declare-function context-navigator-undo "context-navigator-core" ())
 (declare-function context-navigator-redo "context-navigator-core" ())
 
-(declare-function context-navigator-view-razor-run "context-navigator-view" ())
+(declare-function context-navigator-view-razor-run "context-navigator-view-actions" ())
+(declare-function context-navigator-multifile-open "context-navigator-multifile" ())
 
 (defgroup context-navigator-view-controls nil
   "Toolbar controls (toggles and actions) for Context Navigator view."

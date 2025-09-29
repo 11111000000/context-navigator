@@ -27,10 +27,14 @@
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
 (require 'context-navigator-path-add)
+(require 'context-navigator-add)
 
 (require 'context-navigator-log)
 (require 'context-navigator-razor)
 (require 'context-navigator-util)
+(require 'context-navigator-ui)
+
+(declare-function context-navigator-multifile-open "context-navigator-multifile" ())
 
 ;; Safe wrapper to avoid transient setup errors when the real command
 ;; isn't defined yet (e.g., during partial loads).
@@ -40,16 +44,9 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
   (interactive "P")
   (if (fboundp 'context-navigator-view-activate)
       (call-interactively 'context-navigator-view-activate)
-    (message "%s" (context-navigator-i18n :activate-not-available))))
+    (context-navigator-ui-info :activate-not-available)))
 
-(defgroup context-navigator-add nil
-  "Settings for universal add operations."
-  :group 'context-navigator)
 
-(defcustom context-navigator-max-file-size (* 1 1024 1024)
-  "Maximum file size (bytes) to include when adding files recursively.
-Files larger than this threshold are skipped."
-  :type 'integer :group 'context-navigator-add)
 
 (defcustom context-navigator-transient-display 'auto
   "Preferred backend for displaying Context Navigator transients:
@@ -85,12 +82,12 @@ Files larger than this threshold are skipped."
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
      :if (lambda () (derived-mode-p 'org-mode)))]
-   [(lambda () (context-navigator-i18n :tr-logs))
-    ("D" (lambda () (context-navigator-i18n :tr-logs-toggle)) context-navigator-log-toggle)
-    ("L" (lambda () (context-navigator-i18n :tr-logs-open)) context-navigator-log-open)
-    ("K" (lambda () (context-navigator-i18n :tr-logs-clear)) context-navigator-log-clear)
-    ("V" (lambda () (context-navigator-i18n :tr-logs-set-level)) context-navigator-log-set-level)
-    ("F" (lambda () (context-navigator-i18n :tr-logs-toggle-file)) context-navigator-log-toggle-file-persistence)]])
+   [:description (lambda () (context-navigator-i18n :tr-logs))
+                 ("D" (lambda () (context-navigator-i18n :tr-logs-toggle)) context-navigator-log-toggle)
+                 ("L" (lambda () (context-navigator-i18n :tr-logs-open)) context-navigator-log-open)
+                 ("K" (lambda () (context-navigator-i18n :tr-logs-clear)) context-navigator-log-clear)
+                 ("V" (lambda () (context-navigator-i18n :tr-logs-set-level)) context-navigator-log-set-level)
+                 ("F" (lambda () (context-navigator-i18n :tr-logs-toggle-file)) context-navigator-log-toggle-file-persistence)]])
 
 ;;;###autoload
 (transient-define-prefix context-navigator-view-transient ()
@@ -142,260 +139,28 @@ Files larger than this threshold are skipped."
                  ("c"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
                  ("d"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
                  ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
-   [(lambda () (context-navigator-i18n :tr-session))
-    ("G" (lambda ()
-           (format (context-navigator-i18n :push-state)
-                   (context-navigator-i18n
-                    (if (and (boundp 'context-navigator--push-to-gptel)
-                             context-navigator--push-to-gptel) :on :off))))
-     context-navigator-view-toggle-push)
-    ("A" (lambda ()
-           (format (context-navigator-i18n :auto-project-state)
-                   (context-navigator-i18n
-                    (if (and (boundp 'context-navigator--auto-project-switch)
-                             context-navigator--auto-project-switch) :on :off))))
-     context-navigator-view-toggle-auto-project)
-    ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
-    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-view-clear-gptel)
-    ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-view-clear-group)
-    ("X" (lambda () (context-navigator-i18n :tr-unload))   context-navigator-context-unload)]
+   [:description (lambda () (context-navigator-i18n :tr-session))
+                 ("G" (lambda ()
+                        (format (context-navigator-i18n :push-state)
+                                (context-navigator-i18n
+                                 (if (and (boundp 'context-navigator--push-to-gptel)
+                                          context-navigator--push-to-gptel) :on :off))))
+                  context-navigator-view-toggle-push)
+                 ("A" (lambda ()
+                        (format (context-navigator-i18n :auto-project-state)
+                                (context-navigator-i18n
+                                 (if (and (boundp 'context-navigator--auto-project-switch)
+                                          context-navigator--auto-project-switch) :on :off))))
+                  context-navigator-view-toggle-auto-project)
+                 ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
+                 ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-view-clear-gptel)
+                 ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-view-clear-group)
+                 ("X" (lambda () (context-navigator-i18n :tr-unload))   context-navigator-context-unload)]
    ["Help/Exit"
     ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
     ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)]])
 
-(defun context-navigator-transient--maybe-apply-to-gptel ()
-  "Apply current model to gptel when push is ON."
-  (when (and (boundp 'context-navigator--push-to-gptel)
-             context-navigator--push-to-gptel)
-    (let* ((st (context-navigator--state-get))
-           (items (and st (context-navigator-state-items st))))
-      (ignore-errors (context-navigator-gptel-apply (or items '()))))))
-
-(defun context-navigator-transient--apply-items-batched (items)
-  "Background-apply ITEMS to gptel via core batch when push is ON."
-  (when (and (boundp 'context-navigator--push-to-gptel)
-             context-navigator--push-to-gptel
-             (listp items))
-    (let* ((st (context-navigator--state-get))
-           (token (and st (context-navigator-state-load-token st))))
-      (ignore-errors
-        ;; Применяем сразу, даже без видимого окна gptel.
-        (let ((context-navigator-gptel-require-visible-window nil))
-          (context-navigator--gptel-defer-or-start items token))))))
-
-(defun context-navigator-transient--regular-file-p (path)
-  "Return non-nil if PATH is a regular file."
-  (and (stringp path)
-       (file-exists-p path)
-       (file-regular-p path)))
-
-(defun context-navigator-transient--file-size (path)
-  "Return size of PATH in bytes or nil."
-  (when (and (stringp path) (file-exists-p path))
-    (let ((attrs (file-attributes path 'string)))
-      (and attrs (file-attribute-size attrs)))))
-
-(defun context-navigator-transient--collect-recursive (dir)
-  "Collect regular files under DIR (recursive)."
-  (let* ((all (ignore-errors (directory-files-recursively dir ".*" t)))
-         (files (cl-remove-if-not #'file-regular-p all)))
-    files))
-
-(defun context-navigator-transient--gather-files (paths)
-  "From PATHS (files/dirs), return plist:
-(:files L :skipped-too-big N :skipped-nonregular M :remote K)."
-  (let ((files '())
-        (skipped-too-big 0)
-        (skipped-nonregular 0)
-        (remote 0)
-        (limit (or context-navigator-max-file-size most-positive-fixnum)))
-    (dolist (p paths)
-      (cond
-       ((and (stringp p) (file-directory-p p))
-        (dolist (f (context-navigator-transient--collect-recursive p))
-          (let ((sz (context-navigator-transient--file-size f)))
-            (when (file-remote-p f) (setq remote (1+ remote)))
-            (cond
-             ((null sz) (setq skipped-nonregular (1+ skipped-nonregular)))
-             ((> sz limit) (setq skipped-too-big (1+ skipped-too-big)))
-             (t (push f files))))))
-       ((context-navigator-transient--regular-file-p p)
-        (let ((sz (context-navigator-transient--file-size p)))
-          (when (file-remote-p p) (setq remote (1+ remote)))
-          (if (and sz (> sz limit))
-              (setq skipped-too-big (1+ skipped-too-big))
-            (push p files))))
-       (t
-        (setq skipped-nonregular (1+ skipped-nonregular)))))
-    (list :files (nreverse (delete-dups files))
-          :skipped-too-big skipped-too-big
-          :skipped-nonregular skipped-nonregular
-          :remote remote)))
-
-
-
-(defun context-navigator-transient--preview-and-confirm (files stats)
-  "Show preview buffer for FILES and STATS, return non-nil to proceed."
-  (let* ((buf (get-buffer-create "*Context Navigator Add Preview*"))
-         (total (length files))
-         (too-big (plist-get stats :skipped-too-big))
-         (nonreg (plist-get stats :skipped-nonregular))
-         (remote (plist-get stats :remote))
-         (sum-bytes (cl-loop for f in files
-                             for s = (context-navigator-transient--file-size f)
-                             when s sum s)))
-    (with-current-buffer buf
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert (format (context-navigator-i18n :preview-title)
-                        total
-                        (context-navigator-human-size sum-bytes)))
-        (insert "\n")
-        (when (> too-big 0)
-          (insert (format (context-navigator-i18n :preview-skipped-too-big)
-                          too-big
-                          (context-navigator-human-size context-navigator-max-file-size)))
-          (insert "\n"))
-        (when (> nonreg 0)
-          (insert (format (context-navigator-i18n :preview-skipped-nonregular) nonreg))
-          (insert "\n"))
-        (when (> remote 0)
-          (insert (format (context-navigator-i18n :preview-remote) remote))
-          (insert "\n"))
-        (insert "\n")
-        (insert (context-navigator-i18n :preview-files))
-        (insert "\n")
-        (dolist (f files)
-          (insert (format "  %s (%s)\n"
-                          (abbreviate-file-name f)
-                          (context-navigator-human-size (context-navigator-transient--file-size f)))))
-        (goto-char (point-min))
-        (view-mode 1)))
-    (display-buffer buf '((display-buffer-pop-up-window)))
-    (unwind-protect
-        (yes-or-no-p (format (context-navigator-i18n :confirm-add) total))
-      (when (buffer-live-p buf)
-        (kill-buffer buf)))))
-
-(defun context-navigator-transient--add-files (files)
-  "Add FILES (list of paths) as enabled items.
-
-Deduplicate by absolute path against existing items of type 'file or 'buffer:
-if an item already references the same file (by item :path or the live buffer's
-buffer-file-name), replace it instead of creating a duplicate."
-  (let* ((abs (delq nil (mapcar (lambda (p) (and (stringp p) (expand-file-name p))) files)))
-         (aset (let ((h (make-hash-table :test 'equal)))
-                 (dolist (p abs) (puthash p t h)) h))
-         (st (ignore-errors (context-navigator--state-get)))
-         (old (and (context-navigator-state-p st) (context-navigator-state-items st)))
-         (keep
-          (cl-remove-if
-           (lambda (it)
-             (let* ((p (context-navigator-item-path it))
-                    (bp (and (bufferp (context-navigator-item-buffer it))
-                             (buffer-live-p (context-navigator-item-buffer it))
-                             (buffer-local-value 'buffer-file-name (context-navigator-item-buffer it))))
-                    (pp (and (stringp p) (expand-file-name p)))
-                    (bb (and (stringp bp) (expand-file-name bp))))
-               (or (and pp (gethash pp aset))
-                   (and bb (gethash bb aset)))))
-           (or old '())))
-         (new-items (delq nil
-                          (mapcar (lambda (p)
-                                    (when (and (stringp p) (file-exists-p p) (not (file-directory-p p)))
-                                      (context-navigator-item-create
-                                       :type 'file
-                                       :name (file-name-nondirectory p)
-                                       :path (expand-file-name p)
-                                       :enabled t)))
-                                  files)))
-         (merged (append keep new-items)))
-    (context-navigator-set-items merged)
-    (context-navigator-transient--apply-items-batched new-items)
-    (message (context-navigator-i18n :added-files) (length new-items))))
-
-;;;###autoload
-(defun context-navigator-add-universal ()
-  "Add current selection/file/buffer or Dired selection to context.
-
-Behavior:
-- Dired:
-  - If selection includes directories, collect files recursively with preview + confirmation.
-  - Otherwise add marked files (filtering by max size).
-- Active region: add as selection.
-- File-backed buffer (no region): add file.
-- Otherwise: add whole buffer (as buffer item).
-
-TRAMP/remote: show a warning and confirm before proceeding."
-  (interactive)
-  (cond
-   ;; Dired: marked files (recursive for directories)
-   ((derived-mode-p 'dired-mode)
-    (let* ((sel (dired-get-marked-files nil nil)))
-      (if (null sel)
-          (message "%s" (context-navigator-i18n :no-files-selected))
-        (let* ((has-dir (cl-some #'file-directory-p sel))
-               (stats (context-navigator-transient--gather-files sel))
-               (files (plist-get stats :files))
-               (remote (plist-get stats :remote)))
-          (if has-dir
-              (progn
-                ;; При наличии директорий — предупреждаем о TRAMP и показываем предпросмотр c подтверждением
-                (if (and (> remote 0)
-                         (not (yes-or-no-p (format (context-navigator-i18n :warn-remote-selected) remote))))
-                    (message "%s" (context-navigator-i18n :aborted))
-                  (if (context-navigator-transient--preview-and-confirm files stats)
-                      (context-navigator-transient--add-files files)
-                    (message "%s" (context-navigator-i18n :aborted)))))
-            ;; Только файлы: добавляем без каких-либо вопросов/предпросмотров
-            (context-navigator-transient--add-files files))))))
-
-   ;; Active region -> selection item
-   ;; Accept when region is active (use-region-p) or when a mark exists and differs from point
-   ;; (helps in batch/non-transient-mark-mode). After use, fully clear the mark so subsequent
-   ;; calls do not treat a stale mark as selection.
-   ((let ((mk (mark t)))
-      (or (use-region-p)
-          (and (number-or-marker-p mk) (/= (point) mk))))
-    (let* ((buf (current-buffer))
-           (p   (buffer-file-name buf))
-           (mk  (mark t))
-           (beg (if (use-region-p)
-                    (region-beginning)
-                  (min (point) (or (and (number-or-marker-p mk) (prefix-numeric-value mk)) (point)))))
-           (end (if (use-region-p)
-                    (region-end)
-                  (max (point) (or (and (number-or-marker-p mk) (prefix-numeric-value mk)) (point)))))
-           (nm (if p
-                   (format "%s:%s-%s" (file-name-nondirectory p) beg end)
-                 (format "%s:%s-%s" (buffer-name buf) beg end)))
-           (sel (context-navigator-item-create
-                 :type 'selection :name nm
-                 :path p :buffer buf :beg beg :end end :enabled t)))
-      (ignore-errors (context-navigator-add-item sel))
-      ;; Fully clear region/mark so the next call won't treat a stale mark as selection
-      (ignore-errors (deactivate-mark t))
-      (ignore-errors (set-marker (mark-marker) nil (current-buffer)))
-      ;; Apply only the selection (tests expect selection to be primary)
-      (context-navigator-transient--apply-items-batched (list sel))
-      (message "%s" (context-navigator-i18n :added-selection))))
-   ;; File-backed buffer -> file
-   ((buffer-file-name (current-buffer))
-    (let* ((p (buffer-file-name (current-buffer))))
-      (if (file-remote-p p)
-          (if (yes-or-no-p (context-navigator-i18n :warn-remote-current))
-              (context-navigator-transient--add-files (list p))
-            (message "%s" (context-navigator-i18n :aborted)))
-        (context-navigator-transient--add-files (list p)))))
-   ;; Fallback: buffer item
-   (t
-    (let* ((b (current-buffer))
-           (it (context-navigator-item-create
-                :type 'buffer :name (buffer-name b) :buffer b :enabled t)))
-      (ignore-errors (context-navigator-add-item it))
-      (context-navigator-transient--apply-items-batched (list it))
-      (message "%s" (context-navigator-i18n :added-buffer))))))
-
+;; Add logic moved to context-navigator-add.el
 
 ;; Always show our transients in a small pop-up window, regardless of previous pop-up sizes.
 ;; Prefer posframe (via transient-posframe) when available and allowed.

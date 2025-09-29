@@ -25,6 +25,7 @@
 (require 'context-navigator-log)
 (require 'context-navigator-i18n)
 (require 'context-navigator-util)
+(require 'context-navigator-ui)
 
 
 (defgroup context-navigator-razor nil
@@ -141,8 +142,11 @@
     (when (buffer-live-p buf)
       (with-current-buffer buf
         ;; Сброс кешей рендера, чтобы следующая перерисовка точно прошла
-        (setq-local context-navigator-render--last-hash nil)
-        (setq-local context-navigator-view--last-render-key nil)
+        (if (fboundp 'context-navigator-view--invalidate-render-caches)
+            (context-navigator-view--invalidate-render-caches)
+          (progn
+            (setq-local context-navigator-render--last-hash nil)
+            (setq-local context-navigator-view--last-render-key nil)))
         ;; Форсируем переоценку header-line (:eval) даже если тело буфера не менялось
         (force-mode-line-update t)
         (when (fboundp 'context-navigator-view--render-if-visible)
@@ -253,7 +257,7 @@
   (interactive)
   (if (fboundp 'context-navigator-snapshot-push)
       (context-navigator-snapshot-push)
-    (message "%s" (context-navigator-i18n :history-not-available))))
+    (context-navigator-ui-info :history-not-available)))
 
 (defun context-navigator-razor--apply-snapshot (snapshot)
   "Apply SNAPSHOT items to model and push to gptel when auto-push is ON."
@@ -268,7 +272,7 @@
   (interactive)
   (if (fboundp 'context-navigator-undo)
       (context-navigator-undo)
-    (message "%s" (context-navigator-i18n :nothing-to-undo))))
+    (context-navigator-ui-info :nothing-to-undo)))
 
 ;;;###autoload
 (defun context-navigator-razor-redo ()
@@ -276,7 +280,7 @@
   (interactive)
   (if (fboundp 'context-navigator-redo)
       (context-navigator-redo)
-    (message "%s" (context-navigator-i18n :nothing-to-redo))))
+    (context-navigator-ui-info :nothing-to-redo)))
 
 
 
@@ -352,14 +356,13 @@
 (defun context-navigator-razor--warn-remote (items)
   (let* ((n (cl-count-if (lambda (pl) (plist-get pl :remote)) items)))
     (when (and (> n 0) context-navigator-razor-remote-include)
-      (yes-or-no-p (format (context-navigator-i18n :razor-remote-warn) n)))))
+      (context-navigator-ui-ask :razor-remote-warn n))))
 
 (defun context-navigator-razor--warn-large (bytes)
   (when (and (integerp context-navigator-razor-large-bytes-threshold)
              (> bytes context-navigator-razor-large-bytes-threshold))
-    (yes-or-no-p
-     (format (context-navigator-i18n :razor-large-warn)
-             (context-navigator-human-size bytes)))))
+    (context-navigator-ui-ask :razor-large-warn
+                              (context-navigator-human-size bytes))))
 
 (defun context-navigator-razor--system-prompt ()
   "Return cautious system prompt."
@@ -709,18 +712,18 @@
           (ignore-errors
             (context-navigator-debug :info :razor
                                      "Applied keep set: kept=%d total=%d" kept total))
-          (message (context-navigator-i18n :razor-done) kept total))))))
+          (context-navigator-ui-info :razor-done kept total))))))
 
 (defun context-navigator-razor--confirm-empty (keep)
   (when (or (null keep) (= (length keep) 0))
-    (yes-or-no-p (context-navigator-i18n :razor-empty-confirm))))
+    (context-navigator-ui-ask :razor-empty-confirm)))
 
 (defun context-navigator-razor--preview-keep (keep total)
   (if (not context-navigator-razor-preview)
       t
-    (yes-or-no-p
-     (format (context-navigator-i18n :razor-preview-title)
-             (length (or keep '())) total))))
+    (context-navigator-ui-ask :razor-preview-title
+                              (length (or keep '()))
+                              total)))
 
 (defun context-navigator-razor--gptel-opts (sys cb)
   "Return minimal options plist for gptel. The actual wrapping is done in `context-navigator-razor--gptel-call'."
@@ -729,7 +732,7 @@
 (defun context-navigator-razor--gptel-call (sys user cb)
   "Call gptel with SYS, USER and 1-arg CB (response-only). Return request object or nil."
   (unless (require 'gptel nil t)
-    (user-error "gptel is not available"))
+    (context-navigator-ui-error :gptel-not-available))
   (let* ((model (if (symbolp context-navigator-razor-model)
                     context-navigator-razor-model
                   (ignore-errors (intern context-navigator-razor-model)))))
@@ -791,7 +794,7 @@ Return plist:
   (cond
    ((= total-enabled 0)
     (ignore-errors (context-navigator-debug :info :razor "Abort: no enabled items"))
-    (message "%s" (context-navigator-i18n :razor-no-enabled-items))
+    (context-navigator-ui-info :razor-no-enabled-items)
     t)
    ;; TRAMP confirm only when there are remote items
    ((and context-navigator-razor-remote-include
@@ -801,7 +804,7 @@ Return plist:
       (context-navigator-debug :warn :razor
                                "Abort: user declined sending remote items (n=%d)"
                                remote-n))
-    (message (context-navigator-i18n :razor-abort-remote) remote-n)
+    (context-navigator-ui-warn :razor-abort-remote remote-n)
     t)
    ;; Large payload confirm
    ((and (integerp context-navigator-razor-large-bytes-threshold)
@@ -811,8 +814,8 @@ Return plist:
       (context-navigator-debug :warn :razor
                                "Abort: user declined large payload ~%s"
                                (context-navigator-human-size bytes)))
-    (message (context-navigator-i18n :razor-abort-large)
-             (context-navigator-human-size bytes))
+    (context-navigator-ui-warn :razor-abort-large
+                               (context-navigator-human-size bytes))
     t)
    (t nil)))
 
@@ -829,11 +832,11 @@ Return plist:
                 t)
             (ignore-errors
               (context-navigator-debug :info :razor "Abort: preview declined"))
-            (message "%s" (context-navigator-i18n :razor-abort-preview))
+            (context-navigator-ui-warn :razor-abort-preview)
             nil))
       (ignore-errors
         (context-navigator-debug :info :razor "Abort: empty keep not confirmed"))
-      (message "%s" (context-navigator-i18n :razor-abort-empty))
+      (context-navigator-ui-warn :razor-abort-empty)
       nil)))
 
 (defun context-navigator-razor--retry-json-strict (user cb raw)
@@ -861,8 +864,8 @@ Return plist:
          (ambig   (and (listp parsed) (plist-get parsed :ambiguous)))
          (total   (and (listp parsed) (plist-get parsed :total))))
     (when (and total matched ambig unknown)
-      (message (context-navigator-i18n :razor-parse-flex-stats)
-               matched total ambig unknown))))
+      (context-navigator-ui-info :razor-parse-flex-stats
+                                 matched total ambig unknown))))
 
 (defun context-navigator-razor--make-apply-callback (total-enabled user model-items)
   "Build the gptel callback that parses and applies keep-set with retry logic.
@@ -879,7 +882,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
                        (context-navigator-razor--notify-stop))
                    (if (eq context-navigator-razor-parse-mode 'json-only)
                        (if (and (not retry-done)
-                                (yes-or-no-p (context-navigator-i18n :razor-parse-error)))
+                                (context-navigator-ui-ask :razor-parse-error))
                            (progn
                              (setq retry-done t)
                              (context-navigator-razor--retry-json-strict user #'cb raw))
@@ -887,12 +890,12 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
                            (ignore-errors
                              (context-navigator-debug :error :razor
                                                       "Abort: parse failed; head=%S" snippet)))
-                         (message "%s" (context-navigator-i18n :razor-abort-parse))
+                         (context-navigator-ui-warn :razor-abort-parse)
                          (context-navigator-razor--notify-stop))
                      (progn
                        (context-navigator-razor--show-flex-stats parsed)
                        (if (and (not retry-done)
-                                (yes-or-no-p (context-navigator-i18n :razor-retry)))
+                                (context-navigator-ui-ask :razor-retry))
                            (progn
                              (setq retry-done t)
                              (context-navigator-razor--retry-flex-list user #'cb))
@@ -900,13 +903,13 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
                            (ignore-errors
                              (context-navigator-debug :error :razor
                                                       "Abort: flex-parse failed; head=%S" snippet)))
-                         (message "%s" (context-navigator-i18n :aborted))
+                         (context-navigator-ui-info :aborted)
                          (context-navigator-razor--notify-stop))))))
              (error
               (ignore-errors
                 (context-navigator-debug :error :razor "Callback error: %S" err))
               (context-navigator-razor--notify-stop)
-              (message (context-navigator-i18n :razor-error) err)))))
+              (context-navigator-ui-warn :razor-error err)))))
       #'cb)))
 
 (defun context-navigator-razor--request (sys user total-enabled model-items)
@@ -920,7 +923,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
   (interactive)
   (unless (derived-mode-p 'org-mode)
     (ignore-errors (context-navigator-debug :warn :razor "Not in org-mode; abort"))
-    (user-error "%s" (context-navigator-i18n :razor-only-org-mode)))
+    (context-navigator-ui-error :razor-only-org-mode))
   (let* ((input (context-navigator-razor--collect-run-input))
          (org-text (plist-get input :org-text))
          (items-pl (plist-get input :items-pl))
@@ -929,7 +932,7 @@ MODEL-ITEMS must be a list of `context-navigator-item' (enabled) for resolver."
          (bytes (plist-get input :bytes))
          (remote-n (plist-get input :remote-n)))
     (unless (context-navigator-razor--early-abort-p items-pl total-enabled bytes remote-n)
-      (message "%s" (context-navigator-i18n :razor-start))
+      (context-navigator-ui-info :razor-start)
       (ignore-errors (context-navigator-debug :info :razor
                                               "parse-mode=%s fuzzy=%s"
                                               context-navigator-razor-parse-mode

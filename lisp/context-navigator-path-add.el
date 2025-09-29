@@ -21,6 +21,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-events)
 (require 'context-navigator-i18n)
+(require 'context-navigator-ui)
 (require 'context-navigator-project)
 (require 'context-navigator-util)
 
@@ -570,7 +571,7 @@ the same file are replaced instead of duplicated."
   "Resolve TOKENS relative to current root and add resulting files to model.
 Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result."
   (let* ((root (context-navigator-path-add--project-root)))
-    (message "%s" (context-navigator-i18n :resolve-start))
+    (context-navigator-ui-info :resolve-start)
     (let* ((res (context-navigator-resolve-names->files tokens root))
            (files (plist-get res :files))
            (amb (plist-get res :ambiguous))
@@ -584,20 +585,20 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                           (format "%s → %d" (car cell) (length (cdr cell))))
                         (cl-subseq amb 0 (min 10 (length amb)))
                         ", ")))
-          (message "%s %s" (context-navigator-i18n :ambiguous-found) sample))
+          (context-navigator-ui-info :ambiguous-found sample))
         (setq result (plist-put (copy-sequence res) :aborted :ambiguous))
         (setq aborted t))
       (when (and (not aborted) (consp unr) (> (length unr) 0))
         (let ((sample (string-join (cl-subseq unr 0 (min 10 (length unr))) ", ")))
-          (message "%s %s" (context-navigator-i18n :unresolved-found) sample)))
+          (context-navigator-ui-info :unresolved-found sample)))
       (when (and (not aborted) too-many)
-        (message (context-navigator-i18n :too-many) (length files) (or context-navigator-path-add-limit 50))
+        (context-navigator-ui-warn :too-many (length files) (or context-navigator-path-add-limit 50))
         (setq result (plist-put (copy-sequence res) :aborted :too-many))
         (setq aborted t))
       (when (and (not aborted)
                  (> (plist-get res :remote) 0)
-                 (not (yes-or-no-p (format (context-navigator-i18n :remote-warning) (plist-get res :remote)))))
-        (message "%s" (context-navigator-i18n :aborted))
+                 (not (context-navigator-ui-ask :remote-warning (plist-get res :remote))))
+        (context-navigator-ui-info :aborted)
         (setq result (plist-put (copy-sequence res) :aborted :remote))
         (setq aborted t))
       (if aborted
@@ -610,7 +611,7 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                (adds (plist-get diff :add)))
           (context-navigator-path-add--maybe-apply-to-gptel adds)
-          (message (context-navigator-i18n :added-files) added)
+          (context-navigator-ui-info :added-files added)
           (plist-put (copy-sequence res) :added added))))))
 
 ;; -----------------------------------------------------------------------------
@@ -625,7 +626,7 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                 (buffer-substring-no-properties (point-min) (point-max))))
          (tokens (context-navigator-extract-pathlike-tokens (or src ""))))
     (if (or (null tokens) (= (length tokens) 0))
-        (message "%s" (context-navigator-i18n :text-no-tokens))
+        (context-navigator-ui-info :text-no-tokens)
       (let* ((root (context-navigator-path-add--project-root))
              (res (context-navigator-resolve-names->files tokens root))
              (files (plist-get res :files))
@@ -646,26 +647,26 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                            (format "%s → %d" (car cell) (length (cdr cell))))
                          (cl-subseq amb 0 (min 10 (length amb)))
                          ", ")))
-            (message "%s %s" (context-navigator-i18n :ambiguous-found) sample)))
+            (context-navigator-ui-info :ambiguous-found sample)))
         ;; Нерешённые: просто сообщаем (не фатально)
         (when (and (consp unr) (> (length unr) 0))
           (let ((sample (string-join (cl-subseq unr 0 (min 10 (length unr))) ", ")))
-            (message "%s %s" (context-navigator-i18n :unresolved-found) sample)))
+            (context-navigator-ui-info :unresolved-found sample)))
         ;; Слишком много
         (when too-many
-          (message (context-navigator-i18n :too-many) (length files) (or context-navigator-path-add-limit 50))
+          (context-navigator-ui-warn :too-many (length files) (or context-navigator-path-add-limit 50))
           (cl-return-from context-navigator-add-from-text nil))
         ;; Подтверждение для remote
         (when (and (> (plist-get stats :remote) 0)
-                   (not (yes-or-no-p (format (context-navigator-i18n :remote-warning) (plist-get stats :remote)))))
-          (message "%s" (context-navigator-i18n :aborted))
+                   (not (context-navigator-ui-ask :remote-warning (plist-get stats :remote))))
+          (context-navigator-ui-info :aborted)
           (cl-return-from context-navigator-add-from-text nil))
         ;; Нечего добавлять
         (if (not (and (listp files) (> (length files) 0)))
-            (message "%s" (context-navigator-i18n :unresolved-found))
+            (context-navigator-ui-info :unresolved-found)
           ;; Превью + подтверждение
           (if (not (context-navigator-path-add--preview-and-confirm files stats))
-              (message "%s" (context-navigator-i18n :aborted))
+              (context-navigator-ui-info :aborted)
             ;; Добавление и пуш (батч)
             (let* ((st-before (context-navigator--state-get))
                    (items-before (and st-before (context-navigator-state-items st-before)))
@@ -675,7 +676,7 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                    (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                    (adds (plist-get diff :add)))
               (context-navigator-path-add--maybe-apply-to-gptel adds)
-              (message (context-navigator-i18n :added-files) added))))))))
+              (context-navigator-ui-info :added-files added))))))))
 
 ;;;###autoload
 (defun context-navigator-add-from-minibuffer ()
@@ -702,14 +703,14 @@ Rules:
        ;; Explicit names present → ignore any masks entirely.
        ((> (length name-raw) 0)
         (when (> (length mask-raw) 0)
-          (message "%s" (context-navigator-i18n :mask-mixed-input)))
+          (context-navigator-ui-info :mask-mixed-input))
         (let ((names (cl-remove-if-not #'context-navigator-path-add--token-acceptable-p name-raw)))
           (if (> (length names) 0)
               (context-navigator-add-files-from-names names t)
-            (message "%s" (context-navigator-i18n :unresolved-found)))))
+            (context-navigator-ui-info :unresolved-found))))
        ;; Too many masks
        ((> (length mask-raw) 1)
-        (message "%s" (context-navigator-i18n :mask-only-one)))
+        (context-navigator-ui-warn :mask-only-one))
        ;; Single mask
        ((= (length mask-raw) 1)
         (context-navigator-add-files-from-mask (car mask-raw) t))
@@ -721,17 +722,17 @@ Rules:
            ((and has-mask-in-input (null tokens))
             (context-navigator-add-files-from-mask (string-trim (or input "")) t))
            ((null tokens)
-            (message "%s" (context-navigator-i18n :unresolved-found)))
+            (context-navigator-ui-info :unresolved-found))
            (t
             (let* ((mask-tokens (cl-remove-if-not #'context-navigator--input-has-mask-p tokens))
                    (name-tokens (cl-remove-if #'context-navigator--input-has-mask-p tokens)))
               (cond
                ((> (length name-tokens) 0)
                 (when (> (length mask-tokens) 0)
-                  (message "%s" (context-navigator-i18n :mask-mixed-input)))
+                  (context-navigator-ui-info :mask-mixed-input))
                 (context-navigator-add-files-from-names name-tokens t))
                ((> (length mask-tokens) 1)
-                (message "%s" (context-navigator-i18n :mask-only-one)))
+                (context-navigator-ui-warn :mask-only-one))
                ((= (length mask-tokens) 1)
                 (context-navigator-add-files-from-mask (car mask-tokens) t))
                ((and has-mask-in-input (= (length mask-tokens) 0))
@@ -989,7 +990,7 @@ Respects case sensitivity and dotfiles rule."
         (view-mode 1)))
     (display-buffer buf '((display-buffer-pop-up-window)))
     (unwind-protect
-        (yes-or-no-p (format (context-navigator-i18n :confirm-add) (length files)))
+        (context-navigator-ui-ask :confirm-add (length files))
       (when (buffer-live-p buf)
         (kill-buffer buf)))))
 
@@ -998,7 +999,7 @@ Respects case sensitivity and dotfiles rule."
   (let* ((base (context-navigator--mask-base pattern)))
     (when (and (plist-get base :remote)
                (not context-navigator-mask-enable-remote))
-      (message (context-navigator-i18n :mask-remote-unsupported) pattern)
+      (context-navigator-ui-warn :mask-remote-unsupported pattern)
       (cl-return-from context-navigator-add-files-from-mask nil))
     (condition-case err
         (let* ((rx (context-navigator--glob-to-regexp (plist-get base :rel-pattern)
@@ -1009,7 +1010,7 @@ Respects case sensitivity and dotfiles rule."
                (files (plist-get flt :files)))
           (cond
            ((null files)
-            (message (context-navigator-i18n :mask-nothing-found) pattern)
+            (context-navigator-ui-info :mask-nothing-found pattern)
             nil)
            (t
             (let* ((too-many (> (length files) (or context-navigator-path-add-limit 50)))
@@ -1017,7 +1018,7 @@ Respects case sensitivity and dotfiles rule."
                            (context-navigator-path-add--preview-and-confirm files flt)
                          t)))
               (if (not go)
-                  (message "%s" (context-navigator-i18n :aborted))
+                  (context-navigator-ui-info :aborted)
                 (let* ((st-before (context-navigator--state-get))
                        (items-before (and st-before (context-navigator-state-items st-before)))
                        (added (context-navigator-path-add--append-files-as-items files))
@@ -1026,10 +1027,10 @@ Respects case sensitivity and dotfiles rule."
                        (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                        (adds (plist-get diff :add)))
                   (context-navigator-path-add--maybe-apply-to-gptel adds)
-                  (message (context-navigator-i18n :added-files) added)
+                  (context-navigator-ui-info :added-files added)
                   (list :files files :added added)))))))
       (error
-       (message (context-navigator-i18n :mask-parse-error) (or (nth 1 err) pattern))
+       (context-navigator-ui-error :mask-parse-error (or (nth 1 err) pattern))
        nil))))
 
 (provide 'context-navigator-path-add)

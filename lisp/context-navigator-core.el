@@ -29,9 +29,9 @@
 (declare-function context-navigator-view-close "context-navigator-view" ())
 (declare-function context-navigator-view-toggle "context-navigator-view" ())
 (declare-function context-navigator-view-show-groups "context-navigator-view" ())
-(declare-function context-navigator-buffer-open "context-navigator-view" ())
-(declare-function context-navigator-buffer-close "context-navigator-view" ())
-(declare-function context-navigator-buffer-toggle "context-navigator-view" ())
+(declare-function context-navigator-buffer-open "context-navigator-view-buffer" ())
+(declare-function context-navigator-buffer-close "context-navigator-view-buffer" ())
+(declare-function context-navigator-buffer-toggle "context-navigator-view-buffer" ())
 ;; Forward declarations from project module (for byte-compiler friendliness)
 (declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
 (declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
@@ -206,27 +206,45 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
   "Open Navigator in the current display mode."
   (interactive)
   (pcase context-navigator-display-mode
-    ('sidebar (ignore-errors (context-navigator-view-open)))
-    ('buffer  (ignore-errors (context-navigator-buffer-open)))
-    (_        (ignore-errors (context-navigator-buffer-open)))))
+    ('sidebar (progn
+                (require 'context-navigator-view nil t)
+                (ignore-errors (context-navigator-view-open))))
+    ('buffer  (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-open))))
+    (_        (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-open))))))
 
 ;;;###autoload
 (defun context-navigator-close ()
   "Close Navigator in the current display mode."
   (interactive)
   (pcase context-navigator-display-mode
-    ('sidebar (ignore-errors (context-navigator-view-close)))
-    ('buffer  (ignore-errors (context-navigator-buffer-close)))
-    (_        (ignore-errors (context-navigator-buffer-close)))))
+    ('sidebar (progn
+                (require 'context-navigator-view nil t)
+                (ignore-errors (context-navigator-view-close))))
+    ('buffer  (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-close))))
+    (_        (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-close))))))
 
 ;;;###autoload
 (defun context-navigator-toggle ()
   "Toggle Navigator visibility in the current display mode."
   (interactive)
   (pcase context-navigator-display-mode
-    ('sidebar (ignore-errors (context-navigator-view-toggle)))
-    ('buffer  (ignore-errors (context-navigator-buffer-toggle)))
-    (_        (ignore-errors (context-navigator-buffer-toggle)))))
+    ('sidebar (progn
+                (require 'context-navigator-view nil t)
+                (ignore-errors (context-navigator-view-toggle))))
+    ('buffer  (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-toggle))))
+    (_        (progn
+                (require 'context-navigator-view-buffer nil t)
+                (ignore-errors (context-navigator-buffer-toggle))))))
 
 ;;;###autoload
 (defun context-navigator-display-mode-toggle ()
@@ -240,7 +258,7 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
       (customize-save-variable 'context-navigator-display-mode context-navigator-display-mode)))
   (ignore-errors (context-navigator-close))
   (ignore-errors (context-navigator-open))
-  (message (context-navigator-i18n :display-mode-changed) context-navigator-display-mode))
+  (context-navigator-ui-info :display-mode-changed context-navigator-display-mode))
 
 (cl-defstruct (context-navigator-state
                (:constructor context-navigator--state-make))
@@ -380,8 +398,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
     (if prev
         (progn
           (context-navigator--apply-snapshot prev)
-          (message "%s" (context-navigator-i18n :razor-undo)))
-      (message "%s" (context-navigator-i18n :nothing-to-undo)))))
+          (context-navigator-ui-info :razor-undo))
+      (context-navigator-ui-info :nothing-to-undo))))
 
 ;;;###autoload
 (defun context-navigator-redo ()
@@ -392,8 +410,8 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
     (if next
         (progn
           (context-navigator--apply-snapshot next)
-          (message "%s" (context-navigator-i18n :razor-redo)))
-      (message "%s" (context-navigator-i18n :nothing-to-redo)))))
+          (context-navigator-ui-info :razor-redo))
+      (context-navigator-ui-info :nothing-to-redo))))
 
 (defun context-navigator--log (fmt &rest args)
   "Log via centralized logger at :info level under :core topic."
@@ -457,9 +475,9 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
                             (context-navigator-state-generation new))
     new))
 
-(defcustom context-navigator-global-key nil
+(defcustom context-navigator-global-key "C-c n"
   "Global key sequence for opening the Context Navigator transient.
-Example: \"C-c n\". When nil (default), nothing is bound to keep defaults unobtrusive."
+Default is \"C-c n\"."
   :type '(choice (const :tag "None" nil) (string :tag "Key sequence"))
   :group 'context-navigator
   :set (lambda (sym val)
@@ -471,21 +489,22 @@ Example: \"C-c n\". When nil (default), nothing is bound to keep defaults unobtr
   "Internally tracks the currently active global keybinding for the transient.")
 
 (defun context-navigator--update-global-keybinding ()
-  "Apply `context-navigator-global-key' in `context-navigator-mode-map'."
-  (when (keymapp context-navigator-mode-map)
-    ;; Remove old binding if present
-    (when context-navigator--current-global-key
-      (ignore-errors
-        (define-key context-navigator-mode-map
-                    (kbd context-navigator--current-global-key) nil)))
-    ;; Install new binding if configured
-    (if (and (stringp context-navigator-global-key)
-             (not (string-empty-p context-navigator-global-key)))
-        (progn
-          (define-key context-navigator-mode-map
-                      (kbd context-navigator-global-key) #'context-navigator-transient)
-          (setq context-navigator--current-global-key context-navigator-global-key))
-      (setq context-navigator--current-global-key nil))))
+  "Apply `context-navigator-global-key' globally and in the mode map."
+  (let ((old context-navigator--current-global-key)
+        (new (and (stringp context-navigator-global-key)
+                  (not (string-empty-p context-navigator-global-key))
+                  context-navigator-global-key)))
+    ;; Remove old binding from both global-map and mode-map
+    (when old
+      (ignore-errors (define-key global-map (kbd old) nil))
+      (when (keymapp context-navigator-mode-map)
+        (ignore-errors (define-key context-navigator-mode-map (kbd old) nil))))
+    ;; Install new binding in global-map and in mode-map
+    (when new
+      (ignore-errors (define-key global-map (kbd new) #'context-navigator-transient))
+      (when (keymapp context-navigator-mode-map)
+        (ignore-errors (define-key context-navigator-mode-map (kbd new) #'context-navigator-transient))))
+    (setq context-navigator--current-global-key new)))
 
 (defvar context-navigator-mode-map
   (let ((m (make-sparse-keymap)))
@@ -550,8 +569,8 @@ If no sidebar windows are present, behave like `delete-other-windows'."
   "Toggle session flag to push Navigator context to gptel."
   (interactive)
   (setq context-navigator--push-to-gptel (not context-navigator--push-to-gptel))
-  (message (context-navigator-i18n :push-state)
-           (context-navigator-i18n (if context-navigator--push-to-gptel :on :off)))
+  (context-navigator-ui-info :push-state
+                             (context-navigator-i18n (if context-navigator--push-to-gptel :on :off)))
   (context-navigator-refresh))
 
 (defun context-navigator-toggle-auto-project-switch ()
@@ -568,8 +587,8 @@ the generic picker:
 or global (nil) when nothing is found."
   (interactive)
   (setq context-navigator--auto-project-switch (not context-navigator--auto-project-switch))
-  (message (context-navigator-i18n :auto-project-state)
-           (context-navigator-i18n (if context-navigator--auto-project-switch :on :off)))
+  (context-navigator-ui-info :auto-project-state
+                             (context-navigator-i18n (if context-navigator--auto-project-switch :on :off)))
   ;; Force a quick UI refresh for toggles
   (context-navigator-refresh)
   ;; On enabling auto-project, ensure mode is on and then publish a project switch.
@@ -610,14 +629,14 @@ Graceful when gptel is absent: show an informative message and do nothing."
   (interactive)
   (if (not (context-navigator-gptel-available-p))
       (progn
-        (message "%s" (context-navigator-i18n :gptel-not-available))
+        (context-navigator-ui-info :gptel-not-available)
         nil)
     ;; Try a best-effort clear, then apply desired state.
     (ignore-errors (context-navigator-gptel-clear-all-now))
     (let* ((st (context-navigator--state-get))
            (items (and st (context-navigator-state-items st))))
       (ignore-errors (context-navigator-gptel-apply (or items '())))
-      (message (context-navigator-i18n :pushed-items) (length (or items '()))))))
+      (context-navigator-ui-info :pushed-items (length (or items '()))))))
 
 (defun context-navigator-clear-gptel-now ()
   "Clear gptel context and disable all items in the current model."
@@ -647,7 +666,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
         (context-navigator-set-items disabled))))
   ;; Notify listeners and report
   (ignore-errors (context-navigator-events-publish :gptel-change :cleared))
-  (message "%s" (context-navigator-i18n :gptel-cleared)))
+  (context-navigator-ui-info :gptel-cleared))
 
 (defun context-navigator-switch-to-current-buffer-project ()
   "Switch Navigator to the project of the current buffer (manual)."
@@ -906,9 +925,9 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
     (if (and (stringp slug) (not (string-empty-p slug)))
         (let ((file (ignore-errors (context-navigator-persist-save items root slug))))
           (if file
-              (message (context-navigator-i18n :context-saved) (abbreviate-file-name file))
-            (message "%s" (context-navigator-i18n :context-save-failed))))
-      (message "%s" (context-navigator-i18n :no-active-group)))))
+              (context-navigator-ui-info :context-saved (abbreviate-file-name file))
+            (context-navigator-ui-info :context-save-failed)))
+      (context-navigator-ui-info :no-active-group))))
 
 ;;;###autoload
 (defun context-navigator-context-clear-current-group ()
@@ -925,8 +944,8 @@ Also clears gptel context when push→gptel is enabled."
           (when (and (boundp 'context-navigator--push-to-gptel)
                      context-navigator--push-to-gptel)
             (ignore-errors (context-navigator-clear-gptel-now)))
-          (message (context-navigator-i18n :cleared-current-group) slug))
-      (message "%s" (context-navigator-i18n :no-active-group)))))
+          (context-navigator-ui-info :cleared-current-group slug))
+      (context-navigator-ui-info :no-active-group))))
 
 ;;;###autoload
 (defun context-navigator-context-unload ()
@@ -956,7 +975,7 @@ Removes all gptel context entries and resets state flags safely."
     (setf (context-navigator-state-loading-p new2) nil)
     (context-navigator--set-state new2))
   (context-navigator-events-publish :context-load-done nil nil)
-  (message "%s" (context-navigator-i18n :context-unloaded)))
+  (context-navigator-ui-info :context-unloaded))
 
 ;;;###autoload
 (define-minor-mode context-navigator-mode
@@ -1021,7 +1040,7 @@ Prunes dead buffer items (non-live buffers). Return the new state."
          (cur (context-navigator--state-get))
          (new (context-navigator--state-with-items (context-navigator--state-copy cur) pruned)))
     (when (> removed 0)
-      (message (context-navigator-i18n :removed-dead-items) removed))
+      (context-navigator-ui-info :removed-dead-items removed))
     (context-navigator--set-state new)
     (context-navigator-events-publish :model-refreshed new)
     ;; Immediate autosave on any change (in addition to debounced autosave):
@@ -1209,7 +1228,7 @@ Also triggers an immediate project switch so header shows actual project."
       (when root
         (context-navigator-events-publish :project-switch root)
         (ignore-errors (context-navigator-groups-open))))
-    (message "%s" (context-navigator-i18n :restarted))))
+    (context-navigator-ui-info :restarted)))
 
 ;; --- Item open/selection-by-name ------------------------------------------------
 
@@ -1262,7 +1281,7 @@ For selection items, activate the region (mark active) after opening."
                (funcall safe-goto beg)
                (push-mark end t t)
                (when (fboundp 'recenter) (recenter)))))))
-      (_ (message "%s" (context-navigator-i18n :unknown-item-type))))))
+      (_ (context-navigator-ui-info :unknown-item-type)))))
 
 (defun context-navigator--format-item-candidate (item)
   "Return a human-readable label for ITEM: \"<name> — <path-or-buffer>\"."
@@ -1298,7 +1317,7 @@ For selections, activate the region after opening."
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (if (not (and (listp items) (> (length items) 0)))
-        (message "%s" (context-navigator-i18n :no-items-in-context))
+        (context-navigator-ui-info :no-items-in-context)
       (let* ((base-alist
               (mapcar (lambda (it) (cons (context-navigator--format-item-candidate it) it))
                       items))

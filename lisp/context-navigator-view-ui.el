@@ -16,13 +16,32 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+(defvar context-navigator-view-ui--fallback-parent nil
+  "Fallback parent keymap for Navigator interactive segments when the major mode map is not yet available.")
+
+(defun context-navigator-view-ui-parent-keymap ()
+  "Return a reliable parent keymap for Navigator UI segments.
+Prefers `context-navigator-view-mode-map' when it is bound and a keymap.
+Falls back to a lazily created sparse keymap cached in
+`context-navigator-view-ui--fallback-parent'."
+  (or (and (boundp 'context-navigator-view-mode-map)
+           (keymapp context-navigator-view-mode-map)
+           context-navigator-view-mode-map)
+      (progn
+        (unless (keymapp context-navigator-view-ui--fallback-parent)
+          (setq context-navigator-view-ui--fallback-parent (make-sparse-keymap)))
+        context-navigator-view-ui--fallback-parent)))
+
 (defun context-navigator-view-ui-make-keymap (command &optional parent)
   "Return a sparse keymap for interactive segment bound to COMMAND.
 When PARENT is a keymap, inherit it so navigation keys (n/p, j/k, arrows)
-continue to work within the segment."
-  (let ((m (make-sparse-keymap)))
-    (when (keymapp parent)
-      (set-keymap-parent m parent))
+continue to work within the segment. If PARENT is nil or not a keymap,
+inherit from a reliable Navigator parent keymap."
+  (let* ((m (make-sparse-keymap))
+         (p (or (and (keymapp parent) parent)
+                (context-navigator-view-ui-parent-keymap))))
+    (when (keymapp p)
+      (set-keymap-parent m p))
     ;; Mouse clicks (both regular and header-line areas)
     (define-key m [mouse-1] command)
     (define-key m [header-line mouse-1] command)
