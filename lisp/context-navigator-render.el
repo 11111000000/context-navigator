@@ -458,12 +458,6 @@ so that re-renders triggered by timers do not cause the cursor/selection to jump
           (when (and (window-live-p win) old-start)
             (set-window-start win old-start t)))))))
 
-
-
-
-
-
-
 (defun context-navigator-render-build-lines (items &optional _header icon-fn left-width)
   "Compatibility wrapper kept after refactor: build item lines only; HEADER is ignored."
   (context-navigator-render-build-item-lines items icon-fn left-width))

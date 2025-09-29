@@ -17,13 +17,13 @@
 (require 'subr-x)
 (require 'context-navigator-events)
 (require 'context-navigator-core)
+(require 'context-navigator-view-const)
 
 ;; Buffer-local state from the main view (declared there)
 (defvar context-navigator-view--subs nil)
 (defvar context-navigator-view--load-progress nil)
 (defvar context-navigator-view--mode 'items)
 (defvar context-navigator-view--last-render-key nil)
-(defvar context-navigator-view--buffer-name "*context-navigator*")
 
 ;; Small helpers provided by the main view
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -125,11 +125,47 @@
 (defvar context-navigator-view--subs)
 (defvar context-navigator-view--status-post-cmd-fn)
 (defvar context-navigator-view--gptel-poll-timer)
+(defvar context-navigator-view--buflist-fn nil)
+(defvar context-navigator-view--winselect-fn nil)
 
-;; Small helpers provided by the main view
-(declare-function context-navigator-view--install-buffer-list-hook "context-navigator-view" ())
-(declare-function context-navigator-view--install-window-select-hook "context-navigator-view" ())
-(declare-function context-navigator-view--initial-compute-counters "context-navigator-view" ())
+;; Small helpers now live here (moved from view.el)
+
+(defun context-navigator-view--install-buffer-list-hook ()
+  "Install buffer-list update hook (idempotent).
+
+When the global buffer list changes, recompute openable counters
+for the Navigator buffer. We install a global hook and filter inside
+the handler for the live sidebar buffer; removal is handled in
+`context-navigator-view--remove-subs'."
+  (unless context-navigator-view--buflist-fn
+    (setq context-navigator-view--buflist-fn
+          (lambda ()
+            (let ((buf (get-buffer context-navigator-view--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (ignore-errors (context-navigator-view-counters-invalidate)))))))
+    ;; Global hook (filter inside handler by the Navigator buffer)
+    (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn)))
+
+(defun context-navigator-view--install-window-select-hook ()
+  "Install window-selection-change hook (idempotent).
+
+When the selected window changes, schedule a render of the sidebar so
+it can become responsive to focus changes."
+  (unless context-navigator-view--winselect-fn
+    (setq context-navigator-view--winselect-fn
+          (lambda (_frame)
+            (let ((buf (get-buffer context-navigator-view--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (ignore-errors (context-navigator-view--schedule-render)))))))
+    (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn)))
+
+(defun context-navigator-view--initial-compute-counters ()
+  "Perform initial computation of openable counters (safe no-op when modules missing)."
+  (ignore-errors (context-navigator-view-counters-refresh-openable)))
+
+;; Keep declaration for spinner-stop (provided by the main view)
 (declare-function context-navigator-view--spinner-stop "context-navigator-view" ())
 
 ;;;###autoload

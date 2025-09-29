@@ -18,6 +18,7 @@
 (require 'subr-x)
 (require 'seq)
 (require 'context-navigator-view-events)
+(require 'context-navigator-view-const)
 
 ;; Declarations from the main view/windows (avoid cycles)
 (declare-function context-navigator-view-mode "context-navigator-view" ())
@@ -25,7 +26,7 @@
 (declare-function context-navigator-view-windows-setup "context-navigator-view-windows" ())
 (declare-function context-navigator-view-windows-teardown "context-navigator-view-windows" ())
 
-(defconst context-navigator-view--buffer-name "*context-navigator*")
+
 
 (defun context-navigator--buffer-mode--split (direction size)
   "Split selected window in DIRECTION ('right or 'below) using SIZE.
@@ -63,7 +64,7 @@ SIZE is interpreted as:
       (pcase placement
         ('reuse-other-window
          (let* ((wins (seq-filter (lambda (w) (and (window-live-p w)
-                                                   (not (eq w (selected-window)))))
+                                              (not (eq w (selected-window)))))
                                   (window-list (selected-frame) 'no-minibuffer)))
                 (w (car wins)))
            (if (window-live-p w)

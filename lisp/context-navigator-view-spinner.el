@@ -10,6 +10,7 @@
 ;;; Code:
 
 (require 'subr-x)
+(require 'context-navigator-view-const)
 
 (defcustom context-navigator-view-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -29,12 +30,11 @@
   :type 'number :group 'context-navigator)
 
 ;; Buffer-local state variables are declared in the view module; declare here
-;; for the byte-compiler’s sake (do not change bindings).
-(defvar context-navigator-view--spinner-timer nil)
-(defvar context-navigator-view--spinner-index 0)
-(defvar context-navigator-view--spinner-last-time 0.0)
-(defvar context-navigator-view--spinner-degraded nil)
-(defvar context-navigator-view--buffer-name "*context-navigator*")
+;; for the byte-compiler’s sake (no initializers to avoid duplicating defaults).
+(defvar context-navigator-view--spinner-timer)
+(defvar context-navigator-view--spinner-index)
+(defvar context-navigator-view--spinner-last-time)
+(defvar context-navigator-view--spinner-degraded)
 
 ;; Settings and a render trigger are provided by the view module.
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -81,6 +81,19 @@ Degrade to a static indicator if timer slippage exceeds a threshold."
   (setq context-navigator-view--spinner-index 0)
   (setq context-navigator-view--spinner-last-time 0.0)
   (setq context-navigator-view--spinner-degraded nil))
+
+(defun context-navigator-view-spinner-current-frame (&optional pct)
+  "Return current spinner frame string or empty string when not animating.
+When PCT is nil, return empty string so caller can gate on progress."
+  (let* ((run (and (not context-navigator-view--spinner-degraded)
+                   (timerp context-navigator-view--spinner-timer)
+                   pct))
+         (frames context-navigator-view-spinner-frames)
+         (len (length frames))
+         (idx (or context-navigator-view--spinner-index 0)))
+    (if (and run (> len 0))
+        (nth (mod idx (max 1 len)) frames)
+      "")))
 
 (provide 'context-navigator-view-spinner)
 ;;; context-navigator-view-spinner.el ends here

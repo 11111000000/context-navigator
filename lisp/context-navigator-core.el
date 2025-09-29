@@ -196,11 +196,6 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
           (throw 'hit t)))
       nil)))
 
-
-
-;; Install lightweight advices for common balancing functions when available.
-
-
 ;;;###autoload
 (defun context-navigator-open ()
   "Open Navigator in the current display mode."

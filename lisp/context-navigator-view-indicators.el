@@ -14,6 +14,7 @@
 ;;; Code:
 
 (require 'subr-x)
+(require 'cl-lib)
 (require 'context-navigator-events)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-log)
@@ -104,43 +105,74 @@ ARGS typically contain a source symbol; ignore noisy sources."
                                "gptel-init: pulled %d keys, hash=%s"
                                (length (or keys '())) h))))
 
+(defun context-navigator-view--gptel-poll-raw-keys ()
+  "Return raw GPTel keys using the low-level accessor, or nil on error."
+  (and (fboundp 'context-navigator-gptel--raw-keys)
+       (ignore-errors (context-navigator-gptel--raw-keys))))
+
+(defun context-navigator-view--gptel-poll-fallback-keys ()
+  "Compute fallback keys from the current model state (non-blocking)."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st))))
+    (and (listp items)
+         (mapcar #'context-navigator-model-item-key
+                 (cl-remove-if-not #'context-navigator-item-enabled items)))))
+
+(defun context-navigator-view--gptel-poll-compute (raw-keys)
+  "Given RAW-KEYS return a list (keys h use-fallback)."
+  (let* ((fallback-keys (when (or (null raw-keys) (= (length raw-keys) 0))
+                          (context-navigator-view--gptel-poll-fallback-keys)))
+         (keys (or raw-keys fallback-keys '()))
+         (h (sxhash-equal keys))
+         (use-fallback (and (or (null raw-keys) (= (length raw-keys) 0))
+                            (listp fallback-keys))))
+    (list keys h use-fallback)))
+
+(defun context-navigator-view--gptel-poll-process (keys h use-fallback)
+  "Update cached KEYS/H and schedule a render if they differ from cache."
+  (unless (equal h context-navigator-view--gptel-keys-hash)
+    (setq context-navigator-view--gptel-keys keys
+          context-navigator-view--gptel-keys-hash h)
+    (ignore-errors
+      (context-navigator-debug :debug :ui
+                               "gptel-poll: updated keys=%d hash=%s%s"
+                               (length keys) h
+                               (if use-fallback " (fallback)" "")))
+    (context-navigator-view--schedule-render)))
+
+(defun context-navigator-view--gptel-poll-interval ()
+  "Return polling interval for GPTel indicators (non-negative integer)."
+  (or context-navigator-gptel-indicator-poll-interval 0))
+
+(defun context-navigator-view--gptel-poll-run-once ()
+  "Perform a single poll iteration: compute raw keys and update cache when visible.
+Intended to run inside the view buffer context."
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (get-buffer-window buf t)
+          (let* ((raw-keys (context-navigator-view--gptel-poll-raw-keys))
+                 (res (context-navigator-view--gptel-poll-compute raw-keys))
+                 (keys (nth 0 res))
+                 (h (nth 1 res))
+                 (use-fallback (nth 2 res)))
+            (context-navigator-view--gptel-poll-process keys h use-fallback)))))))
+
+(defun context-navigator-view--gptel-poll-callback ()
+  "Callback invoked by the poll timer; delegate to `-run-once'.
+Kept lightweight to satisfy `run-at-time' requirements."
+  (context-navigator-view--gptel-poll-run-once))
+
 (defun context-navigator-view--start-gptel-poll-timer ()
   "Start optional polling to refresh gptel indicators while the sidebar is visible.
 
 Uses `context-navigator-gptel-indicator-poll-interval' to control frequency.
 Non-blocking: only reads raw variables and falls back to current model state;
 does not call collectors or APIs that may allocate or block."
-  (let ((int (or context-navigator-gptel-indicator-poll-interval 0)))
+  (let ((int (context-navigator-view--gptel-poll-interval)))
     (when (> int 0)
       (setq context-navigator-view--gptel-poll-timer
-            (run-at-time 0 int
-                         (lambda ()
-                           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-                             (when (buffer-live-p buf)
-                               (with-current-buffer buf
-                                 (when (get-buffer-window buf t)
-                                   (let* ((raw-keys (and (fboundp 'context-navigator-gptel--raw-keys)
-                                                         (ignore-errors (context-navigator-gptel--raw-keys))))
-                                          (fallback-keys
-                                           (when (or (null raw-keys) (= (length raw-keys) 0))
-                                             (let* ((st (ignore-errors (context-navigator--state-get)))
-                                                    (items (and st (context-navigator-state-items st))))
-                                               (and (listp items)
-                                                    (mapcar #'context-navigator-model-item-key
-                                                            (cl-remove-if-not #'context-navigator-item-enabled items))))))
-                                          (keys (or raw-keys fallback-keys '()))
-                                          (h (sxhash-equal keys))
-                                          (use-fallback (and (or (null raw-keys) (= (length raw-keys) 0))
-                                                             (listp fallback-keys))))
-                                     (unless (equal h context-navigator-view--gptel-keys-hash)
-                                       (setq context-navigator-view--gptel-keys keys
-                                             context-navigator-view--gptel-keys-hash h)
-                                       (ignore-errors
-                                         (context-navigator-debug :debug :ui
-                                                                  "gptel-poll: updated keys=%d hash=%s%s"
-                                                                  (length keys) h
-                                                                  (if use-fallback " (fallback)" "")))
-                                       (context-navigator-view--schedule-render)))))))))))))
+            (run-at-time 0 int #'context-navigator-view--gptel-poll-callback)))))
 
 (provide 'context-navigator-view-indicators)
 ;;; context-navigator-view-indicators.el ends here

@@ -1,7 +1,5 @@
 ;;; context-navigator-view.el --- Sidebar UI (side window) -*- lexical-binding: t; -*-
-
 ;; SPDX-License-Identifier: MIT
-
 ;;; Commentary:
 ;; Lightweight, event-driven sidebar:
 ;; - Opens in a left side window with configurable width
@@ -37,16 +35,13 @@
 (require 'context-navigator-view-dispatch)
 (require 'context-navigator-view-buffer)
 (require 'context-navigator-view-help)
-
-;; Split helpers (indicators / counters / spinner) — thin wrappers live in
-;; separate modules to reduce coupling and make incremental extraction easier.
-;; Implementations currently delegate to existing functions in context-navigator-view.el
-;; and therefore are safe to require here.
 (require 'context-navigator-view-indicators)
 (require 'context-navigator-view-counters)
 (require 'context-navigator-view-spinner)
 (require 'context-navigator-view-events)
 (require 'context-navigator-view-windows)
+(require 'context-navigator-view-const)
+(require 'context-navigator-view-navigation)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -63,8 +58,6 @@
 - text  : verbose text labels"
   :type '(choice (const auto) (const icons) (const text))
   :group 'context-navigator)
-
-
 
 (defcustom context-navigator-gptel-indicator-poll-interval 0
   "Polling interval (seconds) to refresh gptel indicators while the sidebar is visible.
@@ -85,7 +78,6 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-remove-item-by-key "context-navigator-core" (key))
 (declare-function context-navigator-context-clear-current-group "context-navigator-core" ())
 (declare-function context-navigator-context-unload "context-navigator-core" ())
-;; group commands (from groups module)
 (declare-function context-navigator-groups-open "context-navigator-groups" ())
 (declare-function context-navigator-group-switch "context-navigator-groups" (&optional slug))
 (declare-function context-navigator-group-create "context-navigator-groups" (&optional display-name))
@@ -93,28 +85,70 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-group-delete "context-navigator-groups" (&optional slug))
 (declare-function context-navigator-group-duplicate "context-navigator-groups" (&optional src-slug new-display))
 (declare-function context-navigator-group-edit-description "context-navigator-groups" (&optional slug new-desc))
-
-(defconst context-navigator-view--buffer-name "*context-navigator*")
-
-
+(declare-function context-navigator--buffer-mode--split "context-navigator-view-buffer" (direction size))
+(declare-function context-navigator-buffer-open "context-navigator-view-buffer" ())
+(declare-function context-navigator-buffer-close "context-navigator-view-buffer" ())
+(declare-function context-navigator-buffer-toggle "context-navigator-view-buffer" ())
+(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
+(declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
+(declare-function context-navigator-view-counters-get-openable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-refresh-openable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-collect-closable "context-navigator-view-counters" ())
+(declare-function context-navigator-view-counters-invalidate "context-navigator-view-counters" ())
+(declare-function context-navigator-view--groups-header-lines "context-navigator-view-groups" (header total-width))
+(declare-function context-navigator-view--groups-body-lines "context-navigator-view-groups" (state))
+(declare-function context-navigator-view--groups-help-lines "context-navigator-view-groups" (total-width))
+(declare-function context-navigator-view--render-groups "context-navigator-view-groups" (state header total-width))
+(declare-function context-navigator-view--items-header-toggle-lines "context-navigator-view-items" (total-width))
+(declare-function context-navigator-view--items-base-lines "context-navigator-view-items" (state header total-width))
+(declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
+(declare-function context-navigator-view--items-extra-lines "context-navigator-view-items" (total-width))
+(declare-function context-navigator-view--render-items "context-navigator-view-items" (state header total-width))
+(declare-function context-navigator-view--find-next-interactive-pos "context-navigator-view-navigation" (&optional start))
+(declare-function context-navigator-view--find-prev-interactive-pos "context-navigator-view-navigation" (&optional start))
+(declare-function context-navigator-view--find-next-itemish-pos "context-navigator-view-navigation" (&optional start))
+(declare-function context-navigator-view--find-prev-itemish-pos "context-navigator-view-navigation" (&optional start))
+(declare-function context-navigator-view--move-next-interactive "context-navigator-view-navigation" ())
+(declare-function context-navigator-view-tab-next "context-navigator-view-navigation" ())
+(declare-function context-navigator-view-tab-previous "context-navigator-view-navigation" ())
+(declare-function context-navigator-view-toggle-enabled "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-gptel "context-navigator-view-actions" ())
+(declare-function context-navigator-view-delete-from-model "context-navigator-view-actions" ())
+(declare-function context-navigator-view-open-all-buffers "context-navigator-view-actions" ())
+(declare-function context-navigator-view-close-all-buffers "context-navigator-view-actions" ())
+(declare-function context-navigator-view-clear-group "context-navigator-view-actions" ())
+(declare-function context-navigator-view-clear-gptel "context-navigator-view-actions" ())
+(declare-function context-navigator-view-enable-all-gptel "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-all-gptel "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-push "context-navigator-view-actions" ())
+(declare-function context-navigator-view-toggle-auto-project "context-navigator-view-actions" ())
+(declare-function context-navigator-view-push-now "context-navigator-view-actions" ())
+(declare-function context-navigator-view-razor-run "context-navigator-view-actions" ())
+(declare-function context-navigator-view--subscribe-model-events   "context-navigator-view-events" ())
+(declare-function context-navigator-view--subscribe-load-events    "context-navigator-view-events" ())
+(declare-function context-navigator-view--subscribe-groups-events  "context-navigator-view-events" ())
+(declare-function context-navigator-view--subscribe-project-events "context-navigator-view-events" ())
+(declare-function context-navigator-view-events-install "context-navigator-view-events" ())
+(declare-function context-navigator-view-events-remove "context-navigator-view-events" ())
+(declare-function context-navigator-view--subscribe-gptel-events "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--init-gptel-cache       "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--start-gptel-poll-timer "context-navigator-view-indicators" ())
+(declare-function context-navigator-view-help "context-navigator-view-help" ())
+(declare-function context-navigator-view-open-menu "context-navigator-view-help" ())
+(declare-function context-navigator-view-activate "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-refresh-dispatch "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-delete-dispatch "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-go-up "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-create "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-rename "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-duplicate "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-edit-description "context-navigator-view-dispatch" ())
 
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
 (defvar-local context-navigator-view--mode 'items) ;; 'items | 'groups
 (defvar-local context-navigator-view--groups nil)  ;; cached groups plists
 (defvar-local context-navigator-view--last-lines nil)
-(defvar context-navigator-view--group-line-keymap
-  (let ((m (make-sparse-keymap)))
-    (define-key m [mouse-1] #'context-navigator-view-mouse-open-group)
-    ;; Explicit keyboard bindings on group lines for reliability
-    (define-key m (kbd "RET")       #'context-navigator-view-activate)
-    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
-    (define-key m [return]          #'context-navigator-view-activate)
-    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
-    (define-key m [kp-enter]        #'context-navigator-view-activate)
-    (define-key m (kbd "l")         #'context-navigator-view-activate)
-    m)
-  "Keymap attached to group lines to support mouse and keyboard activation.")
 (defvar-local context-navigator-view--load-progress nil) ;; cons (POS . TOTAL) | nil)
 (defvar-local context-navigator-view--winselect-fn nil)  ;; function added to window-selection-change-functions
 (defvar-local context-navigator-view--gptel-keys nil)    ;; cached stable keys from gptel (for indicators)
@@ -135,41 +169,16 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 (defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
 
-(defvar context-navigator-view--title-line-keymap
-  (let ((m (make-sparse-keymap)))
-    ;; Mouse click toggles collapse/expand
-    (define-key m [mouse-1] #'context-navigator-view-toggle-collapse-immediate)
-    ;; TAB on title behaves like in Magit: toggle collapse
-    (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m [tab]             #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse-immediate)
-    ;; RET on title also toggles collapse/expand
-    (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m [return]          #'context-navigator-view-toggle-collapse-immediate)
-    (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse-immediate)
-    m)
-  "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
-
 (defun context-navigator-view-toggle-collapse-immediate ()
   "Toggle collapse and render immediately."
   (interactive)
   (context-navigator-view-toggle-collapse)
   (context-navigator-view--render-if-visible))
 
-
-
 (defvar-local context-navigator-view--spinner-timer nil)          ;; loading spinner timer
 (defvar-local context-navigator-view--spinner-index 0)
 (defvar-local context-navigator-view--spinner-last-time 0.0)      ;; last tick timestamp (float-time)
 (defvar-local context-navigator-view--spinner-degraded nil)       ;; when non-nil, render static indicator
-
-(defvar context-navigator-view-window-params
-  '((side . left) (slot . -1))
-  "Default parameters for the sidebar window.")
-
-
 
 (defcustom context-navigator-view-header-props
   '(context-navigator-header)
@@ -219,83 +228,6 @@ When ALSO-HEADERLINE is non-nil, also reset header-line cache locals."
     (setq-local context-navigator-headerline--cache-key nil)
     (setq-local context-navigator-headerline--cache-str nil)))
 
-;; Lightweight buffer/window hook installers used by the view buffer.
-;; These are minimal, safe implementations that avoid void-function errors
-;; during incremental extraction. They intentionally do small, local work:
-;; install buffer-list/window-selection hooks that trigger counters/refresh.
-(defun context-navigator-view--install-buffer-list-hook ()
-  "Install buffer-list update hook (idempotent).
-
-When the global buffer list changes, recompute openable counters
-for the Navigator buffer. We install a global hook and filter inside
-the handler for the live sidebar buffer; removal is handled in
-`context-navigator-view--remove-subs'."
-  (unless context-navigator-view--buflist-fn
-    (setq context-navigator-view--buflist-fn
-          (lambda ()
-            (let ((buf (get-buffer context-navigator-view--buffer-name)))
-              (when (buffer-live-p buf)
-                (with-current-buffer buf
-                  (ignore-errors (context-navigator-view--invalidate-openable)))))))
-    ;; Global hook (filter inside handler by the Navigator buffer)
-    (add-hook 'buffer-list-update-hook context-navigator-view--buflist-fn)))
-
-(defun context-navigator-view--install-window-select-hook ()
-  "Install window-selection-change hook (idempotent).
-
-When the selected window changes, schedule a render of the sidebar so
-it can become responsive to focus changes."
-  (unless context-navigator-view--winselect-fn
-    (setq context-navigator-view--winselect-fn
-          (lambda (_frame)
-            (let ((buf (get-buffer context-navigator-view--buffer-name)))
-              (when (buffer-live-p buf)
-                (with-current-buffer buf
-                  (ignore-errors (context-navigator-view--schedule-render)))))))
-    (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn)))
-
-(defun context-navigator-view--initial-compute-counters ()
-  "Perform initial computation of openable counters (safe no-op when modules missing)."
-  (ignore-errors (context-navigator-view-counters-refresh-openable)))
-
-
-
-
-
-;; Moved to context-navigator-view-controls.el (provides `context-navigator-view-controls-lines').
-;; This placeholder avoids a duplicate definition in view.el.
-
-;; Controls moved to context-navigator-view-controls.el
-;; Keep compiler happy with declarations; actual definitions provided by the module.
-
-(declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
-(declare-function context-navigator-view-controls-lines "context-navigator-view-controls" (total-width))
-
-;; Naming cleanup wrappers (non-breaking).
-;; Wrappers removed: implementations live in dedicated modules (view-items, view-groups).
-;; The view.el declares these symbols via `declare-function' above so the byte-compiler is satisfied.
-
-;; Compatibility: provide legacy aliases for old API names and mark them obsolete.
-;; We alias old symbols to the new canonical implementations (old -> new),
-;; then call `make-obsolete' so callers see a clear warning but code continues to work.
-
-
-
-;; Items / Groups footer -> canonical names (items already provides alias)
-
-
-;; Note: context-navigator-view--items-footer-lines is already aliased inside
-;; context-navigator-view-items.el to context-navigator-view--items-extra-lines
-;; and is marked obsolete there.
-
-;; Openable/Closable counters moved to context-navigator-view-counters.el
-;; Implementations live in that module; the view calls thin wrappers so the API
-;; remains stable while the implementation is extracted.
-
-(declare-function context-navigator-view-counters-get-openable "context-navigator-view-counters" ())
-(declare-function context-navigator-view-counters-refresh-openable "context-navigator-view-counters" ())
-(declare-function context-navigator-view-counters-collect-closable "context-navigator-view-counters" ())
-(declare-function context-navigator-view-counters-invalidate "context-navigator-view-counters" ())
 
 (defun context-navigator-view--invalidate-openable ()
   "Invalidate cached openable counters (delegates to counters module)."
@@ -325,26 +257,6 @@ Degrades to a static indicator when timer slippage exceeds threshold."
   (ignore-errors (context-navigator-view-spinner-stop)))
 
 
-;; Controls API declarations are defined earlier to avoid duplication.
-
-
-
-;; Groups rendering helpers moved to context-navigator-view-groups.el
-;; Keep declarations so byte-compiler & callers in other modules are happy.
-(declare-function context-navigator-view--groups-header-lines "context-navigator-view-groups" (header total-width))
-(declare-function context-navigator-view--groups-body-lines "context-navigator-view-groups" (state))
-(declare-function context-navigator-view--groups-help-lines "context-navigator-view-groups" (total-width))
-(declare-function context-navigator-view--render-groups "context-navigator-view-groups" (state header total-width))
-
-;; Items rendering & status helpers moved to context-navigator-view-items.el
-;; Keep declarations so byte-compiler & callers in other modules are happy.
-(declare-function context-navigator-view--items-header-toggle-lines "context-navigator-view-items" (total-width))
-(declare-function context-navigator-view--items-base-lines "context-navigator-view-items" (state header total-width))
-(declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
-(declare-function context-navigator-view--items-extra-lines "context-navigator-view-items" (total-width))
-(declare-function context-navigator-view--render-items "context-navigator-view-items" (state header total-width))
-
-
 ;; Entry point
 
 (defun context-navigator-view--render-loading (state header total-width)
@@ -360,16 +272,7 @@ separator at the top of the buffer. Keep a small centered spinner/loading line."
                          (> (cdr context-navigator-view--load-progress) 0))
                 (floor (* 100.0 (/ (float (car context-navigator-view--load-progress))
                                    (max 1 (cdr context-navigator-view--load-progress)))))))
-         (use-spinner (and (not context-navigator-view--spinner-degraded)
-                           (timerp context-navigator-view--spinner-timer)
-                           pct))
-         (frames (or context-navigator-view-spinner-frames
-                     '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
-         (len (length frames))
-         (idx (or context-navigator-view--spinner-index 0))
-         (ch (if (and use-spinner (> len 0))
-                 (nth (mod idx (max 1 len)) frames)
-               ""))
+         (ch (or (ignore-errors (context-navigator-view-spinner-current-frame pct)) ""))
          (label (if pct
                     (let* ((pos (and (consp context-navigator-view--load-progress)
                                      (car context-navigator-view--load-progress)))
@@ -378,7 +281,7 @@ separator at the top of the buffer. Keep a small centered spinner/loading line."
                            (suffix (if (and (integerp pos) (integerp tot) (> tot 0))
                                        (format " (%d/%d)" pos tot)
                                      "")))
-                      (format "%s%d%%%s" (if use-spinner ch "") pct suffix))
+                      (format "%s%d%%%s" ch pct suffix))
                   (context-navigator-i18n :loading)))
          (spin-w (max 0 (string-width label)))
          (left-pad (max 0 (floor (/ (max 0 (- total-width spin-w)) 2))))
@@ -446,6 +349,7 @@ background."
           (context-navigator-view--render-groups state header total))
          (t
           (context-navigator-view--render-items state header total)))))))
+
 (defun context-navigator-view--render-if-visible ()
   "Render sidebar if its buffer is visible."
   (when-let* ((buf (get-buffer context-navigator-view--buffer-name))
@@ -470,68 +374,41 @@ background."
 (declare-function context-navigator-view--visit "context-navigator-view-actions" (preview))
 (declare-function context-navigator-view-visit "context-navigator-view-actions" ())
 (declare-function context-navigator-view-preview "context-navigator-view-actions" ())
-
 (declare-function context-navigator-view-next-item "context-navigator-view-navigation" ())
-
 (declare-function context-navigator-view-previous-item "context-navigator-view-navigation" ())
 
-;; TAB navigation helpers moved to context-navigator-view-navigation.el
-(require 'context-navigator-view-navigation)
+(defvar context-navigator-view--title-line-keymap
+  (let ((m (make-sparse-keymap)))
+    ;; Mouse click toggles collapse/expand
+    (define-key m [mouse-1] #'context-navigator-view-toggle-collapse-immediate)
+    ;; TAB on title behaves like in Magit: toggle collapse
+    (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m [tab]             #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse-immediate)
+    ;; RET on title also toggles collapse/expand
+    (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m [return]          #'context-navigator-view-toggle-collapse-immediate)
+    (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse-immediate)
+    m)
+  "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
 
-;; Declarations for the byte-compiler (functions are provided by the navigation module).
-(declare-function context-navigator-view--find-next-interactive-pos "context-navigator-view-navigation" (&optional start))
-(declare-function context-navigator-view--find-prev-interactive-pos "context-navigator-view-navigation" (&optional start))
-(declare-function context-navigator-view--find-next-itemish-pos "context-navigator-view-navigation" (&optional start))
-(declare-function context-navigator-view--find-prev-itemish-pos "context-navigator-view-navigation" (&optional start))
-(declare-function context-navigator-view--move-next-interactive "context-navigator-view-navigation" ())
-(declare-function context-navigator-view-tab-next "context-navigator-view-navigation" ())
-(declare-function context-navigator-view-tab-previous "context-navigator-view-navigation" ())
-
-
-
-;; Moved to context-navigator-view-actions.el (compat declarations for byte-compiler)
-(declare-function context-navigator-view-toggle-enabled "context-navigator-view-actions" ())
-(declare-function context-navigator-view-toggle-gptel "context-navigator-view-actions" ())
-(declare-function context-navigator-view-delete-from-model "context-navigator-view-actions" ())
-(declare-function context-navigator-view-open-all-buffers "context-navigator-view-actions" ())
-(declare-function context-navigator-view-close-all-buffers "context-navigator-view-actions" ())
-(declare-function context-navigator-view-clear-group "context-navigator-view-actions" ())
-(declare-function context-navigator-view-clear-gptel "context-navigator-view-actions" ())
-(declare-function context-navigator-view-enable-all-gptel "context-navigator-view-actions" ())
-(declare-function context-navigator-view-toggle-all-gptel "context-navigator-view-actions" ())
-(declare-function context-navigator-view-toggle-push "context-navigator-view-actions" ())
-(declare-function context-navigator-view-toggle-auto-project "context-navigator-view-actions" ())
-(declare-function context-navigator-view-push-now "context-navigator-view-actions" ())
-(declare-function context-navigator-view-razor-run "context-navigator-view-actions" ())
-
-;; Implementations live in context-navigator-view-indicators.el. See that
-;; module for details and further refactoring.
-
-;; Event subscriptions moved to context-navigator-view-events.el
-(declare-function context-navigator-view--subscribe-model-events   "context-navigator-view-events" ())
-(declare-function context-navigator-view--subscribe-load-events    "context-navigator-view-events" ())
-(declare-function context-navigator-view--subscribe-groups-events  "context-navigator-view-events" ())
-(declare-function context-navigator-view--subscribe-project-events "context-navigator-view-events" ())
-(declare-function context-navigator-view-events-install "context-navigator-view-events" ())
-(declare-function context-navigator-view-events-remove "context-navigator-view-events" ())
-
-;; GPTel indicators/event helpers live in context-navigator-view-indicators.el
-(declare-function context-navigator-view--subscribe-gptel-events "context-navigator-view-indicators" ())
-(declare-function context-navigator-view--init-gptel-cache       "context-navigator-view-indicators" ())
-(declare-function context-navigator-view--start-gptel-poll-timer "context-navigator-view-indicators" ())
-
-;; Subscriptions are installed/removed by context-navigator-view-events.el
-;; (context-navigator-view-events-install / context-navigator-view-events-remove).
-
-
-
-(declare-function context-navigator-view-help "context-navigator-view-help" ())
-
-(declare-function context-navigator-view-open-menu "context-navigator-view-help" ())
+(defvar context-navigator-view--group-line-keymap
+  (let ((m (make-sparse-keymap)))
+    (define-key m [mouse-1] #'context-navigator-view-mouse-open-group)
+    ;; Explicit keyboard bindings on group lines for reliability
+    (define-key m (kbd "RET")       #'context-navigator-view-activate)
+    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
+    (define-key m [return]          #'context-navigator-view-activate)
+    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
+    (define-key m [kp-enter]        #'context-navigator-view-activate)
+    (define-key m (kbd "l")         #'context-navigator-view-activate)
+    m)
+  "Keymap attached to group lines to support mouse and keyboard activation.")
 
 (defvar context-navigator-view-mode-map
   (let ((m (make-sparse-keymap)))
-    ;; Dispatch RET depending on mode
     (define-key m (kbd "RET")       #'context-navigator-view-activate)
     (define-key m (kbd "C-m")       #'context-navigator-view-activate)
     (define-key m [return]          #'context-navigator-view-activate)
@@ -540,7 +417,6 @@ background."
     (define-key m (kbd "v")       #'context-navigator-view-preview)
     (define-key m (kbd "n")   #'context-navigator-view-next-item)
     (define-key m (kbd "p")   #'context-navigator-view-previous-item)
-    ;; Vim-like navigation keys
     (define-key m (kbd "j")   #'context-navigator-view-next-item)
     (define-key m (kbd "k")   #'context-navigator-view-previous-item)
     (define-key m (kbd "<down>") #'context-navigator-view-next-item)
@@ -550,9 +426,6 @@ background."
     (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
     (define-key m (kbd "m")   #'context-navigator-view-toggle-enabled)
     (define-key m (kbd "M")   #'context-navigator-view-toggle-all-gptel)
-
-    ;; TAB navigation between interactive elements
-    ;; Bind several TAB event representations to be robust across terminals/minor-modes.
     (define-key m (kbd "TAB")       #'context-navigator-view-tab-next)
     (define-key m (kbd "<tab>")     #'context-navigator-view-tab-next)
     (define-key m [tab]             #'context-navigator-view-tab-next)
@@ -560,34 +433,25 @@ background."
     (define-key m (kbd "<backtab>") #'context-navigator-view-tab-previous)
     (define-key m [backtab]         #'context-navigator-view-tab-previous)
     (define-key m (kbd "S-<tab>")   #'context-navigator-view-tab-previous)
-    ;; Remap global indent command to our TAB-next to ensure override everywhere.
     (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
 
-    ;; Ensure delete-other-windows behaves sensibly when the sidebar is present:
-    ;; close sidebar windows first to avoid making a side window the only window.
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
 
-    ;; New global toggles/actions in sidebar
     (define-key m (kbd "G")   #'context-navigator-view-show-groups)
     (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-view-push-now)
-    ;; Stats toggle
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
-    ;; Align with transient: U → unload context
     (define-key m (kbd "U")   #'context-navigator-context-unload)
     (define-key m (kbd "C")   #'context-navigator-view-clear-gptel)
-    ;; d and g are dispatched depending on mode
     (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)
     (define-key m (kbd "g")   #'context-navigator-view-refresh-dispatch)
-    ;; Additional action: open all context buffers in background
     (define-key m (kbd "O")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
-    ;; Clear group (explicit shortcut matching UI hint)
     (define-key m (kbd "E")   #'context-navigator-view-clear-group)
-    ;; Groups-specific keys
+
     (define-key m (kbd "u")   #'context-navigator-view-go-up)      ;; show groups from items (Up)
     (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
     (define-key m (kbd "a")   #'context-navigator-view-group-create)
@@ -600,44 +464,6 @@ background."
     m)
   "Keymap for =context-navigator-view-mode'.")
 
-;; Ensure bindings are updated after reloads (defvar won't reinitialize an existing keymap).
-(when (keymapp context-navigator-view-mode-map)
-  ;; Keep legacy binding in sync
-  (define-key context-navigator-view-mode-map (kbd "SPC") #'context-navigator-view-toggle-enabled)
-  (define-key context-navigator-view-mode-map (kbd "t") #'context-navigator-view-toggle-enabled)
-  ;; Ensure RET variants are bound across terminals/tty/GUI
-  (define-key context-navigator-view-mode-map (kbd "RET")       #'context-navigator-view-activate)
-  (define-key context-navigator-view-mode-map (kbd "C-m")       #'context-navigator-view-activate)
-  (define-key context-navigator-view-mode-map [return]          #'context-navigator-view-activate)
-  (define-key context-navigator-view-mode-map (kbd "<return>")  #'context-navigator-view-activate)
-  (define-key context-navigator-view-mode-map [kp-enter]        #'context-navigator-view-activate)
-  ;; Make TAB robust across reloads/terminals/minor-modes
-  (define-key context-navigator-view-mode-map (kbd "TAB")       #'context-navigator-view-tab-next)
-  (define-key context-navigator-view-mode-map (kbd "<tab>")     #'context-navigator-view-tab-next)
-  (define-key context-navigator-view-mode-map [tab]             #'context-navigator-view-tab-next)
-  (define-key context-navigator-view-mode-map (kbd "C-i")       #'context-navigator-view-tab-next)
-  (define-key context-navigator-view-mode-map (kbd "<backtab>") #'context-navigator-view-tab-previous)
-  (define-key context-navigator-view-mode-map [backtab]         #'context-navigator-view-tab-previous)
-  (define-key context-navigator-view-mode-map (kbd "S-<tab>")   #'context-navigator-view-tab-previous)
-  ;; Ensure remaps also apply after reload
-  (define-key context-navigator-view-mode-map
-              [remap indent-for-tab-command] #'context-navigator-view-tab-next)
-  (define-key context-navigator-view-mode-map
-              [remap delete-other-windows]   #'context-navigator-delete-other-windows)
-  ;; Arrow keys
-  (define-key context-navigator-view-mode-map (kbd "<down>") #'context-navigator-view-next-item)
-  (define-key context-navigator-view-mode-map (kbd "<up>")   #'context-navigator-view-previous-item)
-  ;; Groups navigation alias: keep 'h' consistent with help/docs
-  (define-key context-navigator-view-mode-map (kbd "h") #'context-navigator-view-go-up)
-  ;; New binding sync after reloads (keep in sync with primary map)
-  (define-key context-navigator-view-mode-map (kbd "G") #'context-navigator-view-show-groups)
-  (define-key context-navigator-view-mode-map (kbd "x") #'context-navigator-view-toggle-push)
-  (define-key context-navigator-view-mode-map (kbd "U") #'context-navigator-context-unload)
-  (define-key context-navigator-view-mode-map (kbd "K") #'context-navigator-view-close-all-buffers)
-  (define-key context-navigator-view-mode-map (kbd "s") #'context-navigator-view-stats-toggle)
-  (define-key context-navigator-view-mode-map (kbd "E") #'context-navigator-view-clear-group)
-  (define-key context-navigator-view-mode-map (kbd "e") #'context-navigator-view-group-edit-description)
-  (define-key context-navigator-view-mode-map (kbd "?") #'context-navigator-view-open-menu))
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
 (when (and (keymapp context-navigator-view--group-line-keymap)
            (keymapp context-navigator-view-mode-map))
@@ -673,15 +499,10 @@ Do not highlight purely decorative separators."
   (buffer-disable-undo)
   (setq truncate-lines t
         cursor-type t)
-  ;; Ensure our header-line face is remapped for every Navigator buffer.
   (when (fboundp 'context-navigator-view-controls--ensure-headerline-face)
     (context-navigator-view-controls--ensure-headerline-face))
-  ;; Install modeline/header-line for the sidebar buffer.
-  ;; Use the dedicated helper so we show the status even when the global
-  ;; mode-line is disabled (fallback to header-line).
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
-  ;; Apply header-line controls (toggles and actions) for Navigator.
   (when (fboundp 'context-navigator-headerline--apply)
     (context-navigator-headerline--apply (current-buffer)))
   (setq-local hl-line-range-function #'context-navigator-view--hl-line-range)
@@ -732,16 +553,6 @@ Do not highlight purely decorative separators."
       (context-navigator-view-close)
     (context-navigator-view-open)))
 
-;;; Buffer-mode (magit-like) entry points
-
-(declare-function context-navigator--buffer-mode--split "context-navigator-view-buffer" (direction size))
-
-(declare-function context-navigator-buffer-open "context-navigator-view-buffer" ())
-
-(declare-function context-navigator-buffer-close "context-navigator-view-buffer" ())
-
-(declare-function context-navigator-buffer-toggle "context-navigator-view-buffer" ())
-
 ;; Helpers for group mode
 
 (defun context-navigator-view--at-group ()
@@ -770,22 +581,6 @@ Do not highlight purely decorative separators."
 ;; Actions moved to context-navigator-view-actions.el
 
 ;;; Dispatchers and commands
-
-(declare-function context-navigator-view-activate "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-refresh-dispatch "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-delete-dispatch "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-go-up "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-group-create "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-group-rename "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-group-duplicate "context-navigator-view-dispatch" ())
-
-(declare-function context-navigator-view-group-edit-description "context-navigator-view-dispatch" ())
 
 ;;;###autoload
 (defun context-navigator-view-show-groups ()

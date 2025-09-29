@@ -30,6 +30,7 @@
 
 ;; Optional: counters (for closable-buffers)
 (require 'context-navigator-view-counters)
+(require 'context-navigator-view-const)
 
 ;; Declarations (callbacks provided by the view)
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -40,7 +41,7 @@
 ;; Direct access to counters to avoid extra wrappers
 (declare-function context-navigator-view-counters-collect-closable "context-navigator-view-counters" ())
 
-(defconst context-navigator-view--buffer-name "*context-navigator*")
+
 
 ;; Internal helpers -----------------------------------------------------------
 
