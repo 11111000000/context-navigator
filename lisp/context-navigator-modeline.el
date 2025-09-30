@@ -21,7 +21,7 @@
 
 (declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
 (declare-function context-navigator--groups-candidates "context-navigator-groups" (&optional root))
-(declare-function context-navigator--state-read "context-navigator-groups" (root))
+(declare-function context-navigator--state-get "context-navigator-groups" ())
 
 (defgroup context-navigator-modeline nil
   "Modeline settings for Context Navigator."
@@ -40,7 +40,7 @@
 Plist: (:root ROOT :stamp TIME :alist ALIST), where ALIST is slug->desc.")
 
 (defun context-navigator-modeline--desc-alist (root)
-  "Return description alist for ROOT, reloading rarely to avoid IO on every tick."
+  "Return description alist for ROOT using in-memory state, avoiding disk IO on every tick."
   (let* ((now (float-time))
          (ttl 2.0)
          (cached (and (plist-get context-navigator-modeline--desc-cache :root)
@@ -50,7 +50,7 @@ Plist: (:root ROOT :stamp TIME :alist ALIST), where ALIST is slug->desc.")
                      (plist-get context-navigator-modeline--desc-cache :stamp))))
     (if (and cached stamp (< (- now stamp) ttl))
         cached
-      (let* ((st (ignore-errors (context-navigator--state-read root)))
+      (let* ((st (ignore-errors (context-navigator--state-get)))
              (alist (and (plist-member st :descriptions)
                          (plist-get st :descriptions))))
         (setq context-navigator-modeline--desc-cache
@@ -58,13 +58,19 @@ Plist: (:root ROOT :stamp TIME :alist ALIST), where ALIST is slug->desc.")
         alist))))
 
 (defun context-navigator-modeline--item-fullpath-at-point ()
-  "Return absolute path for the item at point (if any), else nil."
+  "Return path for the item at point (if any), relative to project root when possible.
+If the item is outside the current project root, show an abbreviated absolute path."
   (let ((it (get-text-property (point) 'context-navigator-item)))
     (when (and it (context-navigator-item-p it))
       (let ((p (context-navigator-item-path it)))
         (when (and (stringp p) (not (string-empty-p p)))
-          ;; Expand to absolute, then abbreviate with ~ for readability
-          (abbreviate-file-name (expand-file-name p)))))))
+          (let* ((pabs (expand-file-name p))
+                 (st (ignore-errors (context-navigator--state-get)))
+                 (root (and st (context-navigator-state-last-project-root st))))
+            (if (and (stringp root) (not (string-empty-p root)))
+                (let ((rel (file-relative-name pabs root)))
+                  (abbreviate-file-name (if (string-prefix-p ".." rel) pabs rel)))
+              (abbreviate-file-name pabs))))))))
 
 (defun context-navigator-modeline--group-summary ()
   "Return \"<Display> — <Desc>\" for the current group when available."
