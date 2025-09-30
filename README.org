@@ -261,19 +261,19 @@ Constants:
 | context-navigator-project-nonfile-modes      | list of modes | (gptel-mode comint-mode … dired-mode …) | Non‑file modes that can represent real project context           | project/context-navigator-project.el |
 | context-navigator-project-stick-to-last-root | boolean       | t                                       | Stick to last known root instead of transient switches to global | project/context-navigator-project.el |
 
-** Path add / masks (context-navigator-path-add.el)
+** Path add / masks (context-navigator-add-paths.el)
 
 | Variable                                     | Type            | Default                          | Description                                     | Module/File                            |                                               |                                        |
 |----------------------------------------------+-----------------+----------------------------------+-------------------------------------------------+----------------------------------------+-----------------------------------------------+----------------------------------------|
-| context-navigator-path-add-limit             | integer         | 50                               | Max files to add in a single operation          | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-path-add-index-cache-ttl   | number          | 30.0                             | TTL (s) for project file index cache            | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-path-add-case-sensitive    | choice (auto    | on                               | off)                                            | on                                     | Case sensitivity policy for basename matching | path-add/context-navigator-path-add.el |
-| context-navigator-path-add-ignore-gitignored | boolean         | t                                | Prefer sources that respect .gitignore          | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-path-add-exclude-dotdirs   | boolean         | t                                | Exclude dot-directories in fallback recursion   | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-path-add-fallback-exclude  | list of strings | (node_modules dist build target) | Directory names excluded in fallback recursion  | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-mask-include-dotfiles      | boolean         | nil                              | Include dotfiles without explicit dot component | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-mask-enable-remote         | boolean         | nil                              | Allow TRAMP mask expansion                      | path-add/context-navigator-path-add.el |                                               |                                        |
-| context-navigator-mask-globstar              | boolean         | t                                | Enable ** (globstar)                            | path-add/context-navigator-path-add.el |                                               |                                        |
+| context-navigator-add-paths-limit             | integer         | 50                               | Max files to add in a single operation          | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-add-paths-index-cache-ttl   | number          | 30.0                             | TTL (s) for project file index cache            | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-add-paths-case-sensitive    | choice (auto    | on                               | off)                                            | on                                     | Case sensitivity policy for basename matching | add-paths/context-navigator-add-paths.el |
+| context-navigator-add-paths-ignore-gitignored | boolean         | t                                | Prefer sources that respect .gitignore          | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-add-paths-exclude-dotdirs   | boolean         | t                                | Exclude dot-directories in fallback recursion   | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-add-paths-fallback-exclude  | list of strings | (node_modules dist build target) | Directory names excluded in fallback recursion  | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-mask-include-dotfiles      | boolean         | nil                              | Include dotfiles without explicit dot component | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-mask-enable-remote         | boolean         | nil                              | Allow TRAMP mask expansion                      | add-paths/context-navigator-add-paths.el |                                               |                                        |
+| context-navigator-mask-globstar              | boolean         | t                                | Enable ** (globstar)                            | add-paths/context-navigator-add-paths.el |                                               |                                        |
 
 ** Transient add (max file size) (context-navigator-transient.el)
 
@@ -306,12 +306,12 @@ Constants:
 |------------------------------------------+---------+---------+---------------------------------------------------+------------------------------------------|
 | context-navigator-view-headerline-enable | boolean | t       | Show Navigator controls in the buffer header-line | headerline/context-navigator-headerline.el |
 
-** Modeline (context-navigator-modeline.el)
+** Modeline (context-navigator-view-modeline.el)
 
 | Variable                               | Type    | Default | Description                                   | Module/File                            |
 |----------------------------------------+---------+---------+-----------------------------------------------+----------------------------------------|
-| context-navigator-view-modeline-enable | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-modeline.el |
-| context-navigator-view-modeline-face   | face    | shadow  | Face used for the modeline status text        | modeline/context-navigator-modeline.el |
+| context-navigator-view-modeline-enable | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-view-modeline.el |
+| context-navigator-view-modeline-face   | face    | shadow  | Face used for the modeline status text        | modeline/context-navigator-view-modeline.el |
 
 * Configuration examples
 
