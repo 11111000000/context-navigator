@@ -33,8 +33,9 @@
 (require 'context-navigator-razor)
 (require 'context-navigator-util)
 (require 'context-navigator-ui)
+(require 'context-navigator-view-multifile)
 
-(declare-function context-navigator-multifile-open "context-navigator-multifile" ())
+(declare-function context-navigator-multifile-open "context-navigator-view-multifile" ())
 
 ;; Safe wrapper to avoid transient setup errors when the real command
 ;; isn't defined yet (e.g., during partial loads).

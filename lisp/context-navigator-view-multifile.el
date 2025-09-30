@@ -1,4 +1,4 @@
-;;; context-navigator-multifile.el --- Multifile/Chunk-edit view -*- lexical-binding: t; -*-
+;;; context-navigator-view-multifile.el --- Multifile/Chunk-edit view -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
 
@@ -762,6 +762,6 @@ When the number exceeds `context-navigator-mf-open-all-threshold', asks for conf
         (_        (context-navigator-ui-info :gptel-no-change  name-or-key))))))
 
 
-;;; context-navigator-multifile.el ends here
+;;; context-navigator-view-multifile.el ends here
 
 (provide 'context-navigator-view-multifile)
