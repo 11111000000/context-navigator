@@ -11,6 +11,7 @@
 ;;; Code:
 
 (require 'context-navigator-i18n)
+(require 'context-navigator-view-ui)
 
 (defvar context-navigator-view--title-line-keymap nil
   "Keymap used by title-line segments (kept for compatibility).")
@@ -40,19 +41,11 @@
          (icon "🧭")
          (line (format "%s %s %s" arrow icon text))
          (s (copy-sequence line))
-         ;; Prefer the shared keymap from view.el; if not yet bound, create a minimal one.
+         ;; Prefer the shared keymap from view.el; if not yet bound, create one that inherits Navigator parent.
          (km (or context-navigator-view--title-line-keymap
-                 (let ((m (make-sparse-keymap)))
-                   (define-key m [mouse-1] #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "TAB")       #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "<tab>")     #'context-navigator-view-toggle-collapse)
-                   (define-key m [tab]             #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "C-i")       #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "RET")       #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "C-m")       #'context-navigator-view-toggle-collapse)
-                   (define-key m [return]          #'context-navigator-view-toggle-collapse)
-                   (define-key m (kbd "<return>")  #'context-navigator-view-toggle-collapse)
-                   m))))
+                 (context-navigator-view-ui-make-keymap
+                  #'context-navigator-view-toggle-collapse
+                  (context-navigator-view-ui-parent-keymap)))))
     (add-text-properties 0 (length s)
                          (list 'context-navigator-title t
                                'context-navigator-header t
