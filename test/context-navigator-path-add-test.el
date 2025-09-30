@@ -13,7 +13,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'subr-x)
-(require 'context-navigator-path-add)
+(require 'context-navigator-add-paths)
 
 (defun cn-pa--tmpdir ()
   (make-temp-file "cn-pa-" t))

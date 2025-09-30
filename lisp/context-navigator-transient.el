@@ -26,7 +26,7 @@
 (require 'context-navigator-model)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
-(require 'context-navigator-path-add)
+(require 'context-navigator-add-paths)
 (require 'context-navigator-add)
 
 (require 'context-navigator-log)

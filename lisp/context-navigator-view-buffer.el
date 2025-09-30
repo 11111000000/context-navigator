@@ -18,7 +18,7 @@
 (require 'subr-x)
 (require 'seq)
 (require 'context-navigator-view-events)
-(require 'context-navigator-view-const)
+(require 'context-navigator-view-constants)
 
 ;; Declarations from the main view/windows (avoid cycles)
 (declare-function context-navigator-view-mode "context-navigator-view" ())

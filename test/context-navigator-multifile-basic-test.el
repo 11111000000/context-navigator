@@ -6,7 +6,7 @@
 (require 'context-navigator)
 (require 'context-navigator-core)
 (require 'context-navigator-model)
-(require 'context-navigator-multifile)
+(require 'context-navigator-view-multifile)
 
 (defun ctxnav-multifile-test--make-file (dir name content)
   "Create a temp file NAME in DIR with CONTENT. Return absolute path."

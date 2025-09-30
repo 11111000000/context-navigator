@@ -64,7 +64,7 @@ Keeps the last non-nil project root until a new valid root is detected."
      (t (let ((parent (file-name-directory abs)))
           (and parent (file-writable-p parent)))))))
 
-(defun context-navigator-project-current-root (&optional buffer)
+(defun context-navigator-project-root (&optional buffer)
   "Return absolute project root for BUFFER (or current) or nil.
 
 This attempts several strategies for robustness:
@@ -119,7 +119,7 @@ Excludes minibuffers, child-frame popups and corfu internal buffers."
                           (cl-some (lambda (m) (derived-mode-p m))
                                    context-navigator-project-nonfile-modes)))
                     (and is-nonfile
-                         (context-navigator-project-current-root buffer))))))))
+                         (context-navigator-project-root buffer))))))))
 (defalias 'context-navigator-project--interesting-buffer-p
   'context-navigator-project--interesting-buffer-p-impl)
 
@@ -136,7 +136,7 @@ do not auto-switch to global (nil root) on transient glitches — keep the last
 valid root."
   (let* ((buf (or buffer (current-buffer))))
     (when (context-navigator-project--interesting-buffer-p buf)
-      (let* ((computed (context-navigator-project-current-root buf))
+      (let* ((computed (context-navigator-project-root buf))
              (root (if (or computed (not context-navigator-project-stick-to-last-root))
                        computed
                      ;; computed is nil and sticky is enabled → stick to last-root
@@ -293,7 +293,7 @@ Only returns local, writable roots."
 
 ;; Advice: extend interesting-buffer predicate for Dired and gptel-aibo minor mode
 (when (fboundp 'context-navigator-project--interesting-buffer-p)
-  (defun context-navigator-project--interesting-buffer-p/a (orig buf)
+  (defun context-navigator-project--interesting-buffer-p--advice (orig buf)
     (or
      (funcall orig buf)
      (with-current-buffer buf
@@ -303,14 +303,14 @@ Only returns local, writable roots."
         ;; org buffer with custom GPTel minor mode
         (bound-and-true-p gptel-aibo-mode)))))
   ;; Avoid duplicate advice on reload
-  (unless (advice-member-p #'context-navigator-project--interesting-buffer-p/a
+  (unless (advice-member-p #'context-navigator-project--interesting-buffer-p--advice
                            'context-navigator-project--interesting-buffer-p)
     (advice-add 'context-navigator-project--interesting-buffer-p
-                :around #'context-navigator-project--interesting-buffer-p/a)))
+                :around #'context-navigator-project--interesting-buffer-p--advice)))
 
 ;; Advice: add heuristic fallback for current-root resolution (policy B)
-(when (fboundp 'context-navigator-project-current-root)
-  (defun context-navigator-project--current-root/a (orig &rest args)
+(when (fboundp 'context-navigator-project-root)
+  (defun context-navigator-project--current-root--advice (orig &rest args)
     (let* ((root (ignore-errors (apply orig args))))
       (cond
        ;; Use original only when it is a local, writable directory
@@ -324,10 +324,10 @@ Only returns local, writable roots."
                (context-navigator-project--local-writable-dir-p fr)
                (directory-file-name fr)))))))
   ;; Avoid duplicate advice on reload
-  (unless (advice-member-p #'context-navigator-project--current-root/a
-                           'context-navigator-project-current-root)
-    (advice-add 'context-navigator-project-current-root
-                :around #'context-navigator-project--current-root/a)))
+  (unless (advice-member-p #'context-navigator-project--current-root--advice
+                           'context-navigator-project-root)
+    (advice-add 'context-navigator-project-root
+                :around #'context-navigator-project--current-root--advice)))
 
 ;; Removed duplicate Autoproj block (cn-autoproj--) to avoid double advices.
 

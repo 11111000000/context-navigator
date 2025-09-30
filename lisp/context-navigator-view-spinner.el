@@ -10,7 +10,7 @@
 ;;; Code:
 
 (require 'subr-x)
-(require 'context-navigator-view-const)
+(require 'context-navigator-view-constants)
 
 (defcustom context-navigator-view-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")

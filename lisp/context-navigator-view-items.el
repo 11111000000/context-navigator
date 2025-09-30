@@ -21,7 +21,7 @@
 (require 'context-navigator-log)
 
 ;;;###autoload
-(defun context-navigator-view--items-header-toggle-lines (total-width)
+(defun context-navigator-view-items-header-lines (total-width)
   "Return header toggle lines for items view wrapped to TOTAL-WIDTH."
   (when (fboundp 'context-navigator-view-controls-lines)
     (context-navigator-view-controls-lines total-width)))
@@ -293,7 +293,7 @@ REST is a list of item lines."
    (t "")))
 
 ;;;###autoload
-(defun context-navigator-view--items-footer-lines (total-width)
+(defun context-navigator-view-items-footer-lines (total-width)
   "Return footer lines for items view (controls moved to header-line).
 - Show collapsible Stats block
 - Add a compact \"[?] - menu\" hint at the very bottom (i18n)
@@ -316,12 +316,12 @@ REST is a list of item lines."
 
 
 ;;;###autoload
-(defun context-navigator-view--render-items (state header total-width)
+(defun context-navigator-view-render-items (state header total-width)
   "Render items view using STATE, HEADER and TOTAL-WIDTH.
 Returns the list of lines that were rendered."
   (cl-destructuring-bind (hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
-    (let* ((footer (context-navigator-view--items-footer-lines total-width))
+    (let* ((footer (context-navigator-view-items-footer-lines total-width))
            (body (append (list up) rest footer))
            (lines (if context-navigator-view--collapsed-p
                       ;; When collapsed, keep the Stats block visible (as a separate header below).

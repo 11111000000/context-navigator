@@ -17,7 +17,7 @@
 (require 'subr-x)
 (require 'context-navigator-events)
 (require 'context-navigator-core)
-(require 'context-navigator-view-const)
+(require 'context-navigator-view-constants)
 
 ;; Buffer-local state from the main view (declared there)
 (defvar context-navigator-view--subs nil)

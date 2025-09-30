@@ -6,7 +6,7 @@
 (require 'context-navigator)
 (require 'context-navigator-core)
 (require 'context-navigator-model)
-(require 'context-navigator-multifile)
+(require 'context-navigator-view-multifile)
 
 (defun ctxnav-mf2--tmpdir ()
   (make-temp-name (expand-file-name "ctxnav-mf2-" temporary-file-directory)))

@@ -20,14 +20,14 @@
 (require 'context-navigator-stats)
 
 ;;;###autoload
-(defun context-navigator-view--groups-header-lines (header total-width)
+(defun context-navigator-view-groups-header-lines (header total-width)
   "Return list with a single clickable title line for groups view.
 
 Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
   (list (context-navigator-view--title-line header)))
 
 ;;;###autoload
-(defun context-navigator-view--groups-body-lines (state)
+(defun context-navigator-view-groups-body-lines (state)
   "Return list of lines for groups body using STATE.
 Each group shows display name with item count in parentheses."
   (let* ((active (and (context-navigator-state-p state)
@@ -67,13 +67,13 @@ Each group shows display name with item count in parentheses."
     (list "" hint)))
 
 ;;;###autoload
-(defun context-navigator-view--render-groups (state header total-width)
+(defun context-navigator-view-render-groups (state header total-width)
   "Render groups view using STATE, HEADER and TOTAL-WIDTH.
 Returns the list of lines that were rendered.
 
 Also shows the Stats block for the current group (when any), including when
 the groups view is collapsed."
-  (let* ((hl-lines (context-navigator-view--groups-header-lines header total-width))
+  (let* ((hl-lines (context-navigator-view-groups-header-lines header total-width))
          (hl (car hl-lines))
          (active (and (context-navigator-state-p state)
                       (context-navigator-state-current-group-slug state)))
@@ -86,7 +86,7 @@ the groups view is collapsed."
                   total-width
                   (and (boundp 'context-navigator-view-mode-map)
                        context-navigator-view-mode-map)))))
-         (groups-lines (context-navigator-view--groups-body-lines state))
+         (groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
          (body (if stats-lines
                    (append groups-lines (list "") stats-lines (list "") help-lines)

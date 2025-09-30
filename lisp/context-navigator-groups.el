@@ -117,7 +117,7 @@
   "Create a new group with DISPLAY-NAME in current project/global."
   (interactive)
   (let* ((root (or (context-navigator--current-root)
-                   (ignore-errors (context-navigator-project-current-root (current-buffer)))))
+                   (ignore-errors (context-navigator-project-root (current-buffer)))))
          (name (or display-name (read-string (context-navigator-i18n :group-create-prompt))))
          (name (string-trim name)))
     (when (string-empty-p name)

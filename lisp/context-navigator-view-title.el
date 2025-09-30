@@ -11,7 +11,7 @@
 ;;; Code:
 
 (require 'context-navigator-i18n)
-(require 'context-navigator-view-ui)
+(require 'context-navigator-view-segments)
 
 (defvar context-navigator-view--title-line-keymap nil
   "Keymap used by title-line segments (kept for compatibility).")

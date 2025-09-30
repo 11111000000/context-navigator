@@ -30,7 +30,7 @@
 
 ;; Optional: counters (for closable-buffers)
 (require 'context-navigator-view-counters)
-(require 'context-navigator-view-const)
+(require 'context-navigator-view-constants)
 
 ;; Declarations (callbacks provided by the view)
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -67,7 +67,7 @@ in another window (never replace the sidebar buffer)."
                             (window-parameter selected-win 'context-navigator-view)
                             (eq (window-buffer selected-win) (current-buffer))))
            (prefer-other (or preview is-sidebar)))
-      (context-navigator-open-item item prefer-other))))
+      (context-navigator-visit-item item prefer-other))))
 
 ;; Public actions -------------------------------------------------------------
 

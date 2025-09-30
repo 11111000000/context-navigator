@@ -25,6 +25,8 @@
 ;; - context-navigator-view   — sidebar UI (side window)
 
 ;;; Code:
+(require 'context-navigator-compat-aliases)
+
 
 ;; Public commands from core (autoloaded)
 ;;;###autoload

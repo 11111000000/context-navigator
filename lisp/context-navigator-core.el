@@ -33,7 +33,7 @@
 (declare-function context-navigator-buffer-close "context-navigator-view-buffer" ())
 (declare-function context-navigator-buffer-toggle "context-navigator-view-buffer" ())
 ;; Forward declarations from project module (for byte-compiler friendliness)
-(declare-function context-navigator-project-current-root "context-navigator-project" (&optional buffer))
+(declare-function context-navigator-project-root "context-navigator-project" (&optional buffer))
 (declare-function context-navigator-project--interesting-buffer-p "context-navigator-project" (buffer))
 (declare-function context-navigator-project--frame-file-project-root "context-navigator-project" ())
 
@@ -615,7 +615,7 @@ or global (nil) when nothing is found."
                                          (with-current-buffer buf
                                            (eq major-mode 'context-navigator-view-mode)))))
                                (unless is-nav
-                                 (let ((rr (ignore-errors (context-navigator-project-current-root buf))))
+                                 (let ((rr (ignore-errors (context-navigator-project-root buf))))
                                    (when (and (stringp rr) (not (string-empty-p rr)))
                                      (throw 'found rr)))))))
                          nil))))
@@ -672,7 +672,7 @@ Graceful when gptel is absent: show an informative message and do nothing."
 (defun context-navigator-switch-to-current-buffer-project ()
   "Switch Navigator to the project of the current buffer (manual)."
   (interactive)
-  (let ((root (ignore-errors (context-navigator-project-current-root (current-buffer)))))
+  (let ((root (ignore-errors (context-navigator-project-root (current-buffer)))))
     (let ((context-navigator--auto-project-switch t))
       (context-navigator--on-project-switch root))))
 
@@ -914,7 +914,7 @@ With PROMPT (prefix argument), prompt for a root directory; empty input = global
                           (not (string-empty-p (string-trim dir)))
                           (expand-file-name dir)))
                  (ignore-errors
-                   (context-navigator-project-current-root (current-buffer))))))
+                   (context-navigator-project-root (current-buffer))))))
     ;; Update last project root via a copy to avoid direct mutation; inhibit autosave/refresh while switching.
     (let* ((cur (context-navigator--state-get))
            (new (context-navigator--state-copy cur)))
@@ -1137,12 +1137,12 @@ Strategy:
    (let* ((buf-file
            (cl-find-if (lambda (b) (with-current-buffer b buffer-file-name))
                        (buffer-list)))
-          (root-file (and buf-file (context-navigator-project-current-root buf-file))))
+          (root-file (and buf-file (context-navigator-project-root buf-file))))
      root-file)
    ;; 3) First interesting buffer's project (gptel/org/dired etc.)
    (let* ((buf-any (cl-find-if #'context-navigator-project--interesting-buffer-p
                                (buffer-list))))
-     (and buf-any (context-navigator-project-current-root buf-any)))))
+     (and buf-any (context-navigator-project-root buf-any)))))
 
 (defun context-navigator--reinit-after-reload ()
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
@@ -1254,7 +1254,7 @@ Also triggers an immediate project switch so header shows actual project."
     (and (window-live-p w)
          (eq (window-parameter w 'context-navigator-view) 'sidebar))))
 
-(defun context-navigator-open-item (item &optional prefer-other-window)
+(defun context-navigator-visit-item (item &optional prefer-other-window)
   "Open ITEM (file/buffer/selection). If PREFER-OTHER-WINDOW non-nil, open in other window.
 
 When current window is the Navigator sidebar, open in other window by default.
@@ -1363,7 +1363,7 @@ For selections, activate the region after opening."
         (when (and (stringp choice) (not (string-empty-p choice)))
           (let ((it (alist-get choice uniq-alist nil nil #'string=)))
             (when (context-navigator-item-p it)
-              (context-navigator-open-item it prefer-other))))))))
+              (context-navigator-visit-item it prefer-other))))))))
 
 ;; Auto-reinit after reload (eval-buffer/byte-compile)
 (context-navigator--reinit-after-reload)

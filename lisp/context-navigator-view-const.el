@@ -1,19 +1,6 @@
-;;; context-navigator-view-const.el --- Constants for Navigator view -*- lexical-binding: t; -*-
+;;; context-navigator-view-const.el --- Compatibility shim -*- lexical-binding: t; -*-
+;; Auto-generated
 
-;; SPDX-License-Identifier: MIT
-
-;;; Commentary:
-;; Small, dependency-light constants used across Navigator view modules to avoid
-;; duplicate defvar/defconst and load order issues.
-
-;;; Code:
-
-(defconst context-navigator-view--buffer-name "*context-navigator*"
-  "Canonical buffer name for Context Navigator view and buffer-mode.")
-
-(defvar context-navigator-view-window-params
-  '((side . left) (slot . -1))
-  "Default parameters for the sidebar window.")
-
+(require 'context-navigator-view-constants)
 (provide 'context-navigator-view-const)
 ;;; context-navigator-view-const.el ends here

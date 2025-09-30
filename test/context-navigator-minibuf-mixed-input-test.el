@@ -5,7 +5,7 @@
 (require 'cl-lib)
 
 (require 'context-navigator-core)
-(require 'context-navigator-path-add)
+(require 'context-navigator-add-paths)
 
 (defun cn-mi--with-temp-dir (fn)
   "Create a temporary directory, call FN with it, then delete recursively."

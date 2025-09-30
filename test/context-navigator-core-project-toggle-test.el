@@ -29,7 +29,7 @@
   (context-navigator-test-with-temp-dir root
                                         (let ((context-navigator--auto-project-switch nil))
                                           ;; stub project-current-root to our temp root
-                                          (cl-letf (((symbol-function 'context-navigator-project-current-root) (lambda (&optional _b) root)))
+                                          (cl-letf (((symbol-function 'context-navigator-project-root) (lambda (&optional _b) root)))
                                             (context-navigator-switch-to-current-buffer-project)
                                             (should (equal (ctxnav-test--get-last-root) root))))))
 

@@ -18,7 +18,7 @@
                                           (cl-letf (((symbol-function 'context-navigator-project--frame-file-project-root)
                                                      (lambda () rootA))
                                                     ;; Ensure buffer-based fallbacks don't override frame-root in this test
-                                                    ((symbol-function 'context-navigator-project-current-root)
+                                                    ((symbol-function 'context-navigator-project-root)
                                                      (lambda (&optional _b) nil)))
                                             (context-navigator-toggle-auto-project-switch)
                                             (should (equal (ctxnav-test--get-last-root) rootA))))))

@@ -19,7 +19,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'context-navigator-view-ui)
+(require 'context-navigator-view-segments)
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-controls-icons)

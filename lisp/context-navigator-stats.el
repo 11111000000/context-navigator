@@ -18,7 +18,7 @@
 (require 'context-navigator-icons)
 (require 'context-navigator-i18n)
 (require 'context-navigator-util)
-(require 'context-navigator-view-ui)
+(require 'context-navigator-view-segments)
 
 ;; Forward decls to avoid cycles
 (declare-function context-navigator--state-get "context-navigator-core" ())

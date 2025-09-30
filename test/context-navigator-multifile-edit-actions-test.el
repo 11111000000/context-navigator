@@ -6,7 +6,7 @@
 (require 'context-navigator)
 (require 'context-navigator-core)
 (require 'context-navigator-model)
-(require 'context-navigator-multifile)
+(require 'context-navigator-view-multifile)
 (require 'context-navigator-gptel-bridge)
 
 (defun ctxnav-mf--make-temp (name content)

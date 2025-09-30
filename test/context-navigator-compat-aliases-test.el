@@ -36,7 +36,7 @@
             ;; Ensure fallback won't be used
             ((symbol-function 'context-navigator-view--make-toggle-segments)
              (lambda () '(" legacy"))))
-    (let ((out (context-navigator-view--items-header-toggle-lines 40)))
+    (let ((out (context-navigator-view-items-header-lines 40)))
       (should (equal out '(" H1" " H2"))))))
 
 (provide 'context-navigator-compat-aliases-test)
