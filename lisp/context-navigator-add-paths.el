@@ -1033,7 +1033,7 @@ Respects case sensitivity and dotfiles rule."
        (context-navigator-ui-error :mask-parse-error (or (nth 1 err) pattern))
        nil))))
 
-(provide 'context-navigator-path-add)
+
 ;;; context-navigator-path-add.el ends here
 
 (provide 'context-navigator-add-paths)

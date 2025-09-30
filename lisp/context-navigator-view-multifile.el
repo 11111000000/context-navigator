@@ -761,7 +761,7 @@ When the number exceeds `context-navigator-mf-open-all-threshold', asks for conf
         (:removed (context-navigator-ui-info :gptel-removed-one name-or-key))
         (_        (context-navigator-ui-info :gptel-no-change  name-or-key))))))
 
-(provide 'context-navigator-multifile)
+
 ;;; context-navigator-multifile.el ends here
 
 (provide 'context-navigator-view-multifile)

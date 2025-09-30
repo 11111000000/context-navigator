@@ -149,7 +149,7 @@ all windows showing BUFFER to out-prioritize global modeline providers."
      (dolist (buf (buffer-list))
        (context-navigator-modeline--apply buf)))))
 
-(provide 'context-navigator-modeline)
+
 ;;; context-navigator-modeline.el ends here
 
 (provide 'context-navigator-view-modeline)

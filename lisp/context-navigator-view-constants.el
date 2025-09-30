@@ -15,7 +15,7 @@
   '((side . left) (slot . -1))
   "Default parameters for the sidebar window.")
 
-(provide 'context-navigator-view-const)
+
 ;;; context-navigator-view-const.el ends here
 
 (provide 'context-navigator-view-constants)

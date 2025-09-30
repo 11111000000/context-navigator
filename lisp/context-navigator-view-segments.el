@@ -57,7 +57,7 @@ inherit from a reliable Navigator parent keymap."
     (define-key m (kbd "C-i")   command)
     m))
 
-(provide 'context-navigator-view-ui)
+
 ;;; context-navigator-view-ui.el ends here
 
 (provide 'context-navigator-view-segments)
