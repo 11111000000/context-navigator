@@ -676,9 +676,9 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (let ((context-navigator--auto-project-switch t))
       (context-navigator--on-project-switch root))))
 
-(defun context-navigator--load-group-for-root (root slug)
-  "Load group SLUG for ROOT (or global) asynchronously and apply to gptel (batched)."
-  ;; Обновляем core-состояние раньше всего, чтобы UI сразу показал прелоадер.
+(defun context-navigator--load-init-state (root slug)
+  "Подготовить core-состояние к загрузке группы SLUG для ROOT.
+Возвращает новый load TOKEN."
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur))
          (token (1+ (or (context-navigator-state-load-token new) 0))))
@@ -686,65 +686,80 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (setf (context-navigator-state-inhibit-autosave new) t)
     (setf (context-navigator-state-loading-p new) t)
     (setf (context-navigator-state-current-group-slug new) slug)
-    ;; Зафиксировать корень проекта в состоянии, чтобы заголовок показывал имя проекта.
     (setf (context-navigator-state-last-project-root new) root)
     (setf (context-navigator-state-load-token new) token)
     (context-navigator--set-state new)
-    ;; Сообщаем о старте загрузки ДО любых I/O — прелоадер появится мгновенно.
     (context-navigator-events-publish :context-load-start root)
-    ;; Persist :current в state.el — асинхронно и только если значение реально изменилось.
+    token))
+
+(defun context-navigator--persist-current-async (root slug)
+  "Асинхронно записать :current=SLUG в state.el для ROOT, если изменилось."
+  (run-at-time
+   0 nil
+   (lambda ()
+     (let* ((st (or (context-navigator-persist-state-load root) '()))
+            (st1 (if (plist-member st :version) (copy-sequence st)
+                   (plist-put (copy-sequence st) :version 1)))
+            (cur (plist-get st1 :current)))
+       (unless (equal cur slug)
+         (setq st1 (plist-put st1 :current slug))
+         (ignore-errors (context-navigator-persist-state-save root st1)))))))
+
+(defun context-navigator--prepare-gptel-for-load ()
+  "Отменить батчи gptel и, если автопуш включён, асинхронно очистить контекст."
+  (context-navigator--gptel-cancel-batch)
+  (when context-navigator--push-to-gptel
     (run-at-time 0 nil
                  (lambda ()
-                   (let* ((st (or (context-navigator-persist-state-load root) '()))
-                          (st1 (if (plist-member st :version) (copy-sequence st)
-                                 (plist-put (copy-sequence st) :version 1)))
-                          (cur (plist-get st1 :current)))
-                     (unless (equal cur slug)
-                       (setq st1 (plist-put st1 :current slug))
-                       (ignore-errors (context-navigator-persist-state-save root st1))))))
-    ;; Отменяем любые предыдущие фоновые очереди для gptel.
-    (context-navigator--gptel-cancel-batch)
-    ;; Reset gptel полностью перед загрузкой новой группы (если push включён), асинхронно.
-    (when context-navigator--push-to-gptel
-      (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
+                   (ignore-errors (context-navigator-gptel-clear-all-now))))))
+
+(defun context-navigator--finalize-load ()
+  "Снять inhibit-флаги и сбросить флаг загрузки."
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-copy cur)))
+    (setf (context-navigator-state-inhibit-refresh new) nil)
+    (setf (context-navigator-state-inhibit-autosave new) nil)
+    (setf (context-navigator-state-loading-p new) nil)
+    (context-navigator--set-state new)))
+
+(defun context-navigator--handle-group-loaded (root slug token items)
+  "Обработать результат загрузки ITEMS для ROOT/SLUG с проверкой TOKEN.
+Пуш в gptel выполняется, только если он включён. Всегда выполняет финализацию и события."
+  (let* ((st (context-navigator--state-get))
+         (alive (and (context-navigator-state-p st)
+                     (context-navigator-state-loading-p st)
+                     (= (or (context-navigator-state-load-token st) 0) token)))
+         (prev-items (and st (context-navigator-state-items st))))
+    (when alive
+      (when context-navigator--push-to-gptel
+        ;; Игнорируем требование видимости, чтобы автопуш работал без нажатия Push.
+        (run-at-time 0 nil
+                     (lambda ()
+                       (let ((context-navigator-gptel-require-visible-window nil))
+                         (ignore-errors
+                           (context-navigator--gptel-defer-or-start (or items '()) token))))))
+
+      (if (and (listp items))
+          (context-navigator-set-items items)
+        (context-navigator-debug :warn :persist
+                                 "load failed for root=%s slug=%s; keeping previous items"
+                                 root slug)
+        (context-navigator-set-items (or prev-items '())))))
+  ;; Финализация и события — как в исходной версии: безусловно.
+  (context-navigator--finalize-load)
+  (context-navigator-events-publish :context-load-done root (listp items))
+  (context-navigator-events-publish :group-switch-done root slug (listp items)))
+
+(defun context-navigator--load-group-for-root (root slug)
+  "Загрузить группу SLUG для ROOT (или глобально) асинхронно и при необходимости применить к gptel."
+  (let ((token (context-navigator--load-init-state root slug)))
+    (context-navigator--persist-current-async root slug)
+    (context-navigator--prepare-gptel-for-load)
     (context-navigator-events-publish :group-switch-start root slug)
     (context-navigator-persist-load-group-async
      root slug
      (lambda (items)
-       ;; Игнорируем устаревшие колбэки по токену.
-       (let* ((st (context-navigator--state-get))
-              (alive (and (context-navigator-state-p st)
-                          (context-navigator-state-loading-p st)
-                          (= (or (context-navigator-state-load-token st) 0)
-                             token)))
-              ;; сохраним предыдущие элементы, чтобы восстановить при неуспехе загрузки
-              (prev-items (and st (context-navigator-state-items st))))
-         (when alive
-           (when context-navigator--push-to-gptel
-             ;; Применяем к gptel порциями в фоне. Игнорируем требование видимости окна,
-             ;; чтобы автопуш работал без нажатия Push.
-             (run-at-time 0 nil
-                          (lambda ()
-                            (let ((context-navigator-gptel-require-visible-window nil))
-                              (ignore-errors
-                                (context-navigator--gptel-defer-or-start (or items '()) token))))))
-           ;; Модель и UI: если загрузка вернула валидный список, ставим его,
-           ;; иначе восстанавливаем предыдущие элементы и логируем предупреждение.
-           (if (and (listp items))
-               (context-navigator-set-items items)
-             (context-navigator-debug :warn :persist
-                                      "load failed for root=%s slug=%s; keeping previous items"
-                                      root slug)
-             (context-navigator-set-items (or prev-items '())))))
-       ;; Снимаем флаги и уведомляем завершение.
-       (let* ((cur2 (context-navigator--state-get))
-              (new2 (context-navigator--state-copy cur2)))
-         (setf (context-navigator-state-inhibit-refresh new2) nil)
-         (setf (context-navigator-state-inhibit-autosave new2) nil)
-         (setf (context-navigator-state-loading-p new2) nil)
-         (context-navigator--set-state new2))
-       (context-navigator-events-publish :context-load-done root (listp items))
-       (context-navigator-events-publish :group-switch-done root slug (listp items))))))
+       (context-navigator--handle-group-loaded root slug token items)))))
 
 (defun context-navigator--load-context-for-root (root)
   "Load current group for ROOT (or global) using state.el.

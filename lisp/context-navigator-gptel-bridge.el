@@ -143,186 +143,179 @@ Selections are not reconstructed here."
                 items)))))
     (nreverse items)))
 
-(defun context-navigator-gptel--entry->item (entry)
-  "Convert various gptel ENTRY shapes into one or more context-navigator-item objects.
+;; Helpers for pure, shape-specific parsing
 
-Supports:
-- plist-like entries with :type/:path/:beg/:end etc.
-- cons (BUFFER . REGS) where REGS are:
-  - list of overlays
-  - a pair (BEG . END) of ints/markers
-  - a list/vec whose first two elements are BEG/END
-  - t/:buffer/:all to denote whole buffer
-  (produces buffer or selection items per region)
-- cons (PATH . PROPS) or bare PATH string (file item)
+(defun context-navigator-gptel--pos (x)
+  (cond ((markerp x) (marker-position x))
+        ((numberp x) x)
+        (t nil)))
 
-Return a single item or a list of items, or nil."
-  (let ((_dbg (bound-and-true-p context-navigator-debug)))
-    (cond
-     ;; Plist-style entry (preferred)
-     ((and (listp entry)
-           (or (plist-member entry :type) (plist-member entry 'type)))
-      (let* ((get (lambda (k) (or (plist-get entry k) (alist-get k entry))))
-             (type (or (funcall get :type) (funcall get 'type)))
-             (path (or (funcall get :path) (funcall get 'path)))
-             (beg  (or (funcall get :beg)  (funcall get 'beg)))
-             (end  (or (funcall get :end)  (funcall get 'end)))
-             (buf  (or (funcall get :buffer) (funcall get 'buffer)))
-             (name (or (funcall get :name)
-                       (and (stringp path) (file-name-nondirectory path)))))
-        (pcase type
-          ((or 'file :file)
-           (context-navigator-item-create
-            :type 'file :name (or name path) :path path :enabled t))
-          ((or 'selection :selection 'region :region)
-           (when (and (integerp beg) (integerp end))
-             (let* ((buf-path (or path
-                                  (and (bufferp buf) (buffer-live-p buf)
-                                       (buffer-local-value 'buffer-file-name buf))))
-                    (nm (or name
-                            (if buf-path
-                                (format "%s:%s-%s" (file-name-nondirectory buf-path) beg end)
-                              (format "%s:%s-%s" (or (and (bufferp buf) (buffer-name buf)) "<selection>") beg end)))))
-               (context-navigator-item-create
-                :type 'selection
-                :name nm
-                :path buf-path
-                :buffer buf
-                :beg beg
-                :end end
-                :enabled t))))
-          ((or 'buffer :buffer)
-           (context-navigator-item-create
-            :type 'buffer
-            :name (or name
-                      (and (stringp path) (file-name-nondirectory path))
-                      (and (bufferp buf) (buffer-name buf))
-                      "<buffer>")
-            :path path
-            :buffer buf
-            :enabled t))
-          (_ (context-navigator-debug :debug :gptel "Unknown plist type in entry=%S" entry)
-             nil))))
-     ;; (BUFFER . REGS) style (overlays, pairs, lists with positions, or whole buffer markers)
-     ((and (consp entry) (bufferp (car entry)))
-      (let* ((buf (car entry))
-             (raw (cdr entry))
-             ;; Normalize raw regions into a list
-             (regs (cond
-                    ;; raw is a single cons (beg . end)
-                    ((and (consp raw)
-                          (or (numberp (car raw)) (markerp (car raw)))
-                          (or (numberp (cdr raw)) (markerp (cdr raw))))
-                     (list raw))
-                    ;; vector -> list
-                    ((vectorp raw) (append raw nil))
-                    ;; already a list
-                    (t raw)))
-             (items nil)
-             (buf-path (and (buffer-live-p buf) (buffer-local-value 'buffer-file-name buf)))
-             (pmin (and (buffer-live-p buf) (with-current-buffer buf (point-min))))
-             (pmax (and (buffer-live-p buf) (with-current-buffer buf (point-max)))))
-        (dolist (r regs)
-          (cond
-           ;; Overlay case
-           ((and (overlayp r) (overlay-start r) (overlay-end r))
-            (let ((s (overlay-start r))
-                  (e (overlay-end r)))
-              (if (and pmin pmax (= s pmin) (= e pmax))
-                  (push (context-navigator-item-create
-                         :type 'buffer
-                         :name (buffer-name buf)
-                         :path buf-path
-                         :buffer buf
-                         :enabled t)
-                        items)
-                (push (context-navigator-item-create
-                       :type 'selection
-                       :name (format "%s (selection)" (buffer-name buf))
-                       :path buf-path
-                       :buffer buf
-                       :beg s :end e
-                       :enabled t)
-                      items))))
-           ;; Pair (beg . end) of ints/markers
-           ((and (consp r)
-                 (or (numberp (car r)) (markerp (car r)))
-                 (or (numberp (cdr r)) (markerp (cdr r))))
-            (let* ((s (if (markerp (car r)) (marker-position (car r)) (car r)))
-                   (e (if (markerp (cdr r)) (marker-position (cdr r)) (cdr r))))
-              (if (and pmin pmax (= s pmin) (= e pmax))
-                  (push (context-navigator-item-create
-                         :type 'buffer
-                         :name (buffer-name buf)
-                         :path buf-path
-                         :buffer buf
-                         :enabled t)
-                        items)
-                (push (context-navigator-item-create
-                       :type 'selection
-                       :name (format "%s (selection)" (buffer-name buf))
-                       :path buf-path
-                       :buffer buf
-                       :beg s :end e
-                       :enabled t)
-                      items))))
-           ;; List or vector whose first two elements are positions
-           ((and (listp r)
-                 (>= (length r) 2)
-                 (let ((a (nth 0 r)) (b (nth 1 r)))
-                   (and (or (numberp a) (markerp a))
-                        (or (numberp b) (markerp b)))))
-            (let* ((a (nth 0 r)) (b (nth 1 r))
-                   (s (if (markerp a) (marker-position a) a))
-                   (e (if (markerp b) (marker-position b) b)))
-              (if (and pmin pmax (= s pmin) (= e pmax))
-                  (push (context-navigator-item-create
-                         :type 'buffer
-                         :name (buffer-name buf)
-                         :path buf-path
-                         :buffer buf
-                         :enabled t)
-                        items)
-                (push (context-navigator-item-create
-                       :type 'selection
-                       :name (format "%s (selection)" (buffer-name buf))
-                       :path buf-path
-                       :buffer buf
-                       :beg s :end e
-                       :enabled t)
-                      items))))
-           ;; Whole buffer marker
-           ((memq r '(t all :all :buffer))
-            (push (context-navigator-item-create
-                   :type 'buffer
-                   :name (buffer-name buf)
-                   :path buf-path
-                   :buffer buf
-                   :enabled t)
-                  items))
-           (t
-            (context-navigator-debug :debug :gptel
-                                     "Unknown buffer region element: %S (buf=%s)"
-                                     r (buffer-name buf)))))
-        ;; Stats and return within the same scope so `items' is bound.
-        (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
-               (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
+(defun context-navigator-gptel--plist-like-get (pl k)
+  (or (plist-get pl k) (alist-get k pl)))
+
+(defun context-navigator-gptel--make-file-item (path &optional name)
+  (when (and (stringp path) (not (string-empty-p path)))
+    (context-navigator-item-create
+     :type 'file
+     :name (or name (file-name-nondirectory path))
+     :path path
+     :enabled t)))
+
+(defun context-navigator-gptel--make-buffer-item (buf path &optional name)
+  (context-navigator-item-create
+   :type 'buffer
+   :name (or name
+             (and (stringp path) (file-name-nondirectory path))
+             (and (bufferp buf) (buffer-live-p buf) (buffer-name buf))
+             "<buffer>")
+   :path path
+   :buffer buf
+   :enabled t))
+
+(defun context-navigator-gptel--make-selection-item (buf path beg end &optional name)
+  (when (and (integerp beg) (integerp end))
+    (context-navigator-item-create
+     :type 'selection
+     :name (or name
+               (if (and (stringp path) (not (string-empty-p path)))
+                   (format "%s:%s-%s" (file-name-nondirectory path) beg end)
+                 (format "%s:%s-%s" (or (and (bufferp buf) (buffer-live-p buf) (buffer-name buf)) "<selection>") beg end)))
+     :path path
+     :buffer buf
+     :beg beg
+     :end end
+     :enabled t)))
+
+(defun context-navigator-gptel--coerce-regs-to-list (raw)
+  (cond
+   ;; Already a single (beg . end)
+   ((and (consp raw)
+         (or (numberp (car raw)) (markerp (car raw)))
+         (or (numberp (cdr raw)) (markerp (cdr raw))))
+    (list raw))
+   ;; Vector -> list
+   ((vectorp raw) (append raw nil))
+   ;; List or single atom
+   ((listp raw) raw)
+   ((null raw) nil)
+   (t (list raw))))
+
+(defun context-navigator-gptel--normalize-region (r)
+  "Return either :all or a cons (beg . end) or nil."
+  (cond
+   ;; Whole buffer markers
+   ((memq r '(t all :all :buffer)) :all)
+   ;; Overlay
+   ((and (overlayp r) (overlay-start r) (overlay-end r))
+    (cons (overlay-start r) (overlay-end r)))
+   ;; Pair (beg . end) of ints/markers
+   ((and (consp r)
+         (or (numberp (car r)) (markerp (car r)))
+         (or (numberp (cdr r)) (markerp (cdr r))))
+    (cons (context-navigator-gptel--pos (car r))
+          (context-navigator-gptel--pos (cdr r))))
+   ;; List whose first two elements are positions
+   ((and (listp r)
+         (>= (length r) 2)
+         (let ((a (nth 0 r)) (b (nth 1 r)))
+           (and (or (numberp a) (markerp a))
+                (or (numberp b) (markerp b)))))
+    (let ((a (nth 0 r)) (b (nth 1 r)))
+      (cons (context-navigator-gptel--pos a)
+            (context-navigator-gptel--pos b))))
+   (t nil)))
+
+(defun context-navigator-gptel--entry->items-from-buffer (buf regs)
+  (let* ((buf-live (and (bufferp buf) (buffer-live-p buf)))
+         (buf-path (and buf-live (buffer-local-value 'buffer-file-name buf)))
+         (pmin (and buf-live (with-current-buffer buf (point-min))))
+         (pmax (and buf-live (with-current-buffer buf (point-max))))
+         (items nil))
+    (dolist (r (context-navigator-gptel--coerce-regs-to-list regs))
+      (let ((nr (context-navigator-gptel--normalize-region r)))
+        (cond
+         ((eq nr :all)
+          (push (context-navigator-gptel--make-buffer-item buf buf-path (and buf-live (buffer-name buf))) items))
+         ((and (consp nr)
+               (integerp (car nr)) (integerp (cdr nr)))
+          (let ((s (car nr)) (e (cdr nr)))
+            (if (and pmin pmax (= s pmin) (= e pmax))
+                (push (context-navigator-gptel--make-buffer-item buf buf-path (and buf-live (buffer-name buf))) items)
+              (push (context-navigator-gptel--make-selection-item
+                     buf buf-path s e)
+                    items))))
+         (t
           (context-navigator-debug :debug :gptel
-                                   "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
-                                   (buffer-name buf) (length items) bufs sels))
-        (nreverse items)))
-     ;; (PATH . PROPS) or bare \"path\" string
-     ((or (and (consp entry) (stringp (car entry)))
-          (stringp entry))
-      (let ((path (if (stringp entry) entry (car entry))))
-        ;; Be tolerant: create a file item even if the file doesn't exist.
-        ;; Tests and some gptel setups provide logical paths without touching the FS.
-        (when (and (stringp path) (not (string-empty-p path)))
-          (context-navigator-item-create
-           :type 'file :name (file-name-nondirectory path) :path path :enabled t))))
-     (t
-      (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
-      nil))))
+                                   "Unknown buffer region element: %S (buf=%s)"
+                                   r (and buf-live (buffer-name buf)))))))
+    (let* ((bufs (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'buffer)) items))
+           (sels (cl-count-if (lambda (x) (eq (context-navigator-item-type x) 'selection)) items)))
+      (context-navigator-debug :debug :gptel
+                               "parsed buffer entry %s -> %s items (buffers=%s selections=%s)"
+                               (and buf-live (buffer-name buf)) (length items) bufs sels))
+    (nreverse items)))
+
+(defun context-navigator-gptel--entry->item-from-plist (entry)
+  (let* ((get (lambda (k) (context-navigator-gptel--plist-like-get entry k)))
+         (type (or (funcall get :type) (funcall get 'type)))
+         (path (or (funcall get :path) (funcall get 'path)))
+         (beg  (or (funcall get :beg)  (funcall get 'beg)))
+         (end  (or (funcall get :end)  (funcall get 'end)))
+         (buf  (or (funcall get :buffer) (funcall get 'buffer)))
+         (name (funcall get :name)))
+    (pcase type
+      ((or 'file :file)
+       (context-navigator-item-create
+        :type 'file :name (or name path) :path path :enabled t))
+      ((or 'selection :selection 'region :region)
+       (when (and (integerp beg) (integerp end))
+         (let* ((buf-path (or path
+                              (and (bufferp buf) (buffer-live-p buf)
+                                   (buffer-local-value 'buffer-file-name buf))))
+                (nm (or name
+                        (if buf-path
+                            (format "%s:%s-%s" (file-name-nondirectory buf-path) beg end)
+                          (format "%s:%s-%s" (or (and (bufferp buf) (buffer-live-p buf) (buffer-name buf)) "<selection>") beg end)))))
+           (context-navigator-gptel--make-selection-item buf buf-path beg end nm))))
+      ((or 'buffer :buffer)
+       (context-navigator-gptel--make-buffer-item buf path name))
+      (_ (context-navigator-debug :debug :gptel "Unknown plist type in entry=%S" entry)
+         nil))))
+
+(defun context-navigator-gptel--entry->item-from-path (entry)
+  (let ((path (if (stringp entry) entry (car entry))))
+    (when (and (stringp path) (not (string-empty-p path)))
+      (context-navigator-gptel--make-file-item path))))
+
+(defun context-navigator-gptel--plist-like-entry-p (entry)
+  (when (listp entry)
+    (let ((lst entry) (found nil))
+      (while (and (consp lst) (consp (cdr lst)) (not found))
+        (let ((k (car lst)))
+          (when (and (symbolp k) (memq k '(:type type)))
+            (setq found t)))
+        (setq lst (cddr lst)))
+      found)))
+
+(defun context-navigator-gptel--entry->item (entry)
+  "Convert gptel ENTRY to one or more context-navigator-item objects.
+
+Returns a single item, a list of items, or nil."
+  (cond
+   ;; Plist-like entry
+   ((context-navigator-gptel--plist-like-entry-p entry)
+    (context-navigator-gptel--entry->item-from-plist entry))
+   ;; (BUFFER . REGS)
+   ((and (consp entry) (bufferp (car entry)))
+    (context-navigator-gptel--entry->items-from-buffer (car entry) (cdr entry)))
+   ;; (PATH . PROPS) or bare PATH
+   ((or (and (consp entry) (stringp (car entry)))
+        (stringp entry))
+    (context-navigator-gptel--entry->item-from-path entry))
+   (t
+    (context-navigator-debug :debug :gptel "Unknown entry shape: %S" entry)
+    nil)))
+
 
 (defvar context-navigator-gptel--pull-in-progress nil
   "Non-nil while `context-navigator-gptel-pull' is running (reentrancy guard).")
