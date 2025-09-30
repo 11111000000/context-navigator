@@ -11,7 +11,7 @@
 (require 'subr-x)
 (require 'context-navigator-i18n)
 
-(defvar context-navigator-view-mode-map nil)
+(defvar context-navigator-view-mode-map)
 
 ;;;###autoload
 (autoload 'context-navigator-view-transient "context-navigator-transient"

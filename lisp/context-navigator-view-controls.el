@@ -73,7 +73,7 @@ Used as the header-line background in the Navigator buffer."
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
   '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
-         razor :gap multifile open-buffers close-buffers :gap clear-gptel clear-group)
+         razor :gap multifile open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
@@ -196,17 +196,17 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
                         (format " [%s]" (capitalize (context-navigator-i18n :close-buffers))) " [K]")))
-      (clear-gptel
-       :type action
-       :icon-key clear-gptel
-       :command context-navigator-view-clear-gptel
-       :help ,(lambda () (funcall tr :clear-tip))
-       :enabled-p ,(lambda () t)
-       :visible-p ,(lambda () t)
-       :label-fn ,(lambda (style _s)
-                    (if (eq style 'text)
-                        (format " [%s]" (context-navigator-i18n :clear-gptel))
-                      " [C]")))
+      ;; (clear-gptel
+      ;;  :type action
+      ;;  :icon-key clear-gptel
+      ;;  :command context-navigator-view-clear-gptel
+      ;;  :help ,(lambda () (funcall tr :clear-tip))
+      ;;  :enabled-p ,(lambda () t)
+      ;;  :visible-p ,(lambda () t)
+      ;;  :label-fn ,(lambda (style _s)
+      ;;               (if (eq style 'text)
+      ;;                   (format " [%s]" (context-navigator-i18n :clear-gptel))
+      ;;                 " [C]")))
       (clear-group
        :type action
        :icon-key clear-group

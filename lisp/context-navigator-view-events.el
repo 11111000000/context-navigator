@@ -24,6 +24,7 @@
 (defvar context-navigator-view--load-progress nil)
 (defvar context-navigator-view--mode 'items)
 (defvar context-navigator-view--last-render-key nil)
+(defvar context-navigator-view--groups nil)
 
 ;; Small helpers provided by the main view
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -104,6 +105,17 @@
              (when (buffer-live-p buf)
                (with-current-buffer buf
                  (context-navigator-view--schedule-render))))))
+        context-navigator-view--subs)
+  ;; Keep the groups list in the view's buffer-local cache
+  (push (context-navigator-events-subscribe
+         :groups-list-updated
+         (lambda (_root groups)
+           (let ((buf (get-buffer context-navigator-view--buffer-name)))
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (setq context-navigator-view--groups (and (listp groups) groups))
+                 (when (eq context-navigator-view--mode 'groups)
+                   (context-navigator-view--schedule-render)))))))
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-project-events ()

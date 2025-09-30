@@ -200,6 +200,9 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
 (defun context-navigator-open ()
   "Open Navigator in the current display mode."
   (interactive)
+  ;; Ensure core mode is active so hooks/subscriptions/auto-project are installed
+  (unless (bound-and-true-p context-navigator-mode)
+    (ignore-errors (context-navigator-mode 1)))
   (pcase context-navigator-display-mode
     ('sidebar (progn
                 (require 'context-navigator-view nil t)
@@ -230,6 +233,9 @@ When 0<value<1 treat as fraction of current window; otherwise columns/rows."
 (defun context-navigator-toggle ()
   "Toggle Navigator visibility in the current display mode."
   (interactive)
+  ;; Ensure core mode is active before toggling UI to avoid empty sidebar on first run
+  (unless (bound-and-true-p context-navigator-mode)
+    (ignore-errors (context-navigator-mode 1)))
   (pcase context-navigator-display-mode
     ('sidebar (progn
                 (require 'context-navigator-view nil t)

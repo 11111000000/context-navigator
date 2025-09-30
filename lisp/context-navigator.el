@@ -58,13 +58,87 @@
 ;;;###autoload
 (autoload 'context-navigator-view-close "context-navigator-view" "Close the sidebar window." t)
 ;;;###autoload
+(autoload 'context-navigator-view-quit "context-navigator-view" "Close the sidebar window." t)
+;;;###autoload
 (autoload 'context-navigator-view-toggle "context-navigator-view" "Toggle the sidebar window." t)
 ;;;###autoload
 (autoload 'context-navigator-view-show-groups "context-navigator-view" "Open the sidebar and show groups list." t)
+
+;;; NOTE:
+;;; The view functionality is split across multiple files (dispatch/actions/navigation/items/groups/etc).
+;;; To make the sidebar usable when loaded lazily, expose common view entry points here via autoload.
+;;; This helps callers (keymaps/transient) to trigger loading of their modules on demand.
+
+;;;###autoload
+(autoload 'context-navigator-view-activate "context-navigator-view-dispatch" "Activate entry at point in the sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-preview "context-navigator-view-actions" "Preview entry in other window." t)
+;;;###autoload
+(autoload 'context-navigator-view-next-item "context-navigator-view-navigation" "Select next item in sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-previous-item "context-navigator-view-navigation" "Select previous item in sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-toggle-enabled "context-navigator-view-actions" "Toggle inclusion/enabled flag for item at point." t)
+;;;###autoload
+(autoload 'context-navigator-view-toggle-gptel "context-navigator-view-actions" "Toggle gptel membership for item at point." t)
+;;;###autoload
+(autoload 'context-navigator-view-delete-dispatch "context-navigator-view-dispatch" "Delete item or group at point." t)
+;;;###autoload
+(autoload 'context-navigator-view-refresh-dispatch "context-navigator-view-dispatch" "Refresh items/groups in the sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-go-up "context-navigator-view-dispatch" "Go up to groups view from items." t)
+
+;;; Group management actions (groups view)
+;;;###autoload
+(autoload 'context-navigator-view-group-create "context-navigator-view-dispatch" "Create a new group from the sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-group-rename "context-navigator-view-dispatch" "Rename a group from the sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-group-duplicate "context-navigator-view-dispatch" "Duplicate a group from the sidebar." t)
+;;;###autoload
+(autoload 'context-navigator-view-group-edit-description "context-navigator-view-dispatch" "Edit a group's description from the sidebar." t)
+
+;;; Footer / batch actions
+;;;###autoload
+(autoload 'context-navigator-view-open-all-buffers "context-navigator-view-actions" "Open all context buffers in background." t)
+;;;###autoload
+(autoload 'context-navigator-view-close-all-buffers "context-navigator-view-actions" "Close all context buffers." t)
+;;;###autoload
+(autoload 'context-navigator-view-clear-group "context-navigator-view-actions" "Clear the current group's items." t)
+;;;###autoload
+(autoload 'context-navigator-view-clear-gptel "context-navigator-view-actions" "Clear gptel and disable all items." t)
+;;;###autoload
+(autoload 'context-navigator-view-enable-all-gptel "context-navigator-view-actions" "Enable all items and push to gptel." t)
+;;;###autoload
+(autoload 'context-navigator-view-toggle-all-gptel "context-navigator-view-actions" "Toggle all items in gptel (enable/clear)." t)
+;;;###autoload
+(autoload 'context-navigator-view-toggle-push "context-navigator-view-actions" "Toggle push→gptel session flag." t)
+;;;###autoload
+(autoload 'context-navigator-view-toggle-auto-project "context-navigator-view-actions" "Toggle auto-project session flag." t)
+;;;###autoload
+(autoload 'context-navigator-view-push-now "context-navigator-view-actions" "Push current items to gptel now." t)
+;;;###autoload
+(autoload 'context-navigator-view-razor-run "context-navigator-view-actions" "Run Occam/razor (LLM) against current org buffer." t)
+
+;;; Help / menu
+;;;###autoload
+(autoload 'context-navigator-view-help "context-navigator-view-help" "Show help for Navigator view." t)
+;;;###autoload
+(autoload 'context-navigator-view-open-menu "context-navigator-view-help" "Open Navigator menu (transient or help fallback)." t)
+
+;;; Transient entrypoints
 ;;;###autoload
 (autoload 'context-navigator-transient "context-navigator-transient" "Open Context Navigator transient." t)
 ;;;###autoload
 (autoload 'context-navigator-view-transient "context-navigator-transient" "Open Navigator view transient." t)
+
+;;; Multifile view
+;;;###autoload
+(autoload 'context-navigator-multifile-open "context-navigator-multifile" "Open Context Multifile View." t)
+;;;###autoload
+(autoload 'context-navigator-multifile-close "context-navigator-multifile" "Close Context Multifile View." t)
+
+;;; Core entrypoints (unchanged)
 ;;;###autoload
 (autoload 'context-navigator-open "context-navigator-core" "Open Navigator in current display mode." t)
 ;;;###autoload

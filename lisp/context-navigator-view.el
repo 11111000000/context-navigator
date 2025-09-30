@@ -25,23 +25,23 @@
 (require 'context-navigator-modeline)
 (require 'context-navigator-headerline)
 (require 'context-navigator-stats)
-(require 'context-navigator-view-controls)
-;; Controls/items/groups are split into dedicated modules to reduce coupling.
-;; Require controls (toolbar) and the items/groups renderers so the view can
-;; call their implementations directly without leaving thin wrappers behind.
-(require 'context-navigator-view-items)
-(require 'context-navigator-view-groups)
 (require 'context-navigator-view-actions)
-(require 'context-navigator-view-dispatch)
 (require 'context-navigator-view-buffer)
+(require 'context-navigator-view-const)
+(require 'context-navigator-view-controls)
+(require 'context-navigator-view-counters)
+(require 'context-navigator-view-dispatch)
+(require 'context-navigator-view-events)
+(require 'context-navigator-view-groups)
 (require 'context-navigator-view-help)
 (require 'context-navigator-view-indicators)
-(require 'context-navigator-view-counters)
-(require 'context-navigator-view-spinner)
-(require 'context-navigator-view-events)
-(require 'context-navigator-view-windows)
-(require 'context-navigator-view-const)
+(require 'context-navigator-view-items)
 (require 'context-navigator-view-navigation)
+(require 'context-navigator-view-spinner)
+(require 'context-navigator-view-title)
+(require 'context-navigator-view-ui)
+(require 'context-navigator-view-windows)
+
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -525,6 +525,15 @@ Do not highlight purely decorative separators."
         (context-navigator-view-mode)
         (setq-local buffer-read-only t)
         (context-navigator-view-events-install)
+        ;; Ensure core state is available when opening lazily via use-package.
+        ;; Best-effort: enable mode (installs hooks/subs) and trigger a refresh
+        ;; so the view can render real data even when initialization was deferred.
+        (ignore-errors (require 'context-navigator-core))
+        (when (fboundp 'context-navigator-mode)
+          (unless (bound-and-true-p context-navigator-mode)
+            (ignore-errors (context-navigator-mode 1))))
+        (when (fboundp 'context-navigator-refresh)
+          (ignore-errors (context-navigator-refresh)))
         (context-navigator-view--render)))
     (when (window-live-p win)
       ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
@@ -544,6 +553,27 @@ Do not highlight purely decorative separators."
   "Close the context-navigator sidebar if visible."
   (interactive)
   (context-navigator-view-quit))
+
+(defun context-navigator-view-quit ()
+  "Close Navigator sidebar windows and teardown view-local resources."
+  (interactive)
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      ;; Remove buffer-local subscriptions/timers safely.
+      (with-current-buffer buf
+        (ignore-errors
+          (when (fboundp 'context-navigator-view-events-remove)
+            (context-navigator-view-events-remove))))
+      ;; Delete all windows that show the sidebar variant of this buffer.
+      (dolist (w (get-buffer-window-list buf nil t))
+        (when (and (window-live-p w)
+                   (eq (window-parameter w 'context-navigator-view) 'sidebar))
+          (delete-window w)))
+      ;; If no Navigator windows remain, remove window-balance protections.
+      (ignore-errors
+        (when (fboundp 'context-navigator-view-windows-teardown)
+          (context-navigator-view-windows-teardown)))))
+  t)
 
 ;;;###autoload
 (defun context-navigator-view-toggle ()
@@ -599,6 +629,7 @@ Do not highlight purely decorative separators."
         (select-window win))
       (context-navigator-view--schedule-render))))
 
+(require 'context-navigator-view-help)
 (require 'context-navigator-view-title)
 
 (defun context-navigator-view-stats-toggle ()
