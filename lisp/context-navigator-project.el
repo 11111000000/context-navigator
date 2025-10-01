@@ -166,11 +166,12 @@ valid root."
             nil))))))
 
 (defun context-navigator-project--on-buffer-list-update ()
-  "Hook: evaluate current or nearest file buffer for project switch when appropriate.
+  "Hook: evaluate current or nearest interesting buffer for project switch.
 
 Special handling: if the selected window is the Context Navigator (sidebar/buffer),
-pick the first file-visiting window on the current frame and switch based on it.
-This makes auto-project responsive to tab/buffer changes while the sidebar is focused.
+pick the first interesting window (file-visiting or allowed non-file modes) on the
+current frame and switch based on it. This keeps auto-project responsive while the
+sidebar is focused.
 
 Ignore events coming from child frames (posframe/popups) and
 when the current buffer is a minibuffer or a corfu internal buffer."
@@ -184,11 +185,10 @@ when the current buffer is a minibuffer or a corfu internal buffer."
                         (eq major-mode 'context-navigator-view-mode))
                       (equal (buffer-name buf) "*context-navigator*"))))
       (if nav-p
-          ;; Focus is in Navigator → use nearest (first) file-visiting window on this frame
+          ;; Focus is in Navigator → use nearest interesting buffer on this frame
           (let* ((w (cl-find-if
                      (lambda (w)
-                       (with-current-buffer (window-buffer w)
-                         (and buffer-file-name t)))
+                       (context-navigator-project--interesting-buffer-p (window-buffer w)))
                      (window-list (selected-frame) 'no-minibuffer)))
                  (target-buf (and w (window-buffer w))))
             (when target-buf
@@ -200,8 +200,9 @@ when the current buffer is a minibuffer or a corfu internal buffer."
   "Hook: react to real window selection changes only.
 
 Special handling: if the selected window is the Context Navigator (sidebar/buffer),
-switch based on the first file-visiting window on the current frame so auto-project
-continues to follow real work buffers even while the sidebar is focused.
+switch based on the first interesting window (file or allowed non-file modes) on
+the current frame so auto-project continues to follow real work buffers even while
+the sidebar is focused.
 
 Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers."
   (let ((win (selected-window)))
@@ -216,8 +217,7 @@ Skip child frames (e.g., posframe popups), minibuffer windows and corfu buffers.
         (if nav-p
             (let* ((w (cl-find-if
                        (lambda (w)
-                         (with-current-buffer (window-buffer w)
-                           (and buffer-file-name t)))
+                         (context-navigator-project--interesting-buffer-p (window-buffer w)))
                        (window-list (selected-frame) 'no-minibuffer)))
                    (target-buf (and w (window-buffer w))))
               (when target-buf
