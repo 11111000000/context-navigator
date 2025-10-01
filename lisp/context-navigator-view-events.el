@@ -25,6 +25,8 @@
 (defvar context-navigator-view--mode 'items)
 (defvar context-navigator-view--last-render-key nil)
 (defvar context-navigator-view--groups nil)
+(defvar context-navigator-view--gptel-batch-start-time nil
+  "Buffer-local timestamp (float-time) when a gptel batch started; used to show batch duration in UI.")
 
 ;; Small helpers provided by the main view
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
@@ -85,6 +87,52 @@
                  (setq context-navigator-view--load-progress nil)
                  (ignore-errors (context-navigator-view--spinner-stop))
                  (context-navigator-view--schedule-render))))))
+        context-navigator-view--subs)
+
+  ;; Subscribe to gptel batch lifecycle events to show spinner/progress in the sidebar.
+  ;; Events published by core: (context-navigator-events-publish :gptel-change :batch-start N START-TIME)
+  ;;                                (context-navigator-events-publish :gptel-change :batch-done N)
+  ;;                                (context-navigator-events-publish :gptel-change :batch-cancel)
+  (push (context-navigator-events-subscribe
+         :gptel-change
+         (lambda (subtype &rest args)
+           (let ((buf (get-buffer context-navigator-view--buffer-name)))
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (pcase subtype
+                   (:batch-start
+                    ;; Start spinner and schedule render; args => (TOTAL START-TIME)
+                    (ignore-errors (context-navigator-view--spinner-start))
+                    (context-navigator-view--schedule-render)
+                    (when (and (integerp (car-safe args)))
+                      ;; record start time in buffer-local var if provided
+                      (let ((total (car args))
+                            (start (cadr args)))
+                        (setq context-navigator-view--gptel-batch-start-time
+                              (or (and (numberp start) start) (float-time)))
+                        (context-navigator-ui-info :push-state
+                                                   (format "Pushing %d items..." total)))))
+                   (:batch-done
+                    ;; Stop spinner, show done message and schedule render; args => (TOTAL)
+                    (ignore-errors (context-navigator-view--spinner-stop))
+                    (context-navigator-view--schedule-render)
+                    (let ((total (car-safe args))
+                          (now (float-time))
+                          (start (or context-navigator-view--gptel-batch-start-time 0.0)))
+                      (when (and (integerp total))
+                        (context-navigator-ui-info :pushed-items total))
+                      ;; Show duration if start time available
+                      (when (and (numberp start) (> start 0.0))
+                        (let ((dur (format "%.2fs" (max 0.0 (- now start)))))
+                          (context-navigator-ui-info :pushed-items-done (or total 0) dur)))
+                      ;; reset buffer-local start time
+                      (setq context-navigator-view--gptel-batch-start-time nil)))
+                   (:batch-cancel
+                    ;; Stop spinner and schedule render
+                    (ignore-errors (context-navigator-view--spinner-stop))
+                    (setq context-navigator-view--gptel-batch-start-time nil)
+                    (context-navigator-view--schedule-render))
+                   (_ nil)))))))
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-groups-events ()
@@ -124,6 +172,9 @@
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
+                 ;; Gate auto-push softly when selection changes (no heavy IO)
+                 (when (fboundp 'context-navigator-autopush-gate-on-selection)
+                   (ignore-errors (context-navigator-autopush-gate-on-selection)))
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 

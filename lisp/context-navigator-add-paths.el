@@ -529,7 +529,16 @@ so auto-push works even when gptel buffer is hidden."
         (if (and only-items (listp only-items))
             (ignore-errors (context-navigator--gptel-defer-or-start only-items token))
           (let ((items (and st (context-navigator-state-items st))))
-            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))
+            (ignore-errors (context-navigator-gptel-apply (or items '())))))))
+    ;; Best-effort refresh of Navigator indicators after applying to gptel.
+    (ignore-errors
+      (let* ((lst (context-navigator-gptel-pull))
+             (keys (and (listp lst)
+                        (mapcar #'context-navigator-model-item-key lst)))
+             (h (sxhash-equal keys)))
+        (with-current-buffer (get-buffer-create "*context-navigator*")
+          (setq-local context-navigator-view--gptel-keys keys)
+          (setq-local context-navigator-view--gptel-keys-hash h))))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
   "Append FILES as enabled file items to the model in one batch. Return count added.

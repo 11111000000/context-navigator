@@ -17,7 +17,6 @@
 (require 'context-navigator-model)
 (require 'context-navigator-core)
 (require 'context-navigator-stats)
-(require 'context-navigator-view-title)
 (require 'context-navigator-log)
 
 ;;;###autoload
@@ -216,9 +215,9 @@ Also maintains relpath cache per generation/root."
   "Compute left column width from TOTAL-WIDTH, clamped to sane bounds."
   (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
 
-(defun context-navigator-view--items--title-line (header)
-  "Build interactive title line for HEADER."
-  (context-navigator-view--title-line header))
+(defun context-navigator-view--items--title-line (_header)
+  "No inline title line; return empty string."
+  "")
 
 (defun context-navigator-view--items--up-line ()
   "\"..\" line that navigates up to groups."

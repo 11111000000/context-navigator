@@ -570,6 +570,10 @@ If no sidebar windows are present, behave like `delete-other-windows'."
   "Toggle session flag to push Navigator context to gptel."
   (interactive)
   (setq context-navigator--push-to-gptel (not context-navigator--push-to-gptel))
+  ;; Reset one-shot notification flag when user manually enables push again,
+  ;; so future threshold gates can notify once more.
+  (when context-navigator--push-to-gptel
+    (setq context-navigator--autopush-disabled-notified nil))
   (context-navigator-ui-info :push-state
                              (context-navigator-i18n (if context-navigator--push-to-gptel :on :off)))
   (context-navigator-refresh))
@@ -815,6 +819,8 @@ Behavior:
   (when (timerp context-navigator--gptel-visible-poll-timer)
     (cancel-timer context-navigator--gptel-visible-poll-timer))
   (setq context-navigator--gptel-visible-poll-timer nil)
+  ;; Notify listeners that any pending batch was cancelled.
+  (ignore-errors (context-navigator-events-publish :gptel-change :batch-cancel))
   t)
 
 (defun context-navigator--gptel-start-batch (items token)
@@ -824,6 +830,8 @@ Assumes gptel has been cleared beforehand."
   (setq context-navigator--gptel-batch-queue (copy-sequence (or items '())))
   (setq context-navigator--gptel-batch-total (length context-navigator--gptel-batch-queue))
   (setq context-navigator--gptel-batch-token token)
+  ;; Notify listeners that a batch is starting (provide total count).
+  (ignore-errors (context-navigator-events-publish :gptel-change :batch-start context-navigator--gptel-batch-total))
   (let ((kick (lambda ()
                 (let* ((st (context-navigator--state-get)))
                   (unless (and (context-navigator-state-p st)
@@ -882,6 +890,9 @@ When the aggregated enabled items exceed this threshold, auto-push is disabled
 and only manual push is allowed."
   :type 'integer :group 'context-navigator)
 
+(defvar context-navigator--autopush-disabled-notified nil
+  "Non-nil when we've already shown the auto-push disabled notification for the current session/selection.")
+
 (defun context-navigator--enabled-only (items)
   "Return a list of ITEMS filtered to enabled ones (pure)."
   (cl-remove-if-not (lambda (it) (context-navigator-item-enabled it)) (or items '())))
@@ -896,7 +907,11 @@ When ENABLED-ONLY is non-nil, filter to enabled items before deduplication."
     (cl-labels
         ((step ()
            (if (null pending)
-               (funcall callback (funcall dedup (nreverse acc)))
+               (let ((items (funcall dedup (nreverse acc))))
+                 ;; Pair :context-load-start (published by persist loader) with a done event
+                 ;; so the View clears its lightweight preloader.
+                 (ignore-errors (context-navigator-events-publish :context-load-done root t))
+                 (funcall callback items))
              (let* ((slug (car pending)))
                (setq pending (cdr pending))
                (context-navigator-persist-load-group-async
@@ -912,13 +927,68 @@ When ENABLED-ONLY is non-nil, filter to enabled items before deduplication."
   (context-navigator-collect-items-for-groups-async root slugs callback t))
 
 (defun context-navigator-apply-groups-now (root slugs)
-  "Manually push aggregated enabled items from SLUGS under ROOT to gptel."
+  "Manually push aggregated enabled items from SLUGS under ROOT to gptel (batched)."
   (interactive)
   (context-navigator-collect-enabled-items-for-groups-async
    root slugs
    (lambda (items)
-     (ignore-errors (context-navigator-gptel-apply (or items '())))
-     (context-navigator-ui-info :pushed-items (length (or items '()))))))
+     (let ((n (length (or items '()))))
+       (if (= n 0)
+           (context-navigator-ui-info :no-enabled-in-selection)
+         ;; Best-effort clear, then background batch add (no UI freeze).
+         (ignore-errors (context-navigator-gptel-clear-all-now))
+         (let ((token 0))
+           (ignore-errors (context-navigator--gptel-defer-or-start (or items '()) token)))
+         (context-navigator-ui-info :pushed-items n))))))
+
+;; ---- Multi-group auto-push gating (small helpers + thin effect wrapper) ----
+
+(defun context-navigator--selected-group-slugs-for-root (root)
+  "Pure: return list of selected group slugs for ROOT from state.el."
+  (let* ((st (and (stringp root)
+                  (ignore-errors (context-navigator-persist-state-load root)))))
+    (let ((sel (and (listp st) (plist-member st :selected) (plist-get st :selected))))
+      (if (listp sel) sel '()))))
+
+(defun context-navigator--sum-enabled-for-groups (root slugs)
+  "Pure: sum enabled counters across SLUGS by reading their v3 files."
+  (let ((sum 0))
+    (dolist (slug slugs sum)
+      (let* ((file (ignore-errors (context-navigator-persist-context-file root slug)))
+             (en.t (and (stringp file)
+                        (ignore-errors (context-navigator-persist-group-enabled-count file))))
+             (en (and (consp en.t) (car en.t))))
+        (when (integerp en)
+          (setq sum (+ sum en)))))))
+
+(defun context-navigator-autopush-gate-on-selection ()
+  "Side-effect: if auto-push is ON and selected groups exceed threshold, disable push flag.
+Uses quick per-group enabled counters; avoids heavy IO and stays responsive.
+Notifies user once per session when auto-push is disabled due to a large selection."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (sel (context-navigator--selected-group-slugs-for-root root))
+         (thr (or context-navigator-multigroup-autopush-threshold 100)))
+    (when (and (stringp root)
+               (listp sel) (> (length sel) 0))
+      (let ((sum (context-navigator--sum-enabled-for-groups root sel)))
+        (cond
+         ((> sum thr)
+          ;; Disable push if it is currently enabled
+          (when (and (boundp 'context-navigator--push-to-gptel)
+                     context-navigator--push-to-gptel)
+            (setq context-navigator--push-to-gptel nil))
+          (context-navigator-ui-info :push-state (context-navigator-i18n :off))
+          ;; Notify user once per session/occurrence
+          (unless context-navigator--autopush-disabled-notified
+            (context-navigator-ui-info :autopush-disabled-threshold sum thr)
+            (setq context-navigator--autopush-disabled-notified t))
+          (context-navigator-debug :info :core
+                                   "auto-push disabled by gate (enabled=%s > thr=%s)" sum thr))
+         ((<= sum thr)
+          ;; Reset notification so future gates can notify again.
+          (setq context-navigator--autopush-disabled-notified nil)))))))
+
 
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."

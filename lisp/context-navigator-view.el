@@ -39,7 +39,7 @@
 (require 'context-navigator-view-items)
 (require 'context-navigator-view-navigation)
 (require 'context-navigator-view-spinner)
-(require 'context-navigator-view-title)
+
 (require 'context-navigator-view-segments)
 (require 'context-navigator-view-windows)
 
@@ -485,20 +485,14 @@ background."
   "Return region to highlight for the current line.
 
 Highlight:
-- title line (has 'context-navigator-title)
-- Stats header (has 'context-navigator-stats-toggle)
 - item lines (have 'context-navigator-item)
 - group lines (have 'context-navigator-group-slug)
 - the \"..\" line (has 'context-navigator-groups-up)
-- Stats content lines (have 'context-navigator-stats-line)
 
 Do not highlight purely decorative separators."
-  (when (or (get-text-property (point) 'context-navigator-title)
-            (get-text-property (point) 'context-navigator-stats-toggle)
-            (get-text-property (point) 'context-navigator-item)
+  (when (or (get-text-property (point) 'context-navigator-item)
             (get-text-property (point) 'context-navigator-group-slug)
-            (get-text-property (point) 'context-navigator-groups-up)
-            (get-text-property (point) 'context-navigator-stats-line))
+            (get-text-property (point) 'context-navigator-groups-up))
     (cons (line-beginning-position)
           (min (point-max) (1+ (line-end-position))))))
 
@@ -509,10 +503,13 @@ Do not highlight purely decorative separators."
         cursor-type t)
   (when (fboundp 'context-navigator-view-controls--ensure-headerline-face)
     (context-navigator-view-controls--ensure-headerline-face))
-  (when (fboundp 'context-navigator-modeline--apply)
-    (context-navigator-modeline--apply (current-buffer)))
+  ;; Modeline disabled temporarily to avoid state/plist mismatch during redisplay.
+  ;; See: selection toggle error after [t] in groups causing plist access on struct state.
   (when (fboundp 'context-navigator-headerline--apply)
     (context-navigator-headerline--apply (current-buffer)))
+  ;; Apply minimal modeline (safe; uses struct accessors and persist state)
+  (when (fboundp 'context-navigator-modeline--apply)
+    (context-navigator-modeline--apply (current-buffer)))
   (setq-local hl-line-range-function #'context-navigator-view--hl-line-range)
   (hl-line-mode 1))
 
@@ -637,12 +634,24 @@ Do not highlight purely decorative separators."
       (with-current-buffer buf
         (setq context-navigator-view--mode 'groups))
       (ignore-errors (context-navigator-groups-open))
+      ;; If no groups are selected, clear model and (when auto-push ON) clear gptel.
+      (ignore-errors
+        (let* ((st (context-navigator--state-get))
+               (root (and st (context-navigator-state-last-project-root st)))
+               (ps (and (stringp root) (context-navigator-persist-state-load root)))
+               (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
+          (when (or (not (listp sel)) (= (length sel) 0))
+            ;; Clear model items
+            (context-navigator-set-items '())
+            ;; Clear gptel now only when push→gptel is ON
+            (when (and (boundp 'context-navigator--push-to-gptel)
+                       context-navigator--push-to-gptel)
+              (context-navigator-clear-gptel-now)))))
       (when-let ((win (get-buffer-window buf t)))
         (select-window win))
       (context-navigator-view--schedule-render))))
 
 (require 'context-navigator-view-help)
-(require 'context-navigator-view-title)
 
 (defun context-navigator-view-stats-toggle ()
   "Toggle the 5-line Stats split below the Navigator sidebar."

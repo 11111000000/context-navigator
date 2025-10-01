@@ -42,8 +42,11 @@
 (declare-function context-navigator-view-toggle-multi-group "context-navigator-view-dispatch" ())
 (declare-function context-navigator-persist-state-load "context-navigator-persist" (root))
 (declare-function context-navigator-persist-group-enabled-count "context-navigator-persist" (file))
+(declare-function context-navigator-persist-context-file "context-navigator-persist" (root &optional group-slug))
 (declare-function context-navigator--state-get "context-navigator-core" ())
 (declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
+(declare-function context-navigator-state-items "context-navigator-core" (state))
+(declare-function context-navigator-state-current-group-slug "context-navigator-core" (state))
 
 (defgroup context-navigator-view-controls nil
   "Toolbar controls (toggles and actions) for Context Navigator view."
@@ -77,6 +80,65 @@ Used as the header-line background in the Navigator buffer."
 ;; Apply default header-line face now if the buffer already exists.
 (context-navigator-view-controls--ensure-headerline-face)
 
+;; ---- Small pure helpers for gating push/autopush ---------------------------
+
+(defun context-navigator-view-controls--selected-slugs ()
+  "Return selected group slugs from state.el for current root (pure)."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (ps (and (stringp root)
+                  (ignore-errors (context-navigator-persist-state-load root)))))
+    (let ((sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
+      (if (listp sel) sel '()))))
+
+(defun context-navigator-view-controls--sum-enabled-for-slugs (root slugs)
+  "Return sum of enabled items across SLUGS (reads per-group v3 files)."
+  (let ((sum 0))
+    (dolist (slug slugs sum)
+      (let* ((file (ignore-errors (context-navigator-persist-context-file root slug)))
+             (en.t (and (stringp file)
+                        (ignore-errors (context-navigator-persist-group-enabled-count file))))
+             (en (and (consp en.t) (car en.t))))
+        (when (integerp en)
+          (setq sum (+ sum en)))))))
+
+(defun context-navigator-view-controls--push-allowed-p ()
+  "Return non-nil when push/auto should be enabled in groups mode.
+Rule: selection non-empty AND aggregated enabled items > 0."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (sel (context-navigator-view-controls--selected-slugs)))
+    (and (stringp root)
+         (listp sel) (> (length sel) 0)
+         (> (context-navigator-view-controls--sum-enabled-for-slugs root sel) 0))))
+
+(defun context-navigator-view-controls--items-enabled-p ()
+  "Return non-nil when current group (items mode) has at least one enabled item."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (ignore-errors (context-navigator-state-items st)))))
+    (and (listp items)
+         (cl-some (lambda (it) (and (context-navigator-item-p it)
+                                    (context-navigator-item-enabled it)))
+                  items))))
+
+(defun context-navigator-view-controls--push-disabled-reason ()
+  "Return a localized reason string when push is disabled, or nil."
+  (let* ((mode (and (boundp 'context-navigator-view--mode)
+                    context-navigator-view--mode)))
+    (if (eq mode 'groups)
+        (let* ((st (ignore-errors (context-navigator--state-get)))
+               (root (and st (context-navigator-state-last-project-root st)))
+               (sel (context-navigator-view-controls--selected-slugs)))
+          (cond
+           ((or (null (listp sel)) (= (length sel) 0))
+            (context-navigator-i18n :no-group-selected))
+           ((<= (context-navigator-view-controls--sum-enabled-for-slugs root sel) 0)
+            (context-navigator-i18n :no-enabled-in-selection))
+           (t nil)))
+      ;; items mode
+      (unless (context-navigator-view-controls--items-enabled-p)
+        (context-navigator-i18n :razor-no-enabled-items)))))
+
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
   '(push auto-project :gap undo redo :gap stats multi-group push-now toggle-all-gptel :gap
@@ -105,14 +167,19 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :type toggle
        :icon-key push
        :command context-navigator-view-toggle-push
-       :help ,(lambda () (funcall tr :toggle-push))
+       :help ,(lambda ()
+                (let ((base (funcall tr :toggle-push))
+                      (why (context-navigator-view-controls--push-disabled-reason)))
+                  (if (and why (not (context-navigator-view-controls--push-allowed-p)))
+                      (format "%s — %s" base why)
+                    base)))
        :enabled-p ,(lambda ()
                      (and (ignore-errors (context-navigator-gptel-available-p))
                           (let* ((mode (and (boundp 'context-navigator-view--mode)
                                             context-navigator-view--mode)))
                             (if (eq mode 'groups)
                                 (context-navigator-view-controls--push-allowed-p)
-                              t))))
+                              (context-navigator-view-controls--items-enabled-p)))))
        :visible-p ,(lambda () t)
        :state-fn ,(lambda ()
                     (if (and (boundp 'context-navigator--push-to-gptel)
@@ -193,7 +260,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :type toggle
        :icon-key nil
        :command context-navigator-view-toggle-multi-group
-       :help ,(lambda () "Toggle multi-group mode")
+       :help ,(lambda () (funcall tr :toggle-multi-group))
        :enabled-p ,(lambda ()
                      (let* ((st (ignore-errors (context-navigator--state-get)))
                             (root (and st (context-navigator-state-last-project-root st)))
@@ -215,13 +282,22 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :type action
        :icon-key push-now
        :command context-navigator-view-push-now-dispatch
-       :help ,(lambda () (funcall tr :push-now))
+       :help ,(lambda ()
+                (let ((base (funcall tr :push-now))
+                      (mode (and (boundp 'context-navigator-view--mode)
+                                 context-navigator-view--mode)))
+                  (if (and (not (if (eq mode 'groups)
+                                    (context-navigator-view-controls--push-allowed-p)
+                                  (context-navigator-view-controls--items-enabled-p))))
+                      (let ((why (context-navigator-view-controls--push-disabled-reason)))
+                        (if why (format "%s — %s" base why) base))
+                    base)))
        :enabled-p ,(lambda ()
                      (let* ((mode (and (boundp 'context-navigator-view--mode)
                                        context-navigator-view--mode)))
                        (if (eq mode 'groups)
                            (context-navigator-view-controls--push-allowed-p)
-                         t)))
+                         (context-navigator-view-controls--items-enabled-p))))
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)

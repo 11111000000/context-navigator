@@ -32,6 +32,8 @@
 (declare-function context-navigator-view-controls-segments "context-navigator-view-controls" ())
 (declare-function context-navigator-view--header "context-navigator-view" (state))
 (declare-function context-navigator--state-get "context-navigator-core" ())
+(declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
+(declare-function context-navigator-persist-state-load "context-navigator-persist" (root))
 
 (defvar-local context-navigator-headerline--cache-key nil)
 (defvar-local context-navigator-headerline--cache-str nil)
@@ -46,6 +48,8 @@ Cache key includes:
 - controls style and icons availability,
 - session toggles (push/auto),
 - Occam spinner state/index (when available),
+- current view mode (items/groups),
+- selection size and multi-group flag (per-project),
 so that frequent redisplays reuse the same string unless a relevant bit changes."
   (when (eq major-mode 'context-navigator-view-mode)
     (let* ((style (and (boundp 'context-navigator-controls-style)
@@ -61,7 +65,25 @@ so that frequent redisplays reuse the same string unless a relevant bit changes.
                            context-navigator-razor--running))
            (razor-idx (and (boundp 'context-navigator-razor--spinner-index)
                            context-navigator-razor--spinner-index))
-           (key (list style icons-on push-on auto-on razor-run razor-idx)))
+           ;; Additional bits to make headerline cache sensitive to selection/mode.
+           (mode-sym (and (boundp 'context-navigator-view--mode)
+                          context-navigator-view--mode))
+           (sel-count
+            (ignore-errors
+              (let* ((st (context-navigator--state-get))
+                     (root (and st (context-navigator-state-last-project-root st)))
+                     (ps (and (stringp root)
+                              (context-navigator-persist-state-load root)))
+                     (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
+                (if (listp sel) (length sel) 0))))
+           (mg-flag
+            (ignore-errors
+              (let* ((st (context-navigator--state-get))
+                     (root (and st (context-navigator-state-last-project-root st)))
+                     (ps (and (stringp root)
+                              (context-navigator-persist-state-load root))))
+                (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))))
+           (key (list style icons-on push-on auto-on razor-run razor-idx mode-sym sel-count mg-flag)))
       (if (equal key context-navigator-headerline--cache-key)
           ;; Reuse cached string
           context-navigator-headerline--cache-str

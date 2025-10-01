@@ -226,6 +226,7 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
                    ;; Disable auto-push softly and inform user
                    (setq context-navigator--push-to-gptel nil)
                    (context-navigator-ui-info :push-state (context-navigator-i18n :off))
+                   (context-navigator-ui-info :autopush-disabled-threshold n thr)
                    (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
                   (t
                    (ignore-errors (context-navigator-gptel-apply items))))))))

@@ -165,6 +165,17 @@ Files larger than this threshold are skipped."
 
 ;; ---------------- gptel batched apply helpers ----------------
 
+(defun context-navigator-add--refresh-gptel-keys-snapshot ()
+  "Refresh cached gptel keys snapshot in Navigator buffer to update indicators."
+  (ignore-errors
+    (let* ((lst (context-navigator-gptel-pull))
+           (keys (and (listp lst)
+                      (mapcar #'context-navigator-model-item-key lst)))
+           (h (sxhash-equal keys)))
+      (with-current-buffer (get-buffer-create "*context-navigator*")
+        (setq-local context-navigator-view--gptel-keys keys)
+        (setq-local context-navigator-view--gptel-keys-hash h)))))
+
 (defun context-navigator-add--apply-items-batched (items)
   "Background-apply ITEMS to gptel via core batch when push is ON."
   (when (and (boundp 'context-navigator--push-to-gptel)
@@ -174,7 +185,9 @@ Files larger than this threshold are skipped."
            (token (and st (context-navigator-state-load-token st))))
       (ignore-errors
         (let ((context-navigator-gptel-require-visible-window nil))
-          (context-navigator--gptel-defer-or-start items token))))))
+          (context-navigator--gptel-defer-or-start items token))))
+    ;; Best-effort immediate refresh of indicators; events will refine it later.
+    (run-at-time 0.1 nil #'context-navigator-add--refresh-gptel-keys-snapshot)))
 
 ;; ---------------- Mutators (model + apply + UI) ----------------
 

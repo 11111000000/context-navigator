@@ -81,12 +81,10 @@ when none exists."
 (defun context-navigator-view--ui-props ()
   "Return the list of properties that mark navigable UI elements."
   '(context-navigator-interactive
-    context-navigator-title
     context-navigator-item
     context-navigator-group-slug
     context-navigator-action
     context-navigator-toggle
-    context-navigator-stats-toggle
     context-navigator-groups-up))
 
 (defun context-navigator-view--find-next-ui-pos (&optional start)
@@ -148,25 +146,9 @@ when none exists."
       (context-navigator-ui-info :no-interactive-elements))))
 
 (defun context-navigator-view-tab-next ()
-  "Move point to the next interactive element.
-
-On title line: toggle collapse. On Stats header: toggle stats. Wrap at end."
+  "Move to the next interactive element; wraps."
   (interactive)
-  (let* ((here (point)))
-    (when (get-text-property here 'context-navigator-title)
-      (context-navigator-view-toggle-collapse)
-      (cl-return-from context-navigator-view-tab-next))
-    (when (get-text-property here 'context-navigator-stats-toggle)
-      (context-navigator-view-stats-toggle)
-      (cl-return-from context-navigator-view-tab-next))
-    (let* ((cur-end (if (get-text-property here 'context-navigator-interactive)
-                        (or (next-single-property-change here 'context-navigator-interactive nil (point-max))
-                            (point-max))
-                      (1+ here)))
-           (pos (context-navigator-view--find-next-interactive-pos cur-end)))
-      (unless pos
-        (setq pos (context-navigator-view--find-next-interactive-pos (point-min))))
-      (if pos (goto-char pos) (context-navigator-ui-info :no-interactive-elements)))))
+  (context-navigator-view--move-next-interactive))
 
 (defun context-navigator-view-tab-previous ()
   "Move point to the previous interactive element. Wrap at start."

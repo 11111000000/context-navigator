@@ -15,17 +15,15 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-icons)
 (require 'context-navigator-render)
-(require 'context-navigator-view-title)
+
 (require 'context-navigator-persist)
 (require 'context-navigator-stats)
 (require 'context-navigator-core)
 
 ;;;###autoload
-(defun context-navigator-view-groups-header-lines (header total-width)
-  "Return list with a single clickable title line for groups view.
-
-Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
-  (list (context-navigator-view--title-line header)))
+(defun context-navigator-view-groups-header-lines (_header _total-width)
+  "No inline title in groups view; return empty list."
+  '())
 
 ;;;###autoload
 (defun context-navigator-view-groups-body-lines (state)

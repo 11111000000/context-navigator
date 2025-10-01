@@ -388,6 +388,9 @@
     (:pushed-items
      (en . "Pushed %d items to gptel")
      (ru . "Отправлено в gptel: %d элементов"))
+    (:pushed-items-done
+     (en . "Pushed %d items to gptel in %s")
+     (ru . "Отправлено в gptel: %d элементов за %s"))
     (:push-state
      (en . "Push→gptel: %s")
      (ru . "Отправка→gptel: %s"))
@@ -704,6 +707,12 @@
     (:no-group-selected
      (en . "No group selected")
      (ru . "Группа не выбрана"))
+    (:no-enabled-in-selection
+     (en . "No enabled items in selected groups")
+     (ru . "Нет включённых элементов в выбранных группах"))
+    (:autopush-disabled-threshold
+     (en . "Auto-push disabled: %d enabled items (> %d). Use manual Push (P).")
+     (ru . "Автопуш отключён: включённых элементов %d (> %d). Используйте ручной Push (P)."))
     (:group-edit-desc-default
      (en . "Edit description (default %s): ")
      (ru . "Изменить описание (по умолчанию %s): "))
@@ -796,6 +805,16 @@
      (be . "Пераключыць аўтапераключэнне праекта (A)")
      (zh . "切换自动项目切换 (A)")
      (ja . "自動プロジェクト切替 (A)"))
+    (:toggle-multi-group
+     (en . "Toggle multi-group mode")
+     (ru . "Переключить мультигруппы")
+     (fr . "Basculer le mode multi-groupe")
+     (de . "Mehrgruppenmodus umschalten")
+     (es . "Alternar modo multigrupo")
+     (uk . "Перемкнути режим мультигруп")
+     (be . "Пераключыць рэжым мультыгруп")
+     (zh . "切换多组模式")
+     (ja . "マルチグループモードの切替"))
     (:auto-proj
      (en . "auto-proj")
      (ru . "авто-проект")

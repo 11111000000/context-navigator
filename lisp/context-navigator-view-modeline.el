@@ -18,10 +18,11 @@
 (require 'context-navigator-model)
 (require 'context-navigator-core)
 (require 'context-navigator-groups)
+(require 'context-navigator-persist)
 
 (declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
 (declare-function context-navigator--groups-candidates "context-navigator-groups" (&optional root))
-(declare-function context-navigator--state-get "context-navigator-groups" ())
+(declare-function context-navigator--state-get "context-navigator-core" ())
 
 (defgroup context-navigator-modeline nil
   "Modeline settings for Context Navigator."
@@ -40,7 +41,11 @@
 Plist: (:root ROOT :stamp TIME :alist ALIST), where ALIST is slug->desc.")
 
 (defun context-navigator-modeline--desc-alist (root)
-  "Return description alist for ROOT using in-memory state, avoiding disk IO on every tick."
+  "Return description alist for ROOT from state.el with a small TTL cache.
+
+Reads :descriptions from persist state (state.el) instead of core struct
+(state is a cl-struct, not a plist). Avoids disk IO on every tick by caching
+for a short period."
   (let* ((now (float-time))
          (ttl 2.0)
          (cached (and (plist-get context-navigator-modeline--desc-cache :root)
@@ -50,9 +55,11 @@ Plist: (:root ROOT :stamp TIME :alist ALIST), where ALIST is slug->desc.")
                      (plist-get context-navigator-modeline--desc-cache :stamp))))
     (if (and cached stamp (< (- now stamp) ttl))
         cached
-      (let* ((st (ignore-errors (context-navigator--state-get)))
-             (alist (and (plist-member st :descriptions)
-                         (plist-get st :descriptions))))
+      (let* ((ps (and (stringp root)
+                      (ignore-errors (context-navigator-persist-state-load root))))
+             (alist (and (listp ps)
+                         (plist-member ps :descriptions)
+                         (plist-get ps :descriptions))))
         (setq context-navigator-modeline--desc-cache
               (list :root root :stamp now :alist alist))
         alist))))
