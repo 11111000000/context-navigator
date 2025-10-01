@@ -68,6 +68,7 @@ to the textual/compact style (with brackets)."
     (redo . (faicon . "repeat"))
     (push-now . (faicon . "paper-plane"))
     (razor . (faicon . "filter"))
+    (stats . (material . "assessment"))
     (multifile . (faicon . "list"))
     ;; Multifile local controls (used in Multifile buffer header-line)
     (mf-collapse . ((on  . (faicon . "chevron-up"))   ;; on = expanded (click to collapse)

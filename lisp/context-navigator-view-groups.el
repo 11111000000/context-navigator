@@ -18,6 +18,7 @@
 (require 'context-navigator-view-title)
 (require 'context-navigator-persist)
 (require 'context-navigator-stats)
+(require 'context-navigator-core)
 
 ;;;###autoload
 (defun context-navigator-view-groups-header-lines (header total-width)
@@ -29,9 +30,17 @@ Shows only [project] and supports TAB/RET/mouse-1 collapse like items."
 ;;;###autoload
 (defun context-navigator-view-groups-body-lines (state)
   "Return list of lines for groups body using STATE.
-Each group shows display name with item count in parentheses."
+Each group shows:
+- a colored indicator ●/◐/○ by enabled ratio (green/orange/gray)
+- selection marker [*]/[ ] persisted in state.el (:selected)
+- display name and items count."
   (let* ((active (and (context-navigator-state-p state)
-                      (context-navigator-state-current-group-slug state))))
+                      (context-navigator-state-current-group-slug state)))
+         (root   (and (context-navigator-state-p state)
+                      (context-navigator-state-last-project-root state)))
+         (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+         (selected (and (plist-member pstate :selected) (plist-get pstate :selected)))
+         (selected (if (listp selected) selected '())))
     (cond
      ((not (listp context-navigator-view--groups))
       (list (propertize (context-navigator-i18n :no-groups) 'face 'shadow)))
@@ -42,8 +51,21 @@ Each group shows display name with item count in parentheses."
                  (disp (or (plist-get pl :display) slug))
                  (path (or (plist-get pl :path) nil))
                  (cnt  (or (ignore-errors (context-navigator-persist-group-item-count path)) 0))
-                 (ic (or (ignore-errors (context-navigator-icons-for-group)) "📁"))
-                 (txt (format "%s %s (%d)" ic disp cnt))
+                 (en.t (or (ignore-errors (context-navigator-persist-group-enabled-count path))
+                           (cons 0 0)))
+                 (en   (car en.t))
+                 (tot  (cdr en.t))
+                 (indi (cond
+                        ((and (integerp tot) (> tot 0) (= en tot))
+                         (propertize "●" 'face '(:foreground "green4")))
+                        ((and (integerp en) (> en 0))
+                         (propertize "◐" 'face '(:foreground "orange2")))
+                        (t
+                         (propertize "○" 'face '(:foreground "gray55")))))
+                 (sel-p (member slug selected))
+                 (sel-mark (if sel-p (propertize "[*]" 'face 'success)
+                             (propertize "[ ]" 'face 'shadow)))
+                 (txt (format "%s %s %s (%d)" indi sel-mark disp cnt))
                  (s (copy-sequence txt)))
             (add-text-properties 0 (length s)
                                  (list 'context-navigator-group-slug slug

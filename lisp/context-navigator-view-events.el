@@ -116,6 +116,15 @@
                  (setq context-navigator-view--groups (and (listp groups) groups))
                  (when (eq context-navigator-view--mode 'groups)
                    (context-navigator-view--schedule-render)))))))
+        context-navigator-view--subs)
+  ;; Re-render headerline/controls on selection change (affects push/MG gating)
+  (push (context-navigator-events-subscribe
+         :group-selection-changed
+         (lambda (&rest _)
+           (let ((buf (get-buffer context-navigator-view--buffer-name)))
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-project-events ()

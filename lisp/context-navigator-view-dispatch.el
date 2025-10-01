@@ -49,6 +49,10 @@
 ;; Minor helpers
 (declare-function context-navigator-debug "context-navigator-log" (&rest args))
 
+;; Core helpers for multi-group apply
+(declare-function context-navigator-apply-groups-now "context-navigator-core" (root slugs))
+(declare-function context-navigator-collect-enabled-items-for-groups-async "context-navigator-core" (root slugs callback))
+
 ;; Buffer-local mode flag defined by the main view
 (defvar-local context-navigator-view--mode 'items)
 
@@ -176,6 +180,91 @@
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
         (ignore-errors (context-navigator-group-edit-description slug)))
     (ignore-errors (context-navigator-group-edit-description))))
+
+;;;###autoload
+(defun context-navigator-view-group-toggle-select ()
+  "Toggle selection of the group at point (groups mode).
+Selected groups are stored per project in state.el under :selected.
+When push→gptel is ON, auto-apply aggregated selection if under threshold."
+  (interactive)
+  (if (not (eq context-navigator-view--mode 'groups))
+      (context-navigator-ui-info :press-h-open-groups-first)
+    (let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
+      (if (not (and (stringp slug) (not (string-empty-p slug))))
+          (context-navigator-ui-info :no-group-at-point)
+        (let* ((st (ignore-errors (context-navigator--state-get)))
+               (root (and st (context-navigator-state-last-project-root st)))
+               (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+               (pstate (if (plist-member pstate :version) (copy-sequence pstate)
+                         (plist-put (copy-sequence pstate) :version 1)))
+               (sel0 (and (plist-member pstate :selected) (plist-get pstate :selected)))
+               (sel  (if (listp sel0) sel0 '()))
+               (sel1 (if (member slug sel)
+                         (cl-remove slug sel :test #'equal)
+                       (append sel (list slug)))))
+          (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
+          (ignore-errors (context-navigator-persist-state-save root pstate))
+          ;; Publish selection change so Stats split and other listeners can refresh.
+          (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
+          ;; Auto-push aggregated selection when ON and selection non-empty.
+          (when (and (boundp 'context-navigator--push-to-gptel)
+                     context-navigator--push-to-gptel
+                     (listp sel1) (> (length sel1) 0)
+                     (stringp root))
+            (context-navigator-collect-enabled-items-for-groups-async
+             root sel1
+             (lambda (items)
+               (let* ((n (length (or items '())))
+                      (thr (or (and (boundp 'context-navigator-multigroup-autopush-threshold)
+                                    context-navigator-multigroup-autopush-threshold)
+                               100)))
+                 (cond
+                  ((= n 0)
+                   ;; nothing to push — do nothing
+                   nil)
+                  ((> n thr)
+                   ;; Disable auto-push softly and inform user
+                   (setq context-navigator--push-to-gptel nil)
+                   (context-navigator-ui-info :push-state (context-navigator-i18n :off))
+                   (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
+                  (t
+                   (ignore-errors (context-navigator-gptel-apply items))))))))
+          (context-navigator-view--schedule-render))))))
+
+;;;###autoload
+(defun context-navigator-view-toggle-multi-group ()
+  "Toggle per-project multi-group mode (:multi in state.el)."
+  (interactive)
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+         (pstate (if (plist-member pstate :version) (copy-sequence pstate)
+                   (plist-put (copy-sequence pstate) :version 1)))
+         (cur (and (plist-member pstate :multi) (plist-get pstate :multi)))
+         (new (not cur)))
+    (setq pstate (plist-put (copy-sequence pstate) :multi new))
+    (ignore-errors (context-navigator-persist-state-save root pstate))
+    ;; Notify listeners (e.g., stats split) to recompute on mode switch as needed.
+    (ignore-errors (context-navigator-events-publish :group-selection-changed root
+                                                     (and (plist-member pstate :selected)
+                                                          (plist-get pstate :selected))))
+    (context-navigator-view--schedule-render)))
+
+;;;###autoload
+(defun context-navigator-view-push-now-dispatch ()
+  "Push now: in groups mode push aggregated selected groups; otherwise delegate."
+  (interactive)
+  (if (eq context-navigator-view--mode 'groups)
+      (let* ((st (ignore-errors (context-navigator--state-get)))
+             (root (and st (context-navigator-state-last-project-root st)))
+             (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+             (sel (and (plist-member pstate :selected) (plist-get pstate :selected))))
+        (if (or (null (listp sel)) (= (length sel) 0))
+            (context-navigator-ui-info :no-group-selected)
+          (ignore-errors (context-navigator-apply-groups-now root sel))))
+    ;; Items mode: keep original behavior
+    (when (fboundp 'context-navigator-view-push-now)
+      (call-interactively 'context-navigator-view-push-now))))
 
 (provide 'context-navigator-view-dispatch)
 ;;; context-navigator-view-dispatch.el ends here

@@ -1398,6 +1398,16 @@
      (be . "усяго")
      (zh . "合计")
      (ja . "合計"))
+    (:selected
+     (en . "Selected")
+     (ru . "Выбрано")
+     (fr . "Sélection")
+     (de . "Ausgewählt")
+     (es . "Seleccionado")
+     (uk . "Вибрано")
+     (be . "Вылучана")
+     (zh . "已选")
+     (ja . "選択済み"))
     (:item-enabled
      (en . "Enabled: %s")
      (ru . "Включено: %s")

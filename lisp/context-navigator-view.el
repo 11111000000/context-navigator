@@ -25,6 +25,7 @@
 (require 'context-navigator-view-modeline)
 (require 'context-navigator-headerline)
 (require 'context-navigator-stats)
+(require 'context-navigator-stats-split)
 (require 'context-navigator-view-actions)
 (require 'context-navigator-view-buffer)
 (require 'context-navigator-view-constants)
@@ -142,8 +143,10 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-view-go-up "context-navigator-view-dispatch" ())
 (declare-function context-navigator-view-group-create "context-navigator-view-dispatch" ())
 (declare-function context-navigator-view-group-rename "context-navigator-view-dispatch" ())
-(declare-function context-navigator-view-group-duplicate "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-duplicate "context-navigator-view-dispatch" (&optional src-slug new-display))
 (declare-function context-navigator-view-group-edit-description "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-group-toggle-select "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-push-now-dispatch "context-navigator-view-dispatch" ())
 
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
@@ -365,7 +368,8 @@ background."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (context-navigator-view--invalidate-render-caches))))
+        ;; Also reset header-line cache so control enabled/visible states react immediately.
+        (context-navigator-view--invalidate-render-caches t))))
   (context-navigator-events-debounce
    :sidebar-render 0.12
    #'context-navigator-view--render-if-visible))
@@ -405,6 +409,8 @@ background."
     (define-key m (kbd "<return>")  #'context-navigator-view-activate)
     (define-key m [kp-enter]        #'context-navigator-view-activate)
     (define-key m (kbd "l")         #'context-navigator-view-activate)
+    ;; Toggle selection of a group in groups mode
+    (define-key m (kbd "t")         #'context-navigator-view-group-toggle-select)
     m)
   "Keymap attached to group lines to support mouse and keyboard activation.")
 
@@ -443,7 +449,7 @@ background."
     (define-key m (kbd "G")   #'context-navigator-view-show-groups)
     (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
-    (define-key m (kbd "P")   #'context-navigator-view-push-now)
+    (define-key m (kbd "P")   #'context-navigator-view-push-now-dispatch)
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     (define-key m (kbd "U")   #'context-navigator-view-disable-all-gptel)
@@ -566,6 +572,10 @@ Do not highlight purely decorative separators."
         (ignore-errors
           (when (fboundp 'context-navigator-view-events-remove)
             (context-navigator-view-events-remove))))
+      ;; Close Stats split (if open) before deleting sidebar windows
+      (ignore-errors
+        (when (fboundp 'context-navigator-stats-split-close)
+          (context-navigator-stats-split-close)))
       ;; Delete all windows that show the sidebar variant of this buffer.
       (dolist (w (get-buffer-window-list buf nil t))
         (when (and (window-live-p w)
@@ -635,12 +645,10 @@ Do not highlight purely decorative separators."
 (require 'context-navigator-view-title)
 
 (defun context-navigator-view-stats-toggle ()
-  "Toggle visibility of the Stats block and refresh the view."
+  "Toggle the 5-line Stats split below the Navigator sidebar."
   (interactive)
-  (when (fboundp 'context-navigator-stats-toggle)
-    (context-navigator-stats-toggle))
-  (context-navigator-view--schedule-render)
-  (context-navigator-view--render-if-visible))
+  (when (fboundp 'context-navigator-stats-split-toggle)
+    (context-navigator-stats-split-toggle)))
 
 (provide 'context-navigator-view)
 ;;; context-navigator-view.el ends here

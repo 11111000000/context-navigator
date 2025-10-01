@@ -874,6 +874,52 @@ Otherwise start immediately."
     ;; start now
     (context-navigator--gptel-start-batch items token)))
 
+;; --- Multi-group helpers -----------------------------------------------------
+
+(defcustom context-navigator-multigroup-autopush-threshold 100
+  "Max number of enabled items for auto-push across selected groups.
+When the aggregated enabled items exceed this threshold, auto-push is disabled
+and only manual push is allowed."
+  :type 'integer :group 'context-navigator)
+
+(defun context-navigator--enabled-only (items)
+  "Return a list of ITEMS filtered to enabled ones (pure)."
+  (cl-remove-if-not (lambda (it) (context-navigator-item-enabled it)) (or items '())))
+
+(defun context-navigator-collect-items-for-groups-async (root slugs callback &optional enabled-only)
+  "Asynchronously collect items for SLUGS under ROOT and call CALLBACK with a deduplicated list.
+When ENABLED-ONLY is non-nil, filter to enabled items before deduplication."
+  (let* ((acc '())
+         (pending (copy-sequence (or slugs '())))
+         (dedup (lambda (lst) (context-navigator-model-uniq (or lst '()))))
+         (filter-fn (if enabled-only #'context-navigator--enabled-only (lambda (x) x))))
+    (cl-labels
+        ((step ()
+           (if (null pending)
+               (funcall callback (funcall dedup (nreverse acc)))
+             (let* ((slug (car pending)))
+               (setq pending (cdr pending))
+               (context-navigator-persist-load-group-async
+                root slug
+                (lambda (items)
+                  (let ((filtered (funcall filter-fn items)))
+                    (setq acc (append filtered acc)))
+                  (run-at-time 0 nil #'step)))))))
+      (run-at-time 0 nil #'step))))
+
+(defun context-navigator-collect-enabled-items-for-groups-async (root slugs callback)
+  "Backward-compatible wrapper: collect only enabled items for SLUGS under ROOT."
+  (context-navigator-collect-items-for-groups-async root slugs callback t))
+
+(defun context-navigator-apply-groups-now (root slugs)
+  "Manually push aggregated enabled items from SLUGS under ROOT to gptel."
+  (interactive)
+  (context-navigator-collect-enabled-items-for-groups-async
+   root slugs
+   (lambda (items)
+     (ignore-errors (context-navigator-gptel-apply (or items '())))
+     (context-navigator-ui-info :pushed-items (length (or items '()))))))
+
 (defun context-navigator--on-project-switch (root)
   "Handle :project-switch event with ROOT (string or nil)."
   (if (not context-navigator--auto-project-switch)

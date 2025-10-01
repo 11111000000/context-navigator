@@ -37,6 +37,13 @@
 
 (declare-function context-navigator-view-razor-run "context-navigator-view-actions" ())
 (declare-function context-navigator-multifile-open "context-navigator-multifile" ())
+(declare-function context-navigator-stats-split-toggle "context-navigator-stats-split" ())
+(declare-function context-navigator-view-push-now-dispatch "context-navigator-view-dispatch" ())
+(declare-function context-navigator-view-toggle-multi-group "context-navigator-view-dispatch" ())
+(declare-function context-navigator-persist-state-load "context-navigator-persist" (root))
+(declare-function context-navigator-persist-group-enabled-count "context-navigator-persist" (file))
+(declare-function context-navigator--state-get "context-navigator-core" ())
+(declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
 
 (defgroup context-navigator-view-controls nil
   "Toolbar controls (toggles and actions) for Context Navigator view."
@@ -72,7 +79,7 @@ Used as the header-line background in the Navigator buffer."
 
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
-  '(push auto-project :gap undo redo :gap push-now toggle-all-gptel :gap
+  '(push auto-project :gap undo redo :gap stats multi-group push-now toggle-all-gptel :gap
          razor :gap multifile open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
@@ -100,7 +107,12 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :command context-navigator-view-toggle-push
        :help ,(lambda () (funcall tr :toggle-push))
        :enabled-p ,(lambda ()
-                     (ignore-errors (context-navigator-gptel-available-p)))
+                     (and (ignore-errors (context-navigator-gptel-available-p))
+                          (let* ((mode (and (boundp 'context-navigator-view--mode)
+                                            context-navigator-view--mode)))
+                            (if (eq mode 'groups)
+                                (context-navigator-view-controls--push-allowed-p)
+                              t))))
        :visible-p ,(lambda () t)
        :state-fn ,(lambda ()
                     (if (and (boundp 'context-navigator--push-to-gptel)
@@ -166,12 +178,50 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                     (if (eq style 'text)
                         (format " [%s]" (context-navigator-i18n :tr-razor))
                       " [R]")))
+      (stats
+       :type action
+       :icon-key stats
+       :command context-navigator-stats-split-toggle
+       :help ,(lambda () (funcall tr :stats))
+       :enabled-p ,(lambda () t)
+       :visible-p ,(lambda () t)
+       :label-fn ,(lambda (style _s)
+                    (pcase style
+                      ((or 'icons 'auto) " [Σ]")
+                      (_ (format " [%s]" (context-navigator-i18n :stats))))))
+      (multi-group
+       :type toggle
+       :icon-key nil
+       :command context-navigator-view-toggle-multi-group
+       :help ,(lambda () "Toggle multi-group mode")
+       :enabled-p ,(lambda ()
+                     (let* ((st (ignore-errors (context-navigator--state-get)))
+                            (root (and st (context-navigator-state-last-project-root st)))
+                            (ps (and (stringp root)
+                                     (ignore-errors (context-navigator-persist-state-load root))))
+                            (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
+                       (and (listp sel) (> (length sel) 0))))
+       :visible-p ,(lambda () t)
+       :state-fn ,(lambda ()
+                    (let* ((st (ignore-errors (context-navigator--state-get)))
+                           (root (and st (context-navigator-state-last-project-root st)))
+                           (ps (and (stringp root)
+                                    (ignore-errors (context-navigator-persist-state-load root))))
+                           (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi))))
+                      (if mg 'on 'off)))
+       :label-fn ,(lambda (_style state)
+                    (if (eq state 'on) " [MG✓]" " [MG]")))
       (push-now
        :type action
        :icon-key push-now
-       :command context-navigator-view-push-now
+       :command context-navigator-view-push-now-dispatch
        :help ,(lambda () (funcall tr :push-now))
-       :enabled-p ,(lambda () t)
+       :enabled-p ,(lambda ()
+                     (let* ((mode (and (boundp 'context-navigator-view--mode)
+                                       context-navigator-view--mode)))
+                       (if (eq mode 'groups)
+                           (context-navigator-view-controls--push-allowed-p)
+                         t)))
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)

@@ -434,5 +434,24 @@ Returns 0 when FILE is unreadable or on error. Avoids TRAMP sync checks."
              (items (and (listp v3) (plist-get v3 :items))))
         (if (listp items) (length items) 0)))))
 
+(defun context-navigator-persist-group-enabled-count (file)
+  "Return cons (ENABLED . TOTAL) for items in group FILE (v3 format).
+When FILE is unreadable or invalid, return (0 . 0). Avoids TRAMP sync checks."
+  (let ((ok (and (stringp file)
+                 (context-navigator-persist--group-file-readable-p file))))
+    (if (not ok)
+        (cons 0 0)
+      (let* ((v3 (ignore-errors (context-navigator-persist--read-migrated-v3 file)))
+             (items (and (listp v3) (plist-get v3 :items))))
+        (if (not (listp items))
+            (cons 0 0)
+          (let ((total 0) (en 0))
+            (dolist (pl items)
+              (setq total (1+ total))
+              (let ((e (or (plist-get pl :enabled)
+                           (and (listp pl) (alist-get :enabled pl)))))
+                (when e (setq en (1+ en)))))
+            (cons en total)))))))
+
 (provide 'context-navigator-persist)
 ;;; context-navigator-persist.el ends here
