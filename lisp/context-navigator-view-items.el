@@ -294,39 +294,23 @@ REST is a list of item lines."
 
 ;;;###autoload
 (defun context-navigator-view-items-footer-lines (total-width)
-  "Return footer lines for items view (controls moved to header-line).
-- Show collapsible Stats block
-- Add a compact \"[?] - menu\" hint at the very bottom (i18n)
-- Keep Stats independent from the main title collapse"
-  (let* (;; Stats lines as a fully interactive block, independent from the main collapse flag.
-         (stats-lines
-          (and (fboundp 'context-navigator-stats-interactive-lines)
-               (let ((context-navigator-view--collapsed-p nil))
-                 (context-navigator-stats-interactive-lines
-                  total-width
-                  (and (boundp 'context-navigator-view-mode-map)
-                       context-navigator-view-mode-map))))))
-    (let ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
-      (if stats-lines
-          ;; Blank line, stats block, blank line, then hint
-          (append (list "") stats-lines (list "" hint))
-        ;; Only the hint with a blank line above
-        (list "" hint)))))
+  "Return footer lines for items view (no inline Stats; Stats shown in separate split)."
+  (ignore total-width)
+  (let ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
+    (list "" hint)))
 
 
 
 ;;;###autoload
 (defun context-navigator-view-render-items (state header total-width)
-  "Render items view using STATE, HEADER and TOTAL-WIDTH.
+  "Render items view using STATE and TOTAL-WIDTH (no inline title/stats in buffer).
 Returns the list of lines that were rendered."
-  (cl-destructuring-bind (hl _sep up rest)
+  (cl-destructuring-bind (_hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
     (let* ((footer (context-navigator-view-items-footer-lines total-width))
            (body (append (list up) rest footer))
-           (lines (if context-navigator-view--collapsed-p
-                      ;; When collapsed, keep the Stats block visible (as a separate header below).
-                      (append (list "" hl) footer)
-                    (cons "" (cons hl body)))))
+           ;; No collapsible body and no inline title in the buffer: only content + footer.
+           (lines (cons "" body)))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)

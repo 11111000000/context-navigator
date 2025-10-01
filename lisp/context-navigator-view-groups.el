@@ -68,35 +68,12 @@ Each group shows display name with item count in parentheses."
 
 ;;;###autoload
 (defun context-navigator-view-render-groups (state header total-width)
-  "Render groups view using STATE, HEADER and TOTAL-WIDTH.
-Returns the list of lines that were rendered.
-
-Also shows the Stats block for the current group (when any), including when
-the groups view is collapsed."
-  (let* ((hl-lines (context-navigator-view-groups-header-lines header total-width))
-         (hl (car hl-lines))
-         (active (and (context-navigator-state-p state)
-                      (context-navigator-state-current-group-slug state)))
-         ;; Build Stats lines (independent from main collapse flag, like in items view)
-         (stats-lines
-          (and active
-               (fboundp 'context-navigator-stats-interactive-lines)
-               (let ((context-navigator-view--collapsed-p nil))
-                 (context-navigator-stats-interactive-lines
-                  total-width
-                  (and (boundp 'context-navigator-view-mode-map)
-                       context-navigator-view-mode-map)))))
-         (groups-lines (context-navigator-view-groups-body-lines state))
+  "Render groups view using STATE and TOTAL-WIDTH.
+No inline title or stats in the buffer; only the groups list and a minimal hint."
+  (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
-         (body (if stats-lines
-                   (append groups-lines (list "") stats-lines (list "") help-lines)
-                 (append groups-lines help-lines)))
-         ;; Add a blank line after the header; keep Stats visible even when collapsed.
-         (lines (if context-navigator-view--collapsed-p
-                    (if stats-lines
-                        (append (list "" hl) stats-lines)
-                      (list "" hl))
-                  (append (list "" hl "") body))))
+         ;; No collapsible body and no inline title in the buffer
+         (lines (append (list "") groups-lines help-lines)))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
