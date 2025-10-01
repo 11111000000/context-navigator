@@ -111,6 +111,8 @@
 ;;;###autoload
 (autoload 'context-navigator-view-enable-all-gptel "context-navigator-view-actions" "Enable all items and push to gptel." t)
 ;;;###autoload
+(autoload 'context-navigator-view-disable-all-gptel "context-navigator-view-actions" "Disable all items in the current group and clear gptel." t)
+;;;###autoload
 (autoload 'context-navigator-view-toggle-all-gptel "context-navigator-view-actions" "Toggle all items in gptel (enable/clear)." t)
 ;;;###autoload
 (autoload 'context-navigator-view-toggle-push "context-navigator-view-actions" "Toggle push→gptel session flag." t)

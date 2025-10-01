@@ -295,6 +295,12 @@ updated set to gptel immediately. The new state is persisted via autosave."
   (context-navigator-view--render-if-visible))
 
 ;;;###autoload
+(defun context-navigator-view-disable-all-gptel ()
+  "Disable all items in the current group and clear gptel immediately."
+  (interactive)
+  (context-navigator-view-clear-gptel))
+
+;;;###autoload
 (defun context-navigator-view-toggle-all-gptel ()
   "Disable all in gptel (and items) or enable all and push, depending on current state."
   (interactive)

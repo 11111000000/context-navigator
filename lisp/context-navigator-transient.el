@@ -78,7 +78,9 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
    ["GPTel"
     ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
-    ("M" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
+    ("M" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-enable-all-gptel)
+    ("U" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-disable-all-gptel)
+    ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-enable-all-gptel)
     ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
