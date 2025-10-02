@@ -42,6 +42,7 @@
 
 (require 'context-navigator-view-segments)
 (require 'context-navigator-view-windows)
+(require 'context-navigator-view-pinned-title)
 
 
 (defcustom context-navigator-auto-open-groups-on-error t
@@ -173,6 +174,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 (defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
 (defvar-local context-navigator-view--focus-up-once nil)          ;; when t, focus the \"..\" line on next items render
+(defvar-local context-navigator-view--sticky-item-key nil)        ;; sticky: stable key of item to keep point on after re-render
+(defvar-local context-navigator-view--sticky-window-start nil)    ;; sticky: window-start to restore after re-render
 
 (defun context-navigator-view-toggle-collapse-immediate ()
   "Toggle collapse and render immediately."
@@ -353,7 +356,11 @@ background."
          ((eq context-navigator-view--mode 'groups)
           (context-navigator-view-render-groups state header total))
          (t
-          (context-navigator-view-render-items state header total)))))))
+          (context-navigator-view-render-items state header total)))
+        ;; Refresh pinned title (posframe) after render
+        (ignore-errors
+          (when (fboundp 'context-navigator-pinned-title-refresh)
+            (context-navigator-pinned-title-refresh)))))))
 
 (defun context-navigator-view--render-if-visible ()
   "Render sidebar if its buffer is visible."
@@ -363,17 +370,25 @@ background."
       (with-current-buffer buf
         (context-navigator-view--render)))))
 
-(defun context-navigator-view--schedule-render ()
-  "Debounced request to render the sidebar if visible. Reset render cache to force update."
-  ;; Ensure next render is not short-circuited by the render hash cache.
+(defun context-navigator-view--schedule-render (&optional also-invalidate)
+  "Debounced request to render the sidebar if visible.
+
+When ALSO-INVALIDATE is non-nil, reset render and header-line caches to force update.
+When nil, keep caches to minimize flicker — the render will still happen if the
+model generation changed."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        ;; Also reset header-line cache so control enabled/visible states react immediately.
-        (context-navigator-view--invalidate-render-caches t))))
+        (when also-invalidate
+          ;; Reset caches only when explicitly requested
+          (context-navigator-view--invalidate-render-caches t)))))
   (context-navigator-events-debounce
    :sidebar-render 0.12
    #'context-navigator-view--render-if-visible))
+
+(defun context-navigator-view--schedule-render-soft ()
+  "Debounced render without forcing cache invalidation (minimal flicker)."
+  (context-navigator-view--schedule-render nil))
 
 ;; Moved to context-navigator-view-actions.el (compat declarations for byte-compiler)
 (declare-function context-navigator-view--at-item "context-navigator-view-actions" ())
@@ -410,8 +425,10 @@ background."
     (define-key m (kbd "<return>")  #'context-navigator-view-activate)
     (define-key m [kp-enter]        #'context-navigator-view-activate)
     (define-key m (kbd "l")         #'context-navigator-view-activate)
-    ;; Toggle selection of a group in groups mode
+    ;; Toggle selection of a group in groups mode (MG): t/m/SPC
     (define-key m (kbd "t")         #'context-navigator-view-group-toggle-select)
+    (define-key m (kbd "m")         #'context-navigator-view-group-toggle-select)
+    (define-key m (kbd "SPC")       #'context-navigator-view-group-toggle-select)
     m)
   "Keymap attached to group lines to support mouse and keyboard activation.")
 
@@ -450,7 +467,7 @@ background."
     (define-key m (kbd "G")   #'context-navigator-view-show-groups)
     (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
-    (define-key m (kbd "P")   #'context-navigator-view-push-now-dispatch)
+    (define-key m (kbd "P")   #'context-navigator-view-push-now)
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     (define-key m (kbd "U")   #'context-navigator-view-disable-all-gptel)
@@ -540,7 +557,16 @@ Do not highlight purely decorative separators."
             (ignore-errors (context-navigator-mode 1))))
         (when (fboundp 'context-navigator-refresh)
           (ignore-errors (context-navigator-refresh)))
-        (context-navigator-view--render)))
+        (context-navigator-view--render)
+        ;; Auto-open Stats split by default (session-only)
+        (when (and (boundp 'context-navigator-stats-split-default-visible)
+                   context-navigator-stats-split-default-visible
+                   (fboundp 'context-navigator-stats-split-visible-p)
+                   (not (context-navigator-stats-split-visible-p)))
+          (ignore-errors (context-navigator-stats-split-open)))
+        ;; Enable pinned title (posframe when available, else fallback)
+        (when (fboundp 'context-navigator-pinned-title-enable)
+          (ignore-errors (context-navigator-pinned-title-enable)))))
     (when (window-live-p win)
       ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
       ;; If the buffer is shown in multiple windows (rare), mark them all.
@@ -570,6 +596,10 @@ Do not highlight purely decorative separators."
         (ignore-errors
           (when (fboundp 'context-navigator-view-events-remove)
             (context-navigator-view-events-remove))))
+      ;; Disable pinned title
+      (ignore-errors
+        (when (fboundp 'context-navigator-pinned-title-disable)
+          (context-navigator-pinned-title-disable)))
       ;; Close Stats split (if open) before deleting sidebar windows
       (ignore-errors
         (when (fboundp 'context-navigator-stats-split-close)

@@ -31,6 +31,10 @@
   "Name of the Stats split buffer."
   :type 'string :group 'context-navigator-stats-split)
 
+(defcustom context-navigator-stats-split-default-visible t
+  "When non-nil, open the 5-line Stats split by default when opening Navigator."
+  :type 'boolean :group 'context-navigator-stats-split)
+
 (defcustom context-navigator-stats-split-aggregate-ttl 1.5
   "TTL (seconds) for cached aggregate stats across selected groups.
 Within this time window, repeated renders with the same selection/root reuse
@@ -384,6 +388,16 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
     (mapc #'context-navigator-events-unsubscribe context-navigator-stats-split--subs)
     (setq context-navigator-stats-split--subs nil)))
 
+(defun context-navigator-stats-split--notify-changed ()
+  "Invalidate headerline cache and refresh Navigator view (if visible)."
+  (let ((buf (get-buffer "*context-navigator*")))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq-local context-navigator-headerline--cache-key nil)
+        (setq-local context-navigator-headerline--cache-str nil)
+        (when (fboundp 'context-navigator-view--render-if-visible)
+          (context-navigator-view--render-if-visible))))))
+
 ;;;###autoload
 (defun context-navigator-stats-split-open ()
   "Open the 5-line Stats split below the Navigator sidebar."
@@ -411,6 +425,7 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                       #'context-navigator-stats-split--maybe-autoclose)
             (setq context-navigator-stats-split--wcch-on t))
           (context-navigator-stats-split--render)
+          (context-navigator-stats-split--notify-changed)
           win)))))
 
 ;;;###autoload
@@ -425,6 +440,7 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
     (remove-hook 'window-configuration-change-hook
                  #'context-navigator-stats-split--maybe-autoclose)
     (setq context-navigator-stats-split--wcch-on nil))
+  (context-navigator-stats-split--notify-changed)
   t)
 
 ;;;###autoload

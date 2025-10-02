@@ -38,6 +38,7 @@
 (declare-function context-navigator-view-razor-run "context-navigator-view-actions" ())
 (declare-function context-navigator-multifile-open "context-navigator-multifile" ())
 (declare-function context-navigator-stats-split-toggle "context-navigator-stats-split" ())
+(declare-function context-navigator-stats-split-visible-p "context-navigator-stats-split" ())
 (declare-function context-navigator-view-push-now-dispatch "context-navigator-view-dispatch" ())
 (declare-function context-navigator-view-toggle-multi-group "context-navigator-view-dispatch" ())
 (declare-function context-navigator-persist-state-load "context-navigator-persist" (root))
@@ -246,16 +247,24 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                         (format " [%s]" (context-navigator-i18n :tr-razor))
                       " [R]")))
       (stats
-       :type action
+       :type toggle
        :icon-key stats
        :command context-navigator-stats-split-toggle
        :help ,(lambda () (funcall tr :stats))
        :enabled-p ,(lambda () t)
        :visible-p ,(lambda () t)
-       :label-fn ,(lambda (style _s)
+       :state-fn ,(lambda ()
+                    (if (and (fboundp 'context-navigator-stats-split-visible-p)
+                             (context-navigator-stats-split-visible-p))
+                        'on 'off))
+       :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [Σ]")
-                      (_ (format " [%s]" (context-navigator-i18n :stats))))))
+                      (_ (format " [%s]" (context-navigator-i18n :stats)))))
+       :face-fn ,(lambda (_style state)
+                   (if (eq state 'on)
+                       (list :foreground "MediumPurple1")
+                     'shadow)))
       (multi-group
        :type toggle
        :icon-key multi-group
@@ -275,7 +284,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
       (push-now
        :type action
        :icon-key push-now
-       :command context-navigator-view-push-now-dispatch
+       :command context-navigator-view-push-now
        :help ,(lambda ()
                 (let ((base (funcall tr :push-now))
                       (mode (and (boundp 'context-navigator-view--mode)

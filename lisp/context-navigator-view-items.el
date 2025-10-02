@@ -18,6 +18,7 @@
 (require 'context-navigator-core)
 (require 'context-navigator-stats)
 (require 'context-navigator-log)
+(require 'context-navigator-view-pinned-title)
 
 ;;;###autoload
 (defun context-navigator-view-items-header-lines (total-width)
@@ -216,8 +217,10 @@ Also maintains relpath cache per generation/root."
   (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
 
 (defun context-navigator-view--items--title-line (_header)
-  "No inline title line; return empty string."
-  "")
+  "Return pinned title as inline fallback when posframe is unavailable."
+  (or (and (fboundp 'context-navigator-pinned-title-fallback-line)
+           (context-navigator-pinned-title-fallback-line 'items))
+      ""))
 
 (defun context-navigator-view--items--up-line ()
   "\"..\" line that navigates up to groups."
@@ -302,13 +305,17 @@ REST is a list of item lines."
 
 ;;;###autoload
 (defun context-navigator-view-render-items (state header total-width)
-  "Render items view using STATE and TOTAL-WIDTH (no inline title/stats in buffer).
+  "Render items view using STATE and TOTAL-WIDTH (with inline fallback title when needed).
 Returns the list of lines that were rendered."
-  (cl-destructuring-bind (_hl _sep up rest)
+  (cl-destructuring-bind (hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
     (let* ((footer (context-navigator-view-items-footer-lines total-width))
-           (body (append (list up) rest footer))
-           ;; No collapsible body and no inline title in the buffer: only content + footer.
+           ;; posframe активен → hl пустой: добавляем одну служебную пустую строку (неинтерактивную)
+           ;; fallback-инлайн → показываем заголовок и пустую строку под ним
+           (head (if (and (stringp hl) (> (length (string-trim hl)) 0))
+                     (list hl "")
+                   (list (propertize " " 'context-navigator-reserved-line t))))
+           (body (append head (list up) rest footer))
            (lines body))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
@@ -317,11 +324,49 @@ Returns the list of lines that were rendered."
       ;; keeping the previous line index from the groups list.
       (let ((context-navigator-render--skip-restore context-navigator-view--focus-up-once))
         (context-navigator-render-apply-to-buffer (current-buffer) lines))
-      ;; Focus first line when requested (entering items from groups)
+      ;; Focus the \"..\" line (second visible строка) при входе из групп
       (when (and (boundp 'context-navigator-view--focus-up-once)
                  context-navigator-view--focus-up-once)
         (setq context-navigator-view--focus-up-once nil)
-        (goto-char (point-min)))
+        (let ((pos (or
+                    ;; точечно: искать строку \"..\"
+                    (text-property-not-all (point-min) (point-max)
+                                           'context-navigator-groups-up nil)
+                    ;; иначе первый интерактивный элемент
+                    (ignore-errors (context-navigator-view--find-next-interactive-pos (point-min)))
+                    ;; запасной вариант — вторая строка
+                    (save-excursion (goto-char (point-min)) (forward-line 1) (point)))))
+          (when pos
+            (goto-char pos)
+            (beginning-of-line))))
+
+      ;; Sticky restore: keep point and scroll on the same item line after soft re-render.
+      (when (and (boundp 'context-navigator-view--sticky-item-key)
+                 context-navigator-view--sticky-item-key)
+        (let* ((target-key context-navigator-view--sticky-item-key)
+               (saved-start (and (boundp 'context-navigator-view--sticky-window-start)
+                                 context-navigator-view--sticky-window-start))
+               (win (get-buffer-window (current-buffer) t))
+               (pos (save-excursion
+                      (let ((p (point-min)) (found nil))
+                        (while (and (not found)
+                                    (setq p (text-property-not-all p (point-max)
+                                                                   'context-navigator-item nil)))
+                          (let* ((it (get-text-property p 'context-navigator-item))
+                                 (k  (and it (context-navigator-model-item-key it))))
+                            (when (and (stringp k) (string= k target-key))
+                              (setq found p)))
+                          (setq p (1+ p)))
+                        found))))
+          (when pos
+            (goto-char pos)
+            (beginning-of-line))
+          (when (and (window-live-p win)
+                     (integerp saved-start))
+            (set-window-start win saved-start t)))
+        ;; consume sticky flags
+        (setq context-navigator-view--sticky-item-key nil)
+        (setq context-navigator-view--sticky-window-start nil))
       lines)))
 
 (defun context-navigator-view-debug-dump-lines ()

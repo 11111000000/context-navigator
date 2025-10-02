@@ -1183,6 +1183,30 @@ Sets up event wiring and keybindings."
                             (when (and (stringp slug) (not (string-empty-p slug)))
                               (ignore-errors (context-navigator-persist-save items root slug)))))))))))
               context-navigator--event-tokens)
+        ;; Apply to gptel immediately (light debounce) when push→gptel is ON and allowed.
+        (push (context-navigator-events-subscribe
+               :model-refreshed
+               (lambda (state)
+                 (when (and (boundp 'context-navigator--push-to-gptel)
+                            context-navigator--push-to-gptel
+                            (fboundp 'context-navigator-gptel-apply)
+                            (context-navigator--apply-allowed-p))
+                   (context-navigator-events-debounce
+                    :gptel-apply
+                    0.03
+                    (lambda ()
+                      (let ((st (ignore-errors (context-navigator--state-get))))
+                        (when (and (context-navigator-state-p st)
+                                   ;; Skip while loading to avoid fighting load-batch.
+                                   (not (context-navigator-state-loading-p st))
+                                   ;; Ensure we act on the latest generation we’ve seen.
+                                   (>= (or (context-navigator-state-generation st) 0)
+                                       (or (and (context-navigator-state-p state)
+                                                (context-navigator-state-generation state))
+                                           0)))
+                          (let ((items (context-navigator-state-items st)))
+                            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))
+              context-navigator--event-tokens)
         ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
         ;; If auto-project is already ON, trigger an initial project switch immediately.
         (when context-navigator--auto-project-switch
@@ -1327,6 +1351,28 @@ Also triggers an immediate project switch so header shows actual project."
                             (items (context-navigator-state-items st)))
                         (when (and (stringp slug) (not (string-empty-p slug)))
                           (ignore-errors (context-navigator-persist-save items root slug)))))))))))
+          context-navigator--event-tokens)
+    ;; Reinstall immediate apply to gptel after reload too.
+    (push (context-navigator-events-subscribe
+           :model-refreshed
+           (lambda (state)
+             (when (and (boundp 'context-navigator--push-to-gptel)
+                        context-navigator--push-to-gptel
+                        (fboundp 'context-navigator-gptel-apply)
+                        (context-navigator--apply-allowed-p))
+               (context-navigator-events-debounce
+                :gptel-apply
+                0.03
+                (lambda ()
+                  (let ((st (ignore-errors (context-navigator--state-get))))
+                    (when (and (context-navigator-state-p st)
+                               (not (context-navigator-state-loading-p st))
+                               (>= (or (context-navigator-state-generation st) 0)
+                                   (or (and (context-navigator-state-p state)
+                                            (context-navigator-state-generation state))
+                                       0)))
+                      (let ((items (context-navigator-state-items st)))
+                        (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))
           context-navigator--event-tokens)
     ;; Trigger initial project switch so UI/header reflect actual project
     (when context-navigator--auto-project-switch

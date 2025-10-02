@@ -43,6 +43,11 @@
 
 
 
+(defcustom context-navigator-view-toggle-advance-next nil
+  "When non-nil, move point to the next item after toggling with t/m/SPC.
+Defaults to nil to avoid cursor jumps and keep interaction smooth."
+  :type 'boolean :group 'context-navigator)
+
 ;; Internal helpers -----------------------------------------------------------
 
 (defun context-navigator-view--window-on-sidebar-p (&optional win)
@@ -93,52 +98,66 @@ updated set to gptel immediately. The new state is persisted via autosave."
   (when-let* ((item (context-navigator-view--at-item)))
     (let* ((key (context-navigator-model-item-key item))
            (name (or (context-navigator-item-name item) key)))
+      ;; Stick to current item and scroll to avoid cursor jumps on soft re-render
+      (setq-local context-navigator-view--sticky-item-key key)
+      (let ((w (selected-window)))
+        (when (window-live-p w)
+          (setq-local context-navigator-view--sticky-window-start (window-start w))))
       ;; Push snapshot for Undo/Redo (global) before changing the model
       (when (fboundp 'context-navigator-snapshot-push)
         (ignore-errors (context-navigator-snapshot-push)))
       ;; Toggle model
       (ignore-errors (context-navigator-toggle-item key))
-      ;; Apply to gptel immediately when auto-push is ON and refresh indicators snapshot
+      ;; Predictive snapshot for lamps (always): reflect desired state immediately (enabled items).
+      (let* ((st   (ignore-errors (context-navigator--state-get)))
+             (items (and st (context-navigator-state-items st)))
+             (enabled (and (listp items)
+                           (cl-remove-if-not #'context-navigator-item-enabled items)))
+             (keys (mapcar #'context-navigator-model-item-key enabled)))
+        (with-current-buffer (get-buffer-create context-navigator-view--buffer-name)
+          (setq-local context-navigator-view--gptel-keys keys)
+          (setq-local context-navigator-view--gptel-keys-hash (sxhash-equal keys))
+          ;; Сразу сбросить кэши рендера/хедерлайна, чтобы перерисовка прошла мгновенно
+          (ignore-errors (context-navigator-view--invalidate-render-caches t)))
+        (ignore-errors
+          (context-navigator-debug :debug :ui
+                                   "toggle:t predictive keys -> %d" (length keys))))
+      ;; Apply to gptel immediately when auto-push is ON (logic unchanged)
       (when (and (boundp 'context-navigator--push-to-gptel)
                  context-navigator--push-to-gptel)
-        (let* ((st (ignore-errors (context-navigator--state-get)))
-               (items (and st (context-navigator-state-items st))))
-          (let ((res (ignore-errors (context-navigator-gptel-apply (or items '())))))
-            (ignore-errors
-              (context-navigator-debug :debug :ui "toggle:t apply -> %S" res)))
-          ;; Immediately refresh cached keys so lamps reflect actual presence now.
-          (let* ((lst (ignore-errors (context-navigator-gptel-pull)))
-                 (pulled-keys (and (listp lst)
-                                   (mapcar #'context-navigator-model-item-key lst)))
-                 (raw-keys (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                                (fboundp 'context-navigator-gptel--raw-keys)
-                                (ignore-errors (context-navigator-gptel--raw-keys))))
-                 (fallback-keys
-                  (when (and (or (null pulled-keys) (= (length pulled-keys) 0))
-                             (or (null raw-keys) (= (length raw-keys) 0)))
-                    (and (listp items)
-                         (mapcar #'context-navigator-model-item-key
-                                 (cl-remove-if-not #'context-navigator-item-enabled items)))))
-                 (keys (or pulled-keys raw-keys fallback-keys '()))
-                 (h (sxhash-equal keys)))
-            (with-current-buffer (get-buffer-create context-navigator-view--buffer-name)
-              (setq-local context-navigator-view--gptel-keys keys)
-              (setq-local context-navigator-view--gptel-keys-hash h))
-            (ignore-errors
-              (context-navigator-debug :debug :ui
-                                       "toggle:t immediate pull -> keys=%d hash=%s"
-                                       (length keys) h)))))
-      ;; Report new state briefly (use the same KEY/NAME from this scope)
-      (let* ((st2 (ignore-errors (context-navigator--state-get)))
-             (idx (and st2 (context-navigator-state-index st2)))
-             (it2 (and idx (gethash key idx)))
-             (en (and it2 (context-navigator-item-enabled it2))))
-        (context-navigator-ui-info (if en :item-enabled :item-disabled) name))
-      ;; Refresh UI and advance to the next item
-      (context-navigator-view--schedule-render)
-      (context-navigator-view--render-if-visible)
-      (when (fboundp 'context-navigator-view-next-item)
-        (ignore-errors (context-navigator-view-next-item))))))
+        (let* ((st   (ignore-errors (context-navigator--state-get)))
+               (items (and st (context-navigator-state-items st)))
+               (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+               (slug (and st (ignore-errors (context-navigator-state-current-group-slug st))))
+               (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+               (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+               (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+          (if (and mg (listp sel) (> (length sel) 0))
+              ;; MG: если текущая группа входит в выбор — пушим АГРЕГАТ; иначе — не трогаем gptel.
+              (when (and (stringp slug) (member slug sel))
+                (ignore-errors (context-navigator-apply-groups-now root sel)))
+            ;; Обычный режим: применяем текущую группу.
+            (let ((res (ignore-errors (context-navigator-gptel-apply (or items '())))))
+              (ignore-errors
+                (context-navigator-debug :debug :ui "toggle:t apply -> %S" res)))))
+        ;; Report new state briefly (use the same KEY/NAME from this scope)
+        (let* ((st2 (ignore-errors (context-navigator--state-get)))
+               (idx (and st2 (context-navigator-state-index st2)))
+               (it2 (and idx (gethash key idx)))
+               (en (and it2 (context-navigator-item-enabled it2))))
+          (context-navigator-ui-info (if en :item-enabled :item-disabled) name))
+        ;; Minimal UI refresh without forcing cache invalidation (prevents flicker).
+        ;; Also render immediately so the indicator lamp updates right away.
+        (if (fboundp 'context-navigator-view--schedule-render-soft)
+            (context-navigator-view--schedule-render-soft)
+          (context-navigator-view--schedule-render))
+        (when (fboundp 'context-navigator-view--render-if-visible)
+          (context-navigator-view--render-if-visible))
+        ;; Optional advance to next item (disabled by default to avoid jumps)
+        (when (and (boundp 'context-navigator-view-toggle-advance-next)
+                   context-navigator-view-toggle-advance-next
+                   (fboundp 'context-navigator-view-next-item))
+          (ignore-errors (context-navigator-view-next-item)))))))
 
 ;;;###autoload
 (defun context-navigator-view-toggle-gptel ()
@@ -350,10 +369,20 @@ updated set to gptel immediately. The new state is persisted via autosave."
 
 ;;;###autoload
 (defun context-navigator-view-push-now ()
-  "Manually push current items to gptel (reset + add) and redraw immediately."
+  "Manually push current items to gptel (reset + add) and redraw immediately.
+
+In Multi-group mode with a non-empty selection, push the aggregated enabled items
+from all selected groups; otherwise push current group's items."
   (interactive)
   (ignore-errors (context-navigator-debug :debug :ui "UI action: push-now (event=%S)" last-input-event))
-  (ignore-errors (context-navigator-push-to-gptel-now))
+  (let* ((st   (ignore-errors (context-navigator--state-get)))
+         (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+         (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+         (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+         (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+    (if (and mg (listp sel) (> (length sel) 0))
+        (ignore-errors (context-navigator-apply-groups-now root sel))
+      (ignore-errors (context-navigator-push-to-gptel-now))))
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf

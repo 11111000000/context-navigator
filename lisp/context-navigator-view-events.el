@@ -49,6 +49,15 @@
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
+                 ;; Predictive lamps: use enabled items keys immediately; gptel events will refine.
+                 (ignore-errors
+                   (let* ((st (context-navigator--state-get))
+                          (items (and st (context-navigator-state-items st)))
+                          (enabled (and (listp items)
+                                        (cl-remove-if-not #'context-navigator-item-enabled items)))
+                          (keys (mapcar #'context-navigator-model-item-key enabled)))
+                     (setq-local context-navigator-view--gptel-keys keys
+                                 context-navigator-view--gptel-keys-hash (sxhash-equal keys))))
                  (ignore-errors (context-navigator-view--invalidate-openable))
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
@@ -177,6 +186,16 @@
                  ;; Gate auto-push softly when selection changes (no heavy IO)
                  (when (fboundp 'context-navigator-autopush-gate-on-selection)
                    (ignore-errors (context-navigator-autopush-gate-on-selection)))
+                 ;; Если push→gptel включён и MG активен с непустым выбором — пушим агрегат сразу.
+                 (when (and (boundp 'context-navigator--push-to-gptel)
+                            context-navigator--push-to-gptel)
+                   (let* ((st   (ignore-errors (context-navigator--state-get)))
+                          (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+                          (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+                          (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+                          (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+                     (when (and mg (listp sel) (> (length sel) 0))
+                       (ignore-errors (context-navigator-apply-groups-now root sel)))))
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
@@ -269,10 +288,19 @@ hooks and a post-command updater. Also starts optional gptel polling."
     ;; Update modeline status as point moves inside the buffer
     (setq context-navigator-view--status-post-cmd-fn
           (lambda ()
+            ;; Обновление строки статуса (как было)
             (when (and (eq major-mode 'context-navigator-view-mode)
                        (boundp 'context-navigator-view-modeline-enable)
                        context-navigator-view-modeline-enable)
-              (force-mode-line-update nil))))
+              (force-mode-line-update nil))
+            ;; Не допускать курсор на служебной первой строке (под заголовком):
+            ;; если попали на неё (скролл/команды) — сдвинуться к первому интерактивному элементу.
+            (when (and (eq major-mode 'context-navigator-view-mode)
+                       (get-text-property (point) 'context-navigator-reserved-line))
+              (let ((pos (or
+                          (ignore-errors (context-navigator-view--find-next-interactive-pos (point-min)))
+                          (save-excursion (goto-char (point-min)) (forward-line 1) (point)))))
+                (when pos (goto-char pos))))))
     (add-hook 'post-command-hook context-navigator-view--status-post-cmd-fn nil t)
     (when (fboundp 'context-navigator-view--initial-compute-counters)
       (context-navigator-view--initial-compute-counters))

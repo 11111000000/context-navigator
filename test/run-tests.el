@@ -69,6 +69,11 @@
 (require 'context-navigator-multifile-filter-visit-cleanup-test)
 (require 'context-navigator-multifile-remote-and-selection-edge-test)
 
+;; New MG/checkbox/stats tests
+(require 'context-navigator-view-groups-checkbox-test)
+(require 'context-navigator-view-push-now-mg-test)
+(require 'context-navigator-stats-aggregate-mg-test)
+
 (defun context-navigator-run-tests ()
   "Run all ERT tests for context-navigator."
   (interactive)

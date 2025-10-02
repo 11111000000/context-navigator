@@ -216,14 +216,12 @@ when an icon name is unavailable in the installed icon set."
         (t 0))))
     (_ 0)))
 
-(defun context-navigator-stats--compute-now ()
-  "Compute stats now; return plist."
-  (let* ((st (ignore-errors (context-navigator--state-get)))
-         (items (and st (ignore-errors (context-navigator-state-items st))))
-         (files 0) (buffers 0) (sels 0)
-         (files-en 0) (buffers-en 0) (sels-en 0)
-         (count 0) (count-en 0)
-         (bytes 0) (bytes-en 0))
+(defun context-navigator-stats--compute-from-items (items)
+  "Compute stats from ITEMS list; return plist."
+  (let ((files 0) (buffers 0) (sels 0)
+        (files-en 0) (buffers-en 0) (sels-en 0)
+        (count 0) (count-en 0)
+        (bytes 0) (bytes-en 0))
     (dolist (it (or items '()))
       (setq count (1+ count))
       (pcase (context-navigator-item-type it)
@@ -250,18 +248,67 @@ when an icon name is unavailable in the installed icon set."
             :bytes bytes :bytes-en bytes-en
             :tokens tok :tokens-en tok-en))))
 
+(defun context-navigator-stats--compute-now ()
+  "Compute stats now (current state items); return plist."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (ignore-errors (context-navigator-state-items st)))))
+    (context-navigator-stats--compute-from-items items)))
+
 (defun context-navigator-stats--get ()
-  "Return cached stats or recompute when stale."
+  "Return cached stats (respecting MG) or recompute/launch async aggregate when needed.
+
+In Multi-group mode with a non-empty selection, compute aggregated stats across
+selected groups asynchronously and cache them. While the computation is pending,
+return the previous cache (or a fallback based on current group's items)."
   (let* ((now (float-time))
          (ttl (or context-navigator-stats-cache-ttl 3.0))
+         (st   (ignore-errors (context-navigator--state-get)))
+         (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+         (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+         (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+         (sel  (and mg (plist-get ps :selected)))
          (cell context-navigator-stats--cache)
          (stamp (plist-get cell :stamp))
+         (cache-mode (plist-get cell :mode))
+         (cache-sel  (plist-get cell :sel))
+         (cache-root (plist-get cell :root))
          (old (plist-get cell :data)))
-    (if (and (numberp stamp) old (< (- now stamp) (max 0 ttl)))
-        old
-      (let ((pl (context-navigator-stats--compute-now)))
-        (setq context-navigator-stats--cache (list :stamp now :data pl))
-        pl))))
+    (cond
+     ;; MG aggregate path
+     ((and mg (listp sel) (> (length sel) 0))
+      (let* ((fresh (and (numberp stamp)
+                         old
+                         (eq cache-mode 'mg)
+                         (equal cache-root root)
+                         (equal cache-sel sel)
+                         (< (- now stamp) (max 0 ttl)))))
+        (unless fresh
+          (when (fboundp 'context-navigator-collect-items-for-groups-async)
+            (context-navigator-collect-items-for-groups-async
+             root sel
+             (lambda (items)
+               (let ((pl (context-navigator-stats--compute-from-items items)))
+                 ;; enrich with MG meta for UI
+                 (let ((pl* (append pl (list :mg t :groups (length sel)))))
+                   (setq context-navigator-stats--cache
+                         (list :stamp (float-time) :data pl* :mode 'mg :sel sel :root root))
+                   (when (fboundp 'context-navigator-view--schedule-render)
+                     (context-navigator-view--schedule-render))))))))
+        (or (and old old)
+            (let ((pl (context-navigator-stats--compute-now)))
+              (setq context-navigator-stats--cache
+                    (list :stamp now
+                          :data (append pl (list :mg t :groups (length sel)))
+                          :mode 'mg :sel sel :root root))
+              (plist-get context-navigator-stats--cache :data)))))
+     ;; Non-MG: use current group items
+     (t
+      (if (and (numberp stamp) old (< (- now stamp) (max 0 ttl)) (not (eq cache-mode 'mg)))
+          old
+        (let* ((pl (context-navigator-stats--compute-now))
+               (pl* (append pl (list :mg nil :groups 1))))
+          (setq context-navigator-stats--cache (list :stamp now :data pl* :mode 'single :root root))
+          pl*))))))
 
 ;; UI helpers ------------------------------------------------------------------
 
@@ -300,7 +347,12 @@ when an icon name is unavailable in the installed icon set."
            (sels-en (plist-get pl :selections-en))
            (arrow (if context-navigator-stats--expanded-p "▾" "▸"))
            (hdr-ico (or (context-navigator-stats--icon :header) ""))
-           (lbl (context-navigator-i18n :stats))
+           (lbl-base (context-navigator-i18n :stats))
+           (mg-flag (plist-get pl :mg))
+           (groups-n (plist-get pl :groups))
+           (lbl (if mg-flag
+                    (format "%s (MG, %d)" lbl-base (or groups-n 0))
+                  lbl-base))
            (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
                         arrow
                         hdr-ico
