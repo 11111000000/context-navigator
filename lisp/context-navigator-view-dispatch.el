@@ -275,10 +275,23 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
          (new (not cur)))
     (setq pstate (plist-put (copy-sequence pstate) :multi new))
     (ignore-errors (context-navigator-persist-state-save root pstate))
-    ;; Notify listeners (e.g., stats split) to recompute on mode switch as needed.
+    ;; Сообщаем слушателям (Stats и т.п.) о смене режима/выбора
     (ignore-errors (context-navigator-events-publish :group-selection-changed root
                                                      (and (plist-member pstate :selected)
                                                           (plist-get pstate :selected))))
+    ;; Если автопуш включён — сразу обновляем gptel под новый режим MG
+    (when (and (boundp 'context-navigator--push-to-gptel)
+               context-navigator--push-to-gptel)
+      (if new
+          (let* ((sel (and (plist-member pstate :selected)
+                           (plist-get pstate :selected))))
+            (if (and (listp sel) (> (length sel) 0))
+                ;; MG включён и есть выбранные группы → пушим агрегат
+                (ignore-errors (context-navigator-apply-groups-now root sel))
+              ;; MG включён, но группы не выбраны → очищаем gptel
+              (ignore-errors (context-navigator-clear-gptel-now))))
+        ;; MG выключён → пушим только текущую группу
+        (ignore-errors (context-navigator-push-to-gptel-now))))
     (context-navigator-view--schedule-render)))
 
 ;;;###autoload

@@ -726,33 +726,61 @@ Graceful when gptel is absent: show an informative message and do nothing."
     (setf (context-navigator-state-loading-p new) nil)
     (context-navigator--set-state new)))
 
+(defun context-navigator--load-alive-p (token)
+  "Return non-nil when there is an in-flight load matching TOKEN."
+  (let ((st (context-navigator--state-get)))
+    (and (context-navigator-state-p st)
+         (context-navigator-state-loading-p st)
+         (= (or (context-navigator-state-load-token st) 0) token))))
+
+(defun context-navigator--push-after-load--single (items token)
+  "Start or defer gptel apply for ITEMS (current group), bound to LOAD TOKEN."
+  (run-at-time
+   0 nil
+   (lambda ()
+     (let ((context-navigator-gptel-require-visible-window nil))
+       (ignore-errors
+         (context-navigator--gptel-defer-or-start (or items '()) token))))))
+
+(defun context-navigator--push-after-load (root items token)
+  "Push loaded ITEMS to gptel respecting multi-group selection for ROOT.
+Does nothing when push→gptel is disabled."
+  (when context-navigator--push-to-gptel
+    (let* ((ps (and (stringp root)
+                    (ignore-errors (context-navigator-persist-state-load root))))
+           (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+           (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
+      (if (and mg (listp sel) (> (length sel) 0))
+          ;; Multi-group ON: aggregate enabled items across the selection
+          (context-navigator-collect-enabled-items-for-groups-async
+           root sel
+           (lambda (agg-items)
+             (context-navigator--push-after-load--single agg-items token)))
+        ;; Single-group or no selection: push current group's items
+        (context-navigator--push-after-load--single items token)))))
+
+(defun context-navigator--install-loaded-items (root slug items prev-items)
+  "Install loaded ITEMS into the model; on failure keep PREV-ITEMS and log a warning."
+  (if (and (listp items))
+      (context-navigator-set-items items)
+    (context-navigator-debug :warn :persist
+                             "load failed for root=%s slug=%s; keeping previous items"
+                             root slug)
+    (context-navigator-set-items (or prev-items '()))))
+
 (defun context-navigator--handle-group-loaded (root slug token items)
   "Обработать результат загрузки ITEMS для ROOT/SLUG с проверкой TOKEN.
 Пуш в gptel выполняется, только если он включён. Всегда выполняет финализацию и события."
   (let* ((st (context-navigator--state-get))
-         (alive (and (context-navigator-state-p st)
-                     (context-navigator-state-loading-p st)
-                     (= (or (context-navigator-state-load-token st) 0) token)))
-         (prev-items (and st (context-navigator-state-items st))))
+         (prev-items (and st (context-navigator-state-items st)))
+         (alive (context-navigator--load-alive-p token)))
     (when alive
-      (when context-navigator--push-to-gptel
-        ;; Игнорируем требование видимости, чтобы автопуш работал без нажатия Push.
-        (run-at-time 0 nil
-                     (lambda ()
-                       (let ((context-navigator-gptel-require-visible-window nil))
-                         (ignore-errors
-                           (context-navigator--gptel-defer-or-start (or items '()) token))))))
-
-      (if (and (listp items))
-          (context-navigator-set-items items)
-        (context-navigator-debug :warn :persist
-                                 "load failed for root=%s slug=%s; keeping previous items"
-                                 root slug)
-        (context-navigator-set-items (or prev-items '())))))
-  ;; Финализация и события — как в исходной версии: безусловно.
-  (context-navigator--finalize-load)
-  (context-navigator-events-publish :context-load-done root (listp items))
-  (context-navigator-events-publish :group-switch-done root slug (listp items)))
+      (context-navigator--push-after-load root items token)
+      (context-navigator--install-loaded-items root slug items prev-items))
+    ;; Финализация и события — безусловно.
+    (context-navigator--finalize-load)
+    (context-navigator-events-publish :context-load-done root (listp items))
+    (context-navigator-events-publish :group-switch-done root slug (listp items))))
 
 (defun context-navigator--load-group-for-root (root slug)
   "Загрузить группу SLUG для ROOT (или глобально) асинхронно и при необходимости применить к gptel."
