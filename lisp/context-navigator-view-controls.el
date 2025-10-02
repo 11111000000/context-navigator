@@ -118,7 +118,7 @@ Rule: selection non-empty AND aggregated enabled items > 0."
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (and (listp items)
          (cl-some (lambda (it) (and (context-navigator-item-p it)
-                                    (context-navigator-item-enabled it)))
+                               (context-navigator-item-enabled it)))
                   items))))
 
 (defun context-navigator-view-controls--push-disabled-reason ()
@@ -258,16 +258,10 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                       (_ (format " [%s]" (context-navigator-i18n :stats))))))
       (multi-group
        :type toggle
-       :icon-key nil
+       :icon-key multi-group
        :command context-navigator-view-toggle-multi-group
        :help ,(lambda () (funcall tr :toggle-multi-group))
-       :enabled-p ,(lambda ()
-                     (let* ((st (ignore-errors (context-navigator--state-get)))
-                            (root (and st (context-navigator-state-last-project-root st)))
-                            (ps (and (stringp root)
-                                     (ignore-errors (context-navigator-persist-state-load root))))
-                            (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
-                       (and (listp sel) (> (length sel) 0))))
+       :enabled-p ,(lambda () t)
        :visible-p ,(lambda () t)
        :state-fn ,(lambda ()
                     (let* ((st (ignore-errors (context-navigator--state-get)))

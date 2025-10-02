@@ -309,7 +309,7 @@ Returns the list of lines that were rendered."
     (let* ((footer (context-navigator-view-items-footer-lines total-width))
            (body (append (list up) rest footer))
            ;; No collapsible body and no inline title in the buffer: only content + footer.
-           (lines (cons "" body)))
+           (lines body))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)

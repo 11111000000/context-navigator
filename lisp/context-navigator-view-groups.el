@@ -38,7 +38,8 @@ Each group shows:
                       (context-navigator-state-last-project-root state)))
          (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
          (selected (and (plist-member pstate :selected) (plist-get pstate :selected)))
-         (selected (if (listp selected) selected '())))
+         (selected (if (listp selected) selected '()))
+         (mg (and (listp pstate) (plist-member pstate :multi) (plist-get pstate :multi))))
     (cond
      ((not (listp context-navigator-view--groups))
       (list (propertize (context-navigator-i18n :no-groups) 'face 'shadow)))
@@ -61,10 +62,17 @@ Each group shows:
                         (t
                          (propertize "○" 'face '(:foreground "gray55")))))
                  (sel-p (member slug selected))
-                 (sel-mark (if sel-p (propertize "[*]" 'face 'success)
-                             (propertize "[ ]" 'face 'shadow)))
-                 (txt (format "%s %s %s (%d)" indi sel-mark disp cnt))
-                 (s (copy-sequence txt)))
+                 ;; Показывать чекбокс только в режиме мультигрупп
+                 (sel-mark (and mg
+                                (if sel-p (propertize "[*]" 'face 'success)
+                                  (propertize "[ ]" 'face 'shadow))))
+                 ;; Счётчик (enabled/total), где enabled — зелёный
+                 (en-str (propertize (format "%d" (max 0 (or en 0)))
+                                     'face '(:foreground "green4")))
+                 (cnt-str (format "%s/%d" en-str (max 0 (or tot 0))))
+                 (prefix (concat indi " " (if sel-mark (concat sel-mark " ") "")))
+                 (s (concat prefix disp " (" cnt-str ")")))
+            ;; Базовые интерактивные свойства на всю строку
             (add-text-properties 0 (length s)
                                  (list 'context-navigator-group-slug slug
                                        'context-navigator-group-display disp
@@ -74,9 +82,13 @@ Each group shows:
                                        'local-map context-navigator-view--group-line-keymap
                                        'help-echo (context-navigator-i18n :mouse-open-group))
                                  s)
+            ;; Подсвечивать активную группу только на имени (не перетирать цвет индикатора)
             (when (and context-navigator-highlight-active-group
                        active (string= active slug))
-              (add-text-properties 0 (length s) (list 'face 'mode-line-emphasis) s))
+              (let ((beg (length prefix))
+                    (end (+ (length prefix) (length disp))))
+                (when (<= 0 beg end (length s))
+                  (add-text-properties beg end (list 'face 'mode-line-emphasis) s))))
             (setq lines (append lines (list s)))))
         lines)))))
 
@@ -93,7 +105,7 @@ No inline title or stats in the buffer; only the groups list and a minimal hint.
   (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
          ;; No collapsible body and no inline title in the buffer
-         (lines (append (list "") groups-lines help-lines)))
+         (lines (append groups-lines help-lines)))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)

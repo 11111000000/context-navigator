@@ -46,7 +46,7 @@
   "Auto refresh sidebar/model after external changes."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-view-width 42
+(defcustom context-navigator-view-width 45
   "Sidebar window width in columns."
   :type 'integer :group 'context-navigator)
 
