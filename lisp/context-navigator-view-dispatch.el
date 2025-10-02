@@ -204,6 +204,37 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
                        (append sel (list slug)))))
           (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
           (ignore-errors (context-navigator-persist-state-save root pstate))
+          ;; If the sidebar buffer is visible, update the group line marker in-place for immediate feedback.
+          (let ((buf (get-buffer context-navigator-view--buffer-name)))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (ignore-errors
+                  (let ((pos (text-property-any (point-min) (point-max) 'context-navigator-group-slug slug)))
+                    (when pos
+                      ;; Preserve point/window-start to avoid visible jumps when updating a single line.
+                      (let* ((win (get-buffer-window buf t))
+                             (saved-start (when win (window-start win)))
+                             (saved-point (point)))
+                        (unwind-protect
+                            (progn
+                              (save-excursion
+                                (let ((inhibit-read-only t)
+                                      (beg (save-excursion (goto-char pos) (line-beginning-position)))
+                                      (end (save-excursion (goto-char pos) (line-end-position)))
+                                      (line (buffer-substring-no-properties (save-excursion (goto-char pos) (line-beginning-position))
+                                                                            (save-excursion (goto-char pos) (line-end-position)))))
+                                  (when (string-match "\\(\\[.\\]\\)" line)
+                                    (let ((new-line (replace-match (if (member slug sel1) "[*]" "[ ]") t t line)))
+                                      (delete-region beg end)
+                                      (goto-char beg)
+                                      (insert new-line)))))
+                              ;; restore window view/point to avoid jumps
+                              (when win
+                                (with-selected-window win
+                                  (when (and saved-start (integerp saved-start))
+                                    (set-window-start win saved-start)))
+                                (goto-char saved-point)))))))))))
+
           ;; Publish selection change so Stats split and other listeners can refresh.
           (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
           ;; Auto-push aggregated selection when ON and selection non-empty.
@@ -231,7 +262,6 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
                   (t
                    (ignore-errors (context-navigator-gptel-apply items))))))))
           (context-navigator-view--schedule-render))))))
-
 ;;;###autoload
 (defun context-navigator-view-toggle-multi-group ()
   "Toggle per-project multi-group mode (:multi in state.el)."

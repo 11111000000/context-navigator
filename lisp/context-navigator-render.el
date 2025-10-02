@@ -456,7 +456,11 @@ so that re-renders triggered by timers do not cause the cursor/selection to jump
             (setq mark-active old-mark-active))
           ;; Restore window-start for smooth scrolling restoration
           (when (and (window-live-p win) old-start)
-            (set-window-start win old-start t)))))))
+            (set-window-start win old-start t)))))
+    ;; Refresh sticky line highlight in Navigator view, if available
+    (when (and (eq major-mode 'context-navigator-view-mode)
+               (fboundp 'context-navigator-view--highlight-current-line))
+      (context-navigator-view--highlight-current-line))))
 
 (defun context-navigator-render-build-lines (items &optional _header icon-fn left-width)
   "Compatibility wrapper kept after refactor: build item lines only; HEADER is ignored."

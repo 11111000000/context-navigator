@@ -834,10 +834,12 @@ Assumes gptel has been cleared beforehand."
   (ignore-errors (context-navigator-events-publish :gptel-change :batch-start context-navigator--gptel-batch-total))
   (let ((kick (lambda ()
                 (let* ((st (context-navigator--state-get)))
-                  (unless (and (context-navigator-state-p st)
-                               (= (or (context-navigator-state-load-token st) 0)
-                                  context-navigator--gptel-batch-token))
-                    ;; token mismatch → cancel
+                  ;; Only cancel when we have a meaningful batch token and it mismatches the current state load-token.
+                  ;; This avoids cancelling batches started with token 0/nil (manual operations) when load-token differs.
+                  (when (and context-navigator--gptel-batch-token
+                             (context-navigator-state-p st)
+                             (not (= (or (context-navigator-state-load-token st) 0)
+                                     context-navigator--gptel-batch-token)))
                     (context-navigator--gptel-cancel-batch))
                   (when context-navigator--gptel-batch-queue
                     (let ((n (max 1 (or context-navigator-gptel-apply-batch-size 20)))
@@ -937,7 +939,8 @@ When ENABLED-ONLY is non-nil, filter to enabled items before deduplication."
            (context-navigator-ui-info :no-enabled-in-selection)
          ;; Best-effort clear, then background batch add (no UI freeze).
          (ignore-errors (context-navigator-gptel-clear-all-now))
-         (let ((token 0))
+         (let* ((st (context-navigator--state-get))
+                (token (and st (context-navigator-state-load-token st))))
            (ignore-errors (context-navigator--gptel-defer-or-start (or items '()) token)))
          (context-navigator-ui-info :pushed-items n))))))
 

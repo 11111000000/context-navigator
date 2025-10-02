@@ -511,7 +511,9 @@ Do not highlight purely decorative separators."
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
   (setq-local hl-line-range-function #'context-navigator-view--hl-line-range)
-  (hl-line-mode 1))
+  (hl-line-mode -1)
+  (when (fboundp 'context-navigator-view--highlight-current-line)
+    (context-navigator-view--highlight-current-line)))
 
 ;;;###autoload
 (defun context-navigator-view-open ()
@@ -632,15 +634,17 @@ Do not highlight purely decorative separators."
       (setq buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq context-navigator-view--mode 'groups))
+        (setq context-navigator-view--mode 'groups)
+        ;; Force focus logic on next render: clear last-active so render will focus active group.
+        (setq context-navigator-view--last-active-group nil))
       (ignore-errors (context-navigator-groups-open))
       ;; If no groups are selected, clear model and (when auto-push ON) clear gptel.
       (ignore-errors
         (let* ((st (context-navigator--state-get))
                (root (and st (context-navigator-state-last-project-root st)))
-               (ps (and (stringp root) (context-navigator-persist-state-load root)))
-               (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
-          (when (or (not (listp sel)) (= (length sel) 0))
+               (ps (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+               (sel (and (plist-member ps :selected) (plist-get ps :selected))))
+          (unless (and (listp sel) (> (length sel) 0))
             ;; Clear model items
             (context-navigator-set-items '())
             ;; Clear gptel now only when push→gptel is ON
