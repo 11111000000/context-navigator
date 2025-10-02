@@ -195,7 +195,9 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                                   (idx (or context-navigator-view--spinner-index 0))
                                   (len (length (or frames '()))))
                              (when (> len 0)
-                               (nth (mod idx len) frames)))))
+                               ;; Двухсимвольный кадр, чтобы ширина сегмента не «скакала»
+                               (let ((fr (nth (mod idx len) frames)))
+                                 (concat fr fr))))))
        :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [→]")

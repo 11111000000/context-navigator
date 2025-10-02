@@ -511,10 +511,8 @@ Do not highlight purely decorative separators."
   ;; Apply minimal modeline (safe; uses struct accessors and persist state)
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
-  (setq-local hl-line-range-function #'context-navigator-view--hl-line-range)
-  (hl-line-mode -1)
-  (when (fboundp 'context-navigator-view--highlight-current-line)
-    (context-navigator-view--highlight-current-line)))
+  ;; Используем стандартный hl-line (без собственных оверлеев)
+  (hl-line-mode 1))
 
 ;;;###autoload
 (defun context-navigator-view-open ()

@@ -100,6 +100,7 @@ to the textual/compact style (with brackets)."
 (defcustom context-navigator-controls-icon-face-map
   '((undo . (:foreground "SteelBlue4"))
     (redo . (:foreground "SteelBlue4"))
+    (multi-group . (:foreground "green4"))
     (push-now . (:foreground "green4"))
     (stats . (:foreground "green4"))
     (toggle-all-gptel . (:foreground "green4"))

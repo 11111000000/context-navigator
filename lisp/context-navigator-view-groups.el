@@ -134,12 +134,10 @@ No inline title or stats in the buffer; only the groups list and a minimal hint.
                                                'context-navigator-group-slug nil)))
             (when pos
               (goto-char pos)
-              (beginning-of-line)
-              (when (fboundp 'context-navigator-view--highlight-current-line)
-                (context-navigator-view--highlight-current-line)))))
-        ;; Consume the one-shot focus request.
-        (setq context-navigator-view--focus-group-once nil)))
-    lines))
+              (beginning-of-line)))))
+      ;; Consume the one-shot focus request.
+      (setq context-navigator-view--focus-group-once nil)))
+  lines))
 
 (provide 'context-navigator-view-groups)
 ;;; context-navigator-view-groups.el ends here

@@ -321,9 +321,7 @@ Returns the list of lines that were rendered."
                                           'context-navigator-groups-up nil)))
           (when pos
             (goto-char pos)
-            (beginning-of-line)
-            (when (fboundp 'context-navigator-view--highlight-current-line)
-              (context-navigator-view--highlight-current-line)))))
+            (beginning-of-line))))
       lines)))
 
 (defun context-navigator-view-debug-dump-lines ()

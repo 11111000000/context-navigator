@@ -206,80 +206,79 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
     (let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
       (if (not (and (stringp slug) (not (string-empty-p slug))))
           (context-navigator-ui-info :no-group-at-point)
-        (let* ((st (ignore-errors (context-navigator--state-get)))
+        (let* ((st   (ignore-errors (context-navigator--state-get)))
                (root (and st (context-navigator-state-last-project-root st)))
-               (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
-               (pstate (if (plist-member pstate :version) (copy-sequence pstate)
-                         (plist-put (copy-sequence pstate) :version 1)))
-               (sel0 (and (plist-member pstate :selected) (plist-get pstate :selected)))
-               (sel  (if (listp sel0) sel0 '()))
-               (sel1 (if (member slug sel)
-                         (cl-remove slug sel :test #'equal)
-                       (append sel (list slug)))))
-          (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
-          (ignore-errors (context-navigator-persist-state-save root pstate))
-          ;; If the sidebar buffer is visible, update the group line marker in-place for immediate feedback.
-          (let ((buf (get-buffer context-navigator-view--buffer-name)))
-            (when (buffer-live-p buf)
-              (with-current-buffer buf
-                (ignore-errors
-                  (let ((pos (text-property-any (point-min) (point-max) 'context-navigator-group-slug slug)))
-                    (when pos
-                      ;; Preserve point/window-start to avoid visible jumps when updating a single line.
-                      (let* ((win (get-buffer-window buf t))
-                             (saved-start (when win (window-start win)))
-                             (saved-point (point)))
-                        (unwind-protect
-                            (progn
-                              (save-excursion
-                                (let ((inhibit-read-only t)
-                                      (beg (save-excursion (goto-char pos) (line-beginning-position)))
-                                      (end (save-excursion (goto-char pos) (line-end-position)))
-                                      (line (buffer-substring-no-properties (save-excursion (goto-char pos) (line-beginning-position))
-                                                                            (save-excursion (goto-char pos) (line-end-position)))))
-                                  (when (string-match "\\(\\[.\\]\\)" line)
-                                    (let ((new-line (replace-match (if (member slug sel1) "[*]" "[ ]") t t line)))
-                                      (delete-region beg end)
-                                      (goto-char beg)
-                                      (insert new-line)))))
-                              ;; restore window view/point to avoid jumps
-                              (when win
-                                (with-selected-window win
-                                  (when (and saved-start (integerp saved-start))
-                                    (set-window-start win saved-start)))
-                                (goto-char saved-point)))))))))))
-
-          ;; Publish selection change so Stats split and other listeners can refresh.
-          (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
-          ;; Auto-push aggregated selection when ON and selection non-empty.
-          (when (and (boundp 'context-navigator--push-to-gptel)
-                     context-navigator--push-to-gptel
-                     (listp sel1) (> (length sel1) 0)
-                     (stringp root))
-            (context-navigator-collect-enabled-items-for-groups-async
-             root sel1
-             (lambda (items)
-               (let* ((n (length (or items '())))
-                      (thr (or (and (boundp 'context-navigator-multigroup-autopush-threshold)
-                                    context-navigator-multigroup-autopush-threshold)
-                               100)))
-                 (cond
-                  ((= n 0)
-                   ;; nothing to push — do nothing
-                   nil)
-                  ((> n thr)
-                   ;; Disable auto-push softly and inform user
-                   (setq context-navigator--push-to-gptel nil)
-                   (context-navigator-ui-info :push-state (context-navigator-i18n :off))
-                   (context-navigator-ui-info :autopush-disabled-threshold n thr)
-                   (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
-                  (t
-                   ;; Non-blocking batched apply with spinner; avoid flicker in the groups list
-                   (ignore-errors (context-navigator-gptel-clear-all-now))
-                   (let* ((st (ignore-errors (context-navigator--state-get)))
-                          (token (and st (context-navigator-state-load-token st))))
-                     (ignore-errors (context-navigator--gptel-defer-or-start items token)))))))))
-          (context-navigator-view--schedule-render))))))
+               (ps   (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+               (mg   (and (plist-member ps :multi) (plist-get ps :multi))))
+          ;; MG OFF → no-op (не меняем selection)
+          (when (not mg)
+            (context-navigator-ui-info :toggle-multi-group)
+            (cl-return-from context-navigator-view-group-toggle-select))
+          ;; MG ON → меняем selection в pstate и применяем побочные эффекты
+          (let* ((pstate (if (plist-member ps :version) (copy-sequence ps)
+                           (plist-put (copy-sequence ps) :version 1)))
+                 (sel0 (and (plist-member pstate :selected) (plist-get pstate :selected)))
+                 (sel  (if (listp sel0) sel0 '()))
+                 (sel1 (if (member slug sel)
+                           (cl-remove slug sel :test #'equal)
+                         (append sel (list slug)))))
+            (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
+            (ignore-errors (context-navigator-persist-state-save root pstate))
+            ;; Обновить строку группы ин-плейс для мгновенного фидбэка
+            (let ((buf (get-buffer context-navigator-view--buffer-name)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  (ignore-errors
+                    (let ((pos (text-property-any (point-min) (point-max) 'context-navigator-group-slug slug)))
+                      (when pos
+                        (let* ((win (get-buffer-window buf t))
+                               (saved-start (when win (window-start win)))
+                               (saved-point (point)))
+                          (unwind-protect
+                              (progn
+                                (save-excursion
+                                  (let ((inhibit-read-only t)
+                                        (beg (save-excursion (goto-char pos) (line-beginning-position)))
+                                        (end (save-excursion (goto-char pos) (line-end-position)))
+                                        (line (buffer-substring-no-properties (save-excursion (goto-char pos) (line-beginning-position))
+                                                                              (save-excursion (goto-char pos) (line-end-position)))))
+                                    (when (string-match "\\(\\[.\\]\\)" line)
+                                      (let ((new-line (replace-match (if (member slug sel1) "[*]" "[ ]") t t line)))
+                                        (delete-region beg end)
+                                        (goto-char beg)
+                                        (insert new-line)))))
+                                (when win
+                                  (with-selected-window win
+                                    (when (and saved-start (integerp saved-start))
+                                      (set-window-start win saved-start)))
+                                  (goto-char saved-point))))))))))
+              ;; Оповестить слушателей (Stats и т.п.)
+              (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
+              ;; Автопуш агрегата при включенном push→gptel
+              (when (and (boundp 'context-navigator--push-to-gptel)
+                         context-navigator--push-to-gptel
+                         (listp sel1) (> (length sel1) 0)
+                         (stringp root))
+                (context-navigator-collect-enabled-items-for-groups-async
+                 root sel1
+                 (lambda (items)
+                   (let* ((n (length (or items '())))
+                          (thr (or (and (boundp 'context-navigator-multigroup-autopush-threshold)
+                                        context-navigator-multigroup-autopush-threshold)
+                                   100)))
+                     (cond
+                      ((= n 0) nil)
+                      ((> n thr)
+                       (setq context-navigator--push-to-gptel nil)
+                       (context-navigator-ui-info :push-state (context-navigator-i18n :off))
+                       (context-navigator-ui-info :autopush-disabled-threshold n thr)
+                       (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
+                      (t
+                       (ignore-errors (context-navigator-gptel-clear-all-now))
+                       (let* ((st (ignore-errors (context-navigator--state-get)))
+                              (token (and st (context-navigator-state-load-token st))))
+                         (ignore-errors (context-navigator--gptel-defer-or-start items token)))))))))
+              (context-navigator-view--schedule-render))))))))
 ;;;###autoload
 (defun context-navigator-view-toggle-multi-group ()
   "Toggle per-project multi-group mode (:multi in state.el)."

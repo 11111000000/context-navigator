@@ -74,17 +74,7 @@ when none exists."
       (setq pos (context-navigator-view--find-next-itemish-pos (1+ pos))))
     best))
 
-;; Sticky current-line highlight to avoid hl-line flicker in Navigator buffers
-(defvar-local context-navigator-view--line-ov nil)
-(defun context-navigator-view--highlight-current-line ()
-  "Highlight the current line with an overlay (stable across log updates)."
-  (unless (overlayp context-navigator-view--line-ov)
-    (setq context-navigator-view--line-ov (make-overlay (point) (point) nil t t))
-    (overlay-put context-navigator-view--line-ov 'priority 1000)
-    (overlay-put context-navigator-view--line-ov 'face 'hl-line))
-  (move-overlay context-navigator-view--line-ov
-                (line-beginning-position)
-                (min (point-max) (1+ (line-end-position)))))
+
 
 ;; Unified element scanning (treat title/items/up/toggles as navigable)
 
@@ -254,7 +244,6 @@ trace to help track down cases when no next element is found."
         (progn
           (goto-char pos)
           (beginning-of-line)
-          (context-navigator-view--highlight-current-line)
           (ignore-errors
             (when (fboundp 'context-navigator-debug)
               (context-navigator-debug :trace :ui
@@ -285,7 +274,6 @@ trace to help track down cases when no next element is found."
         (progn
           (goto-char pos)
           (beginning-of-line)
-          (context-navigator-view--highlight-current-line)
           (ignore-errors
             (when (fboundp 'context-navigator-debug)
               (context-navigator-debug :trace :ui
