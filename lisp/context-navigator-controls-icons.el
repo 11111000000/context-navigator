@@ -101,7 +101,6 @@ to the textual/compact style (with brackets)."
   '((undo . (:foreground "SteelBlue4"))
     (redo . (:foreground "SteelBlue4"))
     (push-now . (:foreground "green4"))
-    (multi-group . (:foreground "green4"))
     (stats . (:foreground "green4"))
     (toggle-all-gptel . (:foreground "green4"))
     (razor . (:foreground "magenta3"))
