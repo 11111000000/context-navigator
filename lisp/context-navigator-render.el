@@ -80,6 +80,11 @@ Plist: (:key KEY :map HASH), where
   ROOT is expanded project root (or nil),
   ITEMS-HASH is an sxhash over the list of absolute item paths.")
 
+(defvar context-navigator-render--skip-restore nil
+  "When non-nil, context-navigator-render-apply-to-buffer will not restore
+point/mark/window-start after writing lines. Callers should bind this
+dynamically for one-shot focus scenarios.")
+
 (defun context-navigator-render--truncate (s n)
   "Return S truncated to N chars with ellipsis."
   (if (and (stringp s) (> (length s) (max 4 n)))
@@ -394,71 +399,86 @@ discarding header/separator lines."
               (context-navigator-render--format-line it icon-fn left-width))
             items)))
 
-(defun context-navigator-render-apply-to-buffer (buffer lines)
-  "Replace BUFFER text with LINES when different, preserving point/column, mark and window start best-effort.
+(defun context-navigator-render--lines-plain-text (lines)
+  "Return plain text built from LINES with a trailing newline. Strips properties."
+  (concat
+   (mapconcat (lambda (s) (if (stringp s) (substring-no-properties s) "")) lines "\n")
+   "\n"))
 
-This function now:
-- preserves the exact column within the restored line
-- restores the point for the window showing BUFFER (window-point), not only the buffer's point
-- preserves the active region (mark position and mark-active) across re-renders
-so that re-renders triggered by timers do not cause the cursor/selection to jump."
+(defun context-navigator-render--lines-hash (lines)
+  "Return stable hash for LINES based on plain text content."
+  (sxhash-equal (context-navigator-render--lines-plain-text lines)))
+
+(defun context-navigator-render--window-for-buffer (buffer)
+  "Return a live visible window showing BUFFER, or nil."
+  (let ((w (get-buffer-window buffer 'visible)))
+    (and (window-live-p w) w)))
+
+(defun context-navigator-render--capture-window-state (win)
+  "Capture window-relative cursor, mark and window-start state for current buffer.
+WIN is the window that shows the current buffer, or nil."
+  (let* ((old-point (if (window-live-p win) (window-point win) (point)))
+         (line (save-excursion (goto-char old-point) (line-number-at-pos)))
+         (col  (save-excursion (goto-char old-point) (current-column)))
+         (start (and (window-live-p win) (window-start win)))
+         (m (mark t))
+         (m-line (when m (save-excursion (goto-char m) (line-number-at-pos))))
+         (m-col  (when m (save-excursion (goto-char m) (current-column))))
+         (m-active mark-active))
+    (list :point-line line :point-col col
+          :window-start start
+          :mark-line m-line :mark-col m-col :mark-active m-active)))
+
+(defun context-navigator-render--compute-target-position (line col)
+  "Compute buffer position for LINE and COL in current buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line (1- (max 1 line)))
+    (move-to-column (max 0 col))
+    (point)))
+
+(defun context-navigator-render--write-lines (lines)
+  "Erase current buffer and insert LINES, preserving text properties per line."
+  (erase-buffer)
+  (dolist (ln lines)
+    (when (stringp ln) (insert ln))
+    (insert "\n")))
+
+(defun context-navigator-render--restore-window-state (win state)
+  "Restore point/column, mark and window-start using STATE for current buffer.
+WIN is the window that shows the buffer, or nil."
+  (let* ((line (plist-get state :point-line))
+         (col  (plist-get state :point-col))
+         (start (plist-get state :window-start))
+         (m-line (plist-get state :mark-line))
+         (m-col  (plist-get state :mark-col))
+         (m-active (plist-get state :mark-active))
+         (target (context-navigator-render--compute-target-position line col))
+         (mark-target (when (and m-line m-col)
+                        (context-navigator-render--compute-target-position m-line m-col))))
+    (goto-char target)
+    (when (window-live-p win)
+      (set-window-point win target))
+    (when mark-target
+      (set-marker (mark-marker) mark-target (current-buffer))
+      (setq mark-active m-active))
+    (when (and (window-live-p win) start)
+      (set-window-start win start t))))
+
+(defun context-navigator-render-apply-to-buffer (buffer lines)
+  "Replace BUFFER text with LINES when different.
+Preserve window point/column, mark and window-start best effort."
   (with-current-buffer buffer
     (let* ((inhibit-read-only t)
-           (win (get-buffer-window buffer 'visible))
-           ;; Capture point/line/column relative to the window that shows the buffer
-           (old-point (if (window-live-p win) (window-point win) (point)))
-           (old-line  (save-excursion (goto-char old-point) (line-number-at-pos)))
-           (old-col   (save-excursion (goto-char old-point) (current-column)))
-           (old-start (and (window-live-p win) (window-start win)))
-           ;; Also capture mark/region so selection works normally across renders
-           (old-mark (mark t))
-           (old-mark-line (when old-mark (save-excursion (goto-char old-mark) (line-number-at-pos))))
-           (old-mark-col  (when old-mark (save-excursion (goto-char old-mark) (current-column))))
-           (old-mark-active mark-active)
-           ;; Compute plain text for hashing (strip properties) to avoid false misses
-           (text-plain (concat
-                        (mapconcat (lambda (s)
-                                     (if (stringp s) (substring-no-properties s) ""))
-                                   lines
-                                   "\n")
-                        "\n"))
-           (new-hash  (sxhash-equal text-plain))
-           (changed   (not (equal context-navigator-render--last-hash new-hash))))
+           (win (context-navigator-render--window-for-buffer buffer))
+           (state (context-navigator-render--capture-window-state win))
+           (new-hash (context-navigator-render--lines-hash lines))
+           (changed (not (equal context-navigator-render--last-hash new-hash))))
       (when changed
-        (erase-buffer)
-        ;; Insert each line separately to preserve text properties (keymaps, mouse-face, etc.)
-        (dolist (ln lines)
-          (when (stringp ln) (insert ln))
-          (insert "\n"))
+        (context-navigator-render--write-lines lines)
         (setq context-navigator-render--last-hash new-hash)
-        ;; Compute target position from saved line/column
-        (let* ((target
-                (save-excursion
-                  (goto-char (point-min))
-                  (forward-line (1- (max 1 old-line)))
-                  (move-to-column (max 0 old-col))
-                  (point)))
-               ;; Compute restored mark position (line/col) if previously set
-               (mark-target
-                (when old-mark
-                  (save-excursion
-                    (goto-char (point-min))
-                    (forward-line (1- (max 1 (or old-mark-line 1))))
-                    (move-to-column (max 0 (or old-mark-col 0)))
-                    (point)))))
-          ;; Restore buffer point (for the selected window) and the sidebar window's point
-          (goto-char target)
-          (when (window-live-p win)
-            (set-window-point win target))
-          ;; Restore mark (and active state) to keep user's selection intact
-          (when old-mark
-            (set-marker (mark-marker) (or mark-target (point-min)) (current-buffer))
-            (setq mark-active old-mark-active))
-          ;; Restore window-start for smooth scrolling restoration
-          (when (and (window-live-p win) old-start)
-            (set-window-start win old-start t)))))
-    ;; No custom overlay highlight; standard hl-line follows cursor now.
-    ))
+        (unless context-navigator-render--skip-restore
+          (context-navigator-render--restore-window-state win state))))))
 
 (defun context-navigator-render-build-lines (items &optional _header icon-fn left-width)
   "Compatibility wrapper kept after refactor: build item lines only; HEADER is ignored."

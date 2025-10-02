@@ -312,16 +312,16 @@ Returns the list of lines that were rendered."
            (lines body))
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
-      (context-navigator-render-apply-to-buffer (current-buffer) lines)
-      ;; Focus the \"..\" line when requested (entering items from groups)
+      ;; When we explicitly want to focus \"..\" (entering items from groups),
+      ;; skip restoring old point/window-start inside render-apply to avoid
+      ;; keeping the previous line index from the groups list.
+      (let ((context-navigator-render--skip-restore context-navigator-view--focus-up-once))
+        (context-navigator-render-apply-to-buffer (current-buffer) lines))
+      ;; Focus first line when requested (entering items from groups)
       (when (and (boundp 'context-navigator-view--focus-up-once)
                  context-navigator-view--focus-up-once)
         (setq context-navigator-view--focus-up-once nil)
-        (let ((pos (text-property-not-all (point-min) (point-max)
-                                          'context-navigator-groups-up nil)))
-          (when pos
-            (goto-char pos)
-            (beginning-of-line))))
+        (goto-char (point-min)))
       lines)))
 
 (defun context-navigator-view-debug-dump-lines ()

@@ -858,32 +858,37 @@ Assumes gptel has been cleared beforehand."
   (setq context-navigator--gptel-batch-queue (copy-sequence (or items '())))
   (setq context-navigator--gptel-batch-total (length context-navigator--gptel-batch-queue))
   (setq context-navigator--gptel-batch-token token)
-  ;; Notify listeners that a batch is starting (provide total count).
-  (ignore-errors (context-navigator-events-publish :gptel-change :batch-start context-navigator--gptel-batch-total))
-  (let ((kick (lambda ()
-                (let* ((st (context-navigator--state-get)))
-                  ;; Only cancel when we have a meaningful batch token and it mismatches the current state load-token.
-                  ;; This avoids cancelling batches started with token 0/nil (manual operations) when load-token differs.
-                  (when (and context-navigator--gptel-batch-token
-                             (context-navigator-state-p st)
-                             (not (= (or (context-navigator-state-load-token st) 0)
-                                     context-navigator--gptel-batch-token)))
-                    (context-navigator--gptel-cancel-batch))
-                  (when context-navigator--gptel-batch-queue
-                    (let ((n (max 1 (or context-navigator-gptel-apply-batch-size 20)))
-                          (ops 0))
-                      (dotimes (_i n)
-                        (when-let ((it (car context-navigator--gptel-batch-queue)))
-                          (setq context-navigator--gptel-batch-queue (cdr context-navigator--gptel-batch-queue))
-                          (when (context-navigator-item-enabled it)
-                            (ignore-errors (context-navigator-gptel-add-one it)))
-                          (setq ops (1+ ops))))
-                      (when (null context-navigator--gptel-batch-queue)
-                        ;; done
-                        (context-navigator-events-publish :gptel-change :batch-done context-navigator--gptel-batch-total)
-                        (context-navigator--gptel-cancel-batch))))))))
-    (setq context-navigator--gptel-batch-timer
-          (run-at-time 0 (or context-navigator-gptel-apply-batch-interval 0.05) kick))))
+  ;; If there is nothing to do, avoid publishing a start event or creating timers.
+  ;; Publish a done event immediately so any UI that might have briefly started
+  ;; a loader can clear itself reliably.
+  (if (<= (or context-navigator--gptel-batch-total 0) 0)
+      (ignore-errors (context-navigator-events-publish :gptel-change :batch-done context-navigator--gptel-batch-total))
+    ;; Notify listeners that a batch is starting (provide total count).
+    (ignore-errors (context-navigator-events-publish :gptel-change :batch-start context-navigator--gptel-batch-total))
+    (let ((kick (lambda ()
+                  (let* ((st (context-navigator--state-get)))
+                    ;; Only cancel when we have a meaningful batch token and it mismatches the current state load-token.
+                    ;; This avoids cancelling batches started with token 0/nil (manual operations) when load-token differs.
+                    (when (and context-navigator--gptel-batch-token
+                               (context-navigator-state-p st)
+                               (not (= (or (context-navigator-state-load-token st) 0)
+                                       context-navigator--gptel-batch-token)))
+                      (context-navigator--gptel-cancel-batch))
+                    (when context-navigator--gptel-batch-queue
+                      (let ((n (max 1 (or context-navigator-gptel-apply-batch-size 20)))
+                            (ops 0))
+                        (dotimes (_i n)
+                          (when-let ((it (car context-navigator--gptel-batch-queue)))
+                            (setq context-navigator--gptel-batch-queue (cdr context-navigator--gptel-batch-queue))
+                            (when (context-navigator-item-enabled it)
+                              (ignore-errors (context-navigator-gptel-add-one it)))
+                            (setq ops (1+ ops))))
+                        (when (null context-navigator--gptel-batch-queue)
+                          ;; done
+                          (context-navigator-events-publish :gptel-change :batch-done context-navigator--gptel-batch-total)
+                          (context-navigator--gptel-cancel-batch))))))))
+      (setq context-navigator--gptel-batch-timer
+            (run-at-time 0 (or context-navigator-gptel-apply-batch-interval 0.05) kick)))))
 
 (defun context-navigator--gptel-defer-or-start (items token)
   "Defer batched apply until gptel window is visible when required.

@@ -54,24 +54,24 @@ Each group shows:
                            (cons 0 0)))
                  (en   (car en.t))
                  (tot  (cdr en.t))
-                 (indi (cond
-                        ((and (integerp tot) (> tot 0) (= en tot))
-                         (propertize "●" 'face '(:foreground "green4")))
-                        ((and (integerp en) (> en 0))
-                         (propertize "◐" 'face '(:foreground "orange2")))
-                        (t
-                         (propertize "○" 'face '(:foreground "gray55")))))
                  (sel-p (member slug selected))
-                 ;; Показывать чекбокс только в режиме мультигрупп
-                 (sel-mark (and mg
-                                (if sel-p (propertize "[*]" 'face 'success)
-                                  (propertize "[ ]" 'face 'shadow))))
+                 ;; Индикатор показываем только для выбранных групп
+                 (indi (when sel-p
+                         (cond
+                          ((and (integerp tot) (> tot 0) (= en tot))
+                           (propertize "●" 'face '(:foreground "green4")))
+                          ((and (integerp en) (> en 0))
+                           (propertize "◐" 'face '(:foreground "orange2")))
+                          (t
+                           (propertize "○" 'face '(:foreground "gray55"))))))
+                 ;; Пиктограмма «папка»
+                 (gico "📁")
                  ;; Счётчик (enabled/total), где enabled — зелёный
                  (en-str (propertize (format "%d" (max 0 (or en 0)))
                                      'face '(:foreground "green4")))
                  (cnt-str (format "%s/%d" en-str (max 0 (or tot 0))))
-                 (prefix (concat indi " " (if sel-mark (concat sel-mark " ") "")))
-                 (s (concat prefix disp " (" cnt-str ")")))
+                 (prefix (string-trim (mapconcat #'identity (delq nil (list indi gico)) " ")))
+                 (s (concat prefix " " disp " (" cnt-str ")")))
             ;; Базовые интерактивные свойства на всю строку
             (add-text-properties 0 (length s)
                                  (list 'context-navigator-group-slug slug

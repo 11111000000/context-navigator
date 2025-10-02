@@ -45,15 +45,7 @@ to the textual/compact style (with brackets)."
   :type 'number
   :group 'context-navigator-controls-icons)
 
-(defface context-navigator-controls-icon-on
-  '((t :inherit success))
-  "Face for ON-state control icons."
-  :group 'context-navigator-controls-icons)
 
-(defface context-navigator-controls-icon-off
-  '((t :inherit shadow))
-  "Face for OFF-state control icons."
-  :group 'context-navigator-controls-icons)
 
 ;; Default icon map. Keys are control identifiers; values are either:
 ;; - A cons (PROVIDER . NAME)
@@ -64,14 +56,14 @@ to the textual/compact style (with brackets)."
              (off . (faicon   . "toggle-off"))))
     (auto-project . ((on  . (material . "autorenew"))
                      (off . (material . "autorenew"))))
+    (multi-group . ((on . (material . "group_work"))
+                    (off . (material . "group_work"))))
     (undo . (faicon . "undo"))
     (redo . (faicon . "repeat"))
     (push-now . (faicon . "paper-plane"))
     (razor . (faicon . "filter"))
     (stats . (material . "assessment"))
     (multifile . (faicon . "list"))
-    (multi-group . ((on . (material . "group_work"))
-                    (off . (material . "group_work"))))
     ;; Multifile local controls (used in Multifile buffer header-line)
     (mf-collapse . ((on  . (faicon . "chevron-up"))   ;; on = expanded (click to collapse)
                     (off . (faicon . "chevron-down"))))
@@ -98,25 +90,50 @@ to the textual/compact style (with brackets)."
   :group 'context-navigator-controls-icons)
 
 (defcustom context-navigator-controls-icon-face-map
-  '((undo . (:foreground "SteelBlue4"))
+  ;; Provide explicit on/off colors for toggles so they visually reflect state.
+  '((push . ((on  . (:foreground "green4"))
+             (off . (:foreground "gray60"))))
+    (auto-project . ((on  . (:foreground "green4"  :raise -0.2))
+                     (off . (:foreground "gray60"  :raise -0.2))))
+    (multi-group . ((on . (:foreground "green4" :raise -0.2))
+                    (off . (:foreground "gray60" :raise -0.2))))
+    ;; Multifile local controls (match mf-collapse/mf-filter to toggle colors)
+    (mf-collapse . ((on  . (:foreground "green4"))
+                    (off . (:foreground "gray60"))))
+    (mf-filter . ((on . (:foreground "green4"))
+                  (off . (:foreground "gray60"))))
+    ;; Action keys / defaults
+    (undo . (:foreground "SteelBlue4"))
     (redo . (:foreground "SteelBlue4"))
-    (multi-group . (:foreground "green4"))
-    (push-now . (:foreground "green4"))
-    (stats . (:foreground "green4"))
-    (toggle-all-gptel . (:foreground "green4"))
+    (push-now . (:foreground "magenta3"))
+    (stats . (:foreground "purple" :raise -0.2))
+    (toggle-all-gptel . (:foreground "SteelBlue4"))
     (razor . (:foreground "magenta3"))
-    (multifile . (:foreground "orange3"))
+    (multifile . (:foreground "purple"))
     (open-buffers . (:foreground "orange3"))
     (close-buffers . (:foreground "orange3"))
     (clear-gptel . (:foreground "gray"))
-    (clear-group . (:foreground "tomato"))
-    (auto-project . (:raise -0.2)))
-  "Optional per-key face overrides for control icons.
-Each entry is either a face symbol or a plist like (:foreground \"...\" [:height N] [:raise N]).
-For stateful toggles (push, auto-project) use `context-navigator-controls-toggle-on-face` and
-`context-navigator-controls-toggle-off-face` variables to set on/off colors."
+    (clear-group . (:foreground "tomato")))
+  "Optional per-key faces/attributes for control icons.
+
+Each value may be:
+- a face symbol;
+- a plist of face attributes, e.g. (:foreground \"...\" :weight bold),
+  and optionally :raise and :height for this key/state;
+- a stateful alist for toggles: ((on . FACE-OR-PLIST) (off . FACE-OR-PLIST)).
+
+When :raise is provided, it overrides `context-navigator-controls-icon-raise'
+for that key/state. When :height is provided, it overrides
+`context-navigator-controls-icon-height' for that key/state."
   :type '(alist :key-type symbol
-                :value-type (choice face (plist :key-type symbol :value-type sexp)))
+                :value-type (choice
+                             face
+                             (plist :key-type symbol :value-type sexp)
+                             (alist :tag "Stateful toggle faces"
+                                    :key-type (choice (const on) (const off))
+                                    :value-type (choice
+                                                 face
+                                                 (plist :key-type symbol :value-type sexp)))))
   :group 'context-navigator-controls-icons)
 
 (defcustom context-navigator-controls-icon-local-prefixes
@@ -127,23 +144,9 @@ flag them as unused in the global header-line registry."
   :type '(repeat string)
   :group 'context-navigator-controls-icons)
 
-(defcustom context-navigator-controls-toggle-on-face
-  '(:foreground "gray85")
-  "Face attributes or symbol for toggle icons when enabled (ON).
-Takes precedence for `push` and `auto-project` controls when STATE is 'on'."
-  :type '(choice face (plist :key-type symbol :value-type sexp))
-  :group 'context-navigator-controls-icons)
-
-(defcustom context-navigator-controls-toggle-off-face
-  '(:foreground "gray60")
-  "Face attributes or symbol for toggle icons when disabled (OFF).
-Takes precedence for `push` and `auto-project` controls when STATE is 'off'."
-  :type '(choice face (plist :key-type symbol :value-type sexp))
-  :group 'context-navigator-controls-icons)
-
 (defvar context-navigator-controls-icons--cache (make-hash-table :test 'equal)
   "Cache for rendered control icons.
-Key is a list (KEY STATE HEIGHT RAISE FACE-SYM).")
+Key is a list (KEY STATE HEIGHT RAISE FACE).")
 
 (defun context-navigator-controls-icons--provider-fn (provider)
   "Return all-the-icons rendering function for PROVIDER symbol."
@@ -164,6 +167,35 @@ Returns cons (PROVIDER . NAME) or nil."
       (alist-get state spec))
      (t nil))))
 
+(defun context-navigator-controls-icons--resolve-attrs (key state)
+  "Resolve face/height/raise attributes for KEY and STATE from face map.
+Returns plist (:face FACE-OR-PLIST :height H :raise R)."
+  (let* ((entry (alist-get key context-navigator-controls-icon-face-map))
+         (val (if (and (listp entry)
+                       (or (alist-get 'on entry) (alist-get 'off entry)))
+                  (alist-get state entry)
+                entry))
+         (height (if (and (listp val) (plist-member val :height))
+                     (plist-get val :height)
+                   context-navigator-controls-icon-height))
+         (raise (if (and (listp val) (plist-member val :raise))
+                    (plist-get val :raise)
+                  context-navigator-controls-icon-raise))
+         (face (cond
+                ((symbolp val) val)
+                ((listp val)
+                 ;; Sanitize: drop non-face attributes from plist before passing as `face'
+                 (let ((plist val)
+                       (res nil))
+                   (while plist
+                     (let ((k (pop plist))
+                           (v (pop plist)))
+                       (unless (memq k '(:raise :height))
+                         (setq res (plist-put res k v)))))
+                   (and res res)))
+                (t nil))))
+    (list :face face :height height :raise raise)))
+
 (defun context-navigator-controls-icons-available-p ()
   "Return non-nil if graphic icons can be used in the current context.
 
@@ -175,101 +207,34 @@ all-the-icons loads later (see with-eval-after-load below)."
 
 (defun context-navigator-controls-icon (key &optional state)
   "Return a propertized icon string for control KEY and optional STATE.
-Returns nil if icons are not available or spec cannot be resolved.
+Returns nil if icons are not available or the icon spec cannot be resolved.
 
-Known KEYS by default:
-  push (stateful: on/off)
-  auto-project (stateful: on/off)
-  undo redo push-now open-buffers close-buffers clear-group clear-gptel toggle-all-gptel
-
-STATE is used for stateful controls: 'on or 'off."
+Selection is strict: the icon provider/name and the face/attrs are taken only
+from the user-configured maps without any hardcoded fallbacks."
   (when (context-navigator-controls-icons-available-p)
     (let* ((spec (context-navigator-controls-icons--spec-for key state))
            (provider (car-safe spec))
-           (name (cdr-safe spec))
-           ;; Default state-based face only for true toggles; otherwise keep nil (provider default),
-           ;; then apply per-key override below when configured.
-           (base-face (when (memq state '(on off))
-                        (if (eq state 'on)
-                            'context-navigator-controls-icon-on
-                          'context-navigator-controls-icon-off)))
-           (override (alist-get key context-navigator-controls-icon-face-map))
-           ;; Use custom face for toggles, from defcustom, if present
-           (final-face
-            (cond
-             ((eq key 'push)
-              (cond
-               ((eq state 'on)  context-navigator-controls-toggle-on-face)
-               ((eq state 'off) context-navigator-controls-toggle-off-face)
-               (t nil)))
-             ((eq key 'auto-project)
-              (cond
-               ((eq state 'on)  context-navigator-controls-toggle-on-face)
-               ((eq state 'off) context-navigator-controls-toggle-off-face)
-               (t nil)))
-             (override override)
-             (t base-face)))
-           (raise (or (and (listp override) (plist-get override :raise))
-                      context-navigator-controls-icon-raise))
-           (cache-key (list key state
-                            context-navigator-controls-icon-height
-                            raise
-                            final-face)))
-      (or (gethash cache-key context-navigator-controls-icons--cache)
-          (when (and provider name)
-            (let* ((fn (context-navigator-controls-icons--provider-fn provider))
-                   (icon
-                    (when fn
-                      (ignore-errors
-                        (funcall fn name
-                                 :face (or (and (symbolp final-face) final-face)
-                                           (and (listp final-face) final-face))
-                                 :height context-navigator-controls-icon-height
-                                 ;; keep v-adjust neutral; we apply raise via display:
-                                 :v-adjust 0.0))))
-                   ;; Fallbacks for tricky keys (e.g. razor, mf-edit-all) across providers
-                   (icon
-                    (or icon
-                        ;; Razor: try several providers to increase chances
-                        (when (eq key 'razor)
-                          (let ((alts '((material . "content_cut")
-                                        (octicon  . "scissors")
-                                        (faicon   . "scissors"))))
-                            (cl-loop for sp in alts
-                                     for pf = (context-navigator-controls-icons--provider-fn (car sp))
-                                     for nm = (cdr sp)
-                                     for s = (and pf (ignore-errors
-                                                       (funcall pf nm
-                                                                :face (or (and (symbolp final-face) final-face)
-                                                                          (and (listp final-face) final-face))
-                                                                :height context-navigator-controls-icon-height
-                                                                :v-adjust 0.0)))
-                                     when (and (stringp s) (not (string-empty-p s)))
-                                     return s)))
-                        ;; Edit-all: prefer material "edit", but try octicon/faicon fallbacks too
-                        (when (eq key 'mf-edit-all)
-                          (let ((alts '((material . "edit")
-                                        (octicon  . "pencil")
-                                        (faicon   . "pencil")
-                                        (faicon   . "pencil-square-o"))))
-                            (cl-loop for sp in alts
-                                     for pf = (context-navigator-controls-icons--provider-fn (car sp))
-                                     for nm = (cdr sp)
-                                     for s = (and pf (ignore-errors
-                                                       (funcall pf nm
-                                                                :face (or (and (symbolp final-face) final-face)
-                                                                          (and (listp final-face) final-face))
-                                                                :height context-navigator-controls-icon-height
-                                                                :v-adjust 0.0)))
-                                     when (and (stringp s) (not (string-empty-p s)))
-                                     return s))))))
-              (when (and (stringp icon) (not (string-empty-p icon)))
-                ;; Apply per-icon raise if specified, otherwise use default.
-                (let* ((s (propertize icon
-                                      'display
-                                      (list 'raise raise))))
-                  (puthash cache-key s context-navigator-controls-icons--cache)
-                  s))))))))
+           (name (cdr-safe spec)))
+      (when (and provider name)
+        (let* ((attrs (context-navigator-controls-icons--resolve-attrs key state))
+               (face (plist-get attrs :face))
+               (height (plist-get attrs :height))
+               (raise (plist-get attrs :raise))
+               (cache-key (list key state height raise face)))
+          (or (gethash cache-key context-navigator-controls-icons--cache)
+              (let* ((fn (context-navigator-controls-icons--provider-fn provider))
+                     (icon (and fn
+                                (ignore-errors
+                                  (funcall fn name
+                                           :face (or (and (symbolp face) face)
+                                                     (and (listp face) face))
+                                           :height height
+                                           ;; keep v-adjust neutral; we apply raise via `display'
+                                           :v-adjust 0.0)))))
+                (when (and (stringp icon) (not (string-empty-p icon)))
+                  (let ((s (propertize icon 'display (list 'raise raise))))
+                    (puthash cache-key s context-navigator-controls-icons--cache)
+                    s)))))))))
 
 (defun context-navigator-controls-icons-clear-cache ()
   "Clear the internal cache of rendered control icons."

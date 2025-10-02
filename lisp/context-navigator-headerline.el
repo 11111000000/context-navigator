@@ -65,6 +65,11 @@ so that frequent redisplays reuse the same string unless a relevant bit changes.
                            context-navigator-razor--running))
            (razor-idx (and (boundp 'context-navigator-razor--spinner-index)
                            context-navigator-razor--spinner-index))
+           ;; Include gptel batch spinner bits so cache invalidates correctly
+           (batch-run (and (boundp 'context-navigator-view--gptel-batch-start-time)
+                           context-navigator-view--gptel-batch-start-time))
+           (spin-idx (and (boundp 'context-navigator-view--spinner-index)
+                          context-navigator-view--spinner-index))
            ;; Additional bits to make headerline cache sensitive to selection/mode.
            (mode-sym (and (boundp 'context-navigator-view--mode)
                           context-navigator-view--mode))
@@ -83,7 +88,10 @@ so that frequent redisplays reuse the same string unless a relevant bit changes.
                      (ps (and (stringp root)
                               (context-navigator-persist-state-load root))))
                 (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))))
-           (key (list style icons-on push-on auto-on razor-run razor-idx mode-sym sel-count mg-flag)))
+           (key (list style icons-on push-on auto-on
+                      razor-run razor-idx
+                      batch-run spin-idx
+                      mode-sym sel-count mg-flag)))
       (if (equal key context-navigator-headerline--cache-key)
           ;; Reuse cached string
           context-navigator-headerline--cache-str
