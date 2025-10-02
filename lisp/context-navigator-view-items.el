@@ -313,6 +313,17 @@ Returns the list of lines that were rendered."
       (setq context-navigator-view--last-lines lines
             context-navigator-view--header header)
       (context-navigator-render-apply-to-buffer (current-buffer) lines)
+      ;; Focus the \"..\" line when requested (entering items from groups)
+      (when (and (boundp 'context-navigator-view--focus-up-once)
+                 context-navigator-view--focus-up-once)
+        (setq context-navigator-view--focus-up-once nil)
+        (let ((pos (text-property-not-all (point-min) (point-max)
+                                          'context-navigator-groups-up nil)))
+          (when pos
+            (goto-char pos)
+            (beginning-of-line)
+            (when (fboundp 'context-navigator-view--highlight-current-line)
+              (context-navigator-view--highlight-current-line)))))
       lines)))
 
 (defun context-navigator-view-debug-dump-lines ()

@@ -45,10 +45,16 @@ the cached aggregate without re-reading group files."
 
 ;; Aggregate cache for groups view (fingerprint -> plist)
 (defvar context-navigator-stats-split--agg-fp nil)
-(defvar context-navigator-stats-split--agg-count 0)
-(defvar context-navigator-stats-split--agg-nsel 0)
-(defvar context-navigator-stats-split--agg-total 0)
-(defvar context-navigator-stats-split--agg-enabled 0)
+(defvar context-navigator-stats-split--agg-count 0)         ;; total items enabled (for header convenience)
+(defvar context-navigator-stats-split--agg-nsel 0)          ;; number of selected groups
+(defvar context-navigator-stats-split--agg-total 0)         ;; total items (all)
+(defvar context-navigator-stats-split--agg-enabled 0)       ;; total items enabled
+(defvar context-navigator-stats-split--agg-files-all 0)
+(defvar context-navigator-stats-split--agg-buffers-all 0)
+(defvar context-navigator-stats-split--agg-selections-all 0)
+(defvar context-navigator-stats-split--agg-files-en 0)
+(defvar context-navigator-stats-split--agg-buffers-en 0)
+(defvar context-navigator-stats-split--agg-selections-en 0)
 (defvar context-navigator-stats-split--agg-bytes-en 0)
 (defvar context-navigator-stats-split--agg-bytes-all 0)
 (defvar context-navigator-stats-split--agg-tokens-en 0)
@@ -172,6 +178,13 @@ the cached aggregate without re-reading group files."
          (lambda (items)
            (let* ((all (or items '()))
                   (en (context-navigator--enabled-only all))
+                  ;; per-type counts: all vs enabled
+                  (files-all (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'file)) all))
+                  (buffers-all (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'buffer)) all))
+                  (sels-all (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'selection)) all))
+                  (files-en (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'file)) en))
+                  (buffers-en (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'buffer)) en))
+                  (sels-en (cl-count-if (lambda (it) (eq (context-navigator-item-type it) 'selection)) en))
                   (bpair (context-navigator-stats-split--sum-bytes all))
                   (bytes-all (car bpair))
                   (bytes-en (cdr bpair))
@@ -181,6 +194,12 @@ the cached aggregate without re-reading group files."
              (setq context-navigator-stats-split--agg-total (length all))
              (setq context-navigator-stats-split--agg-enabled (length en))
              (setq context-navigator-stats-split--agg-count (length en))
+             (setq context-navigator-stats-split--agg-files-all files-all)
+             (setq context-navigator-stats-split--agg-buffers-all buffers-all)
+             (setq context-navigator-stats-split--agg-selections-all sels-all)
+             (setq context-navigator-stats-split--agg-files-en files-en)
+             (setq context-navigator-stats-split--agg-buffers-en buffers-en)
+             (setq context-navigator-stats-split--agg-selections-en sels-en)
              (setq context-navigator-stats-split--agg-bytes-all bytes-all)
              (setq context-navigator-stats-split--agg-bytes-en bytes-en)
              (setq context-navigator-stats-split--agg-tokens-all tok-all)
@@ -188,54 +207,125 @@ the cached aggregate without re-reading group files."
              (context-navigator-stats-split--render))))))))
 
 (defun context-navigator-stats-split--groups-lines (total-width)
-  "Return exactly 5 lines summary for groups selection (aggregate, dedup)."
+  "Return exactly 5 lines using unified Stats renderer (aggregate when MG ON)."
   (ignore total-width)
   (let* ((root (context-navigator-stats-split--current-root))
          (sel  (context-navigator-stats-split--selected-slugs root))
          (nsel (length sel)))
     (when (> nsel 0)
       (context-navigator-stats-split--kick-aggregate root sel))
-    (let* ((mg (ignore-errors
-                 (let ((ps (and (stringp root)
-                                (context-navigator-persist-state-load root))))
-                   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))))
-           (title (propertize
-                   (format "%s — %s (MG: %s)"
-                           (context-navigator-i18n :stats)
-                           (context-navigator-i18n :groups)
-                           (if mg "ON" "OFF"))
-                   'face 'shadow))
-           (en (if (> nsel 0) context-navigator-stats-split--agg-enabled 0))
-           (tot (if (> nsel 0) context-navigator-stats-split--agg-total 0))
-           (ben (if (> nsel 0) context-navigator-stats-split--agg-bytes-en 0))
-           (ball (if (> nsel 0) context-navigator-stats-split--agg-bytes-all 0))
-           (ten (if (> nsel 0) context-navigator-stats-split--agg-tokens-en 0))
-           (tall (if (> nsel 0) context-navigator-stats-split--agg-tokens-all 0))
-           (l2 (format " %s: %d" (context-navigator-i18n :selected) nsel))
-           (l3 (format " %s: %d  |  %s: %d"
-                       (context-navigator-i18n :enabled) (max 0 (or en 0))
-                       (context-navigator-i18n :total)   (max 0 (or tot 0))))
-           (l4 (format " %s: %s  /  %s %s"
-                       (context-navigator-i18n :stats-size)
-                       (context-navigator-human-size (max 0 (or ben 0)))
-                       (context-navigator-i18n :total)
-                       (context-navigator-human-size (max 0 (or ball 0)))))
-           (l5 (format " %s: %d  /  %s %d"
-                       (context-navigator-i18n :stats-tokens) (max 0 (or ten 0))
-                       (context-navigator-i18n :total)        (max 0 (or tall 0)))))
-      (list title l2 l3 l4 l5))))
+    (let* ((en   (if (> nsel 0) context-navigator-stats-split--agg-enabled 0))
+           (ben  (if (> nsel 0) context-navigator-stats-split--agg-bytes-en 0))
+           (ten  (if (> nsel 0) context-navigator-stats-split--agg-tokens-en 0))
+           (b-all (if (> nsel 0) context-navigator-stats-split--agg-bytes-all 0))
+           (t-all (if (> nsel 0) context-navigator-stats-split--agg-tokens-all 0))
+           (f-all (if (> nsel 0) context-navigator-stats-split--agg-files-all 0))
+           (bufs-all (if (> nsel 0) context-navigator-stats-split--agg-buffers-all 0))
+           (sels-all (if (> nsel 0) context-navigator-stats-split--agg-selections-all 0))
+           (f-en (if (> nsel 0) context-navigator-stats-split--agg-files-en 0))
+           (b-en (if (> nsel 0) context-navigator-stats-split--agg-buffers-en 0))
+           (s-en (if (> nsel 0) context-navigator-stats-split--agg-selections-en 0))
+           ;; Icons like in items footer
+           (hdr-ico (or (context-navigator-stats--icon :header) ""))
+           (cnt-ico (or (context-navigator-stats--icon :counts) ""))
+           (siz-ico (or (context-navigator-stats--icon :size) ""))
+           (tok-ico (or (context-navigator-stats--icon :tokens) ""))
+           (ico-file (or (context-navigator-stats--icon :file) ""))
+           (ico-buf  (or (context-navigator-stats--icon :buffer) ""))
+           (ico-sel  (or (context-navigator-stats--icon :selection) ""))
+           (arrow "▾")
+           (lbl (context-navigator-i18n :stats))
+           (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
+                        arrow hdr-ico lbl
+                        (max 0 (or en 0))
+                        (context-navigator-human-size (max 0 (or ben 0)))
+                        (max 0 (or ten 0))
+                        (context-navigator-i18n :stats-tokens)))
+           (row1 (format "   %s %s: %s %d (%d), %s %d (%d), %s %d (%d)"
+                         cnt-ico
+                         (context-navigator-i18n :stats-counts)
+                         ico-file (max 0 (or f-all 0)) (max 0 (or f-en 0))
+                         ico-buf  (max 0 (or bufs-all 0)) (max 0 (or b-en 0))
+                         ico-sel  (max 0 (or sels-all 0)) (max 0 (or s-en 0))))
+           (row2 (format "   %s %s: %s ~%s  /  %s ~%s"
+                         siz-ico
+                         (context-navigator-i18n :stats-size)
+                         (context-navigator-i18n :enabled) (context-navigator-human-size (max 0 (or ben 0)))
+                         (context-navigator-i18n :total)    (context-navigator-human-size (max 0 (or b-all 0)))))
+           (row3 (format "   %s %s: %s %d  /  %s %d"
+                         tok-ico
+                         (context-navigator-i18n :stats-tokens)
+                         (context-navigator-i18n :enabled) (max 0 (or ten 0))
+                         (context-navigator-i18n :total)    (max 0 (or t-all 0)))))
+      ;; Exactly 5 lines
+      (list hdr row1 row2 row3 ""))))
 
 (defun context-navigator-stats-split--items-lines (total-width)
-  "Return exactly 5 lines for items view using existing Stats footer."
+  "Return exactly 5 lines for items view.
+When MG is ON and selection non-empty, show aggregated unified stats; otherwise reuse items footer."
   (let* ((tw (max 30 (or total-width 80)))
-         (context-navigator-stats--expanded-p t)
-         (raw (or (ignore-errors (context-navigator-stats-footer-lines tw))
-                  (list (propertize (context-navigator-i18n :stats) 'face 'shadow))))
-         (lines (append raw nil)))
-    (cond
-     ((< (length lines) 5) (append lines (make-list (- 5 (length lines)) "")))
-     ((> (length lines) 5) (cl-subseq lines 0 5))
-     (t lines))))
+         ;; Detect MG and selection for current root
+         (root (context-navigator-stats-split--current-root))
+         (ps (and (stringp root) (ignore-errors (context-navigator-persist-state-load root))))
+         (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+         (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected)))
+         (nsel (and (listp sel) (length sel))))
+    (if (and mg (numberp nsel) (> nsel 0))
+        ;; Aggregated unified stats (kick async if needed, then render from cache)
+        (progn
+          (context-navigator-stats-split--kick-aggregate root sel)
+          (let* ((en   context-navigator-stats-split--agg-enabled)
+                 (ben  context-navigator-stats-split--agg-bytes-en)
+                 (ten  context-navigator-stats-split--agg-tokens-en)
+                 (b-all context-navigator-stats-split--agg-bytes-all)
+                 (t-all context-navigator-stats-split--agg-tokens-all)
+                 (f-all context-navigator-stats-split--agg-files-all)
+                 (bufs-all context-navigator-stats-split--agg-buffers-all)
+                 (sels-all context-navigator-stats-split--agg-selections-all)
+                 (f-en context-navigator-stats-split--agg-files-en)
+                 (b-en context-navigator-stats-split--agg-buffers-en)
+                 (s-en context-navigator-stats-split--agg-selections-en)
+                 (hdr-ico (or (context-navigator-stats--icon :header) ""))
+                 (cnt-ico (or (context-navigator-stats--icon :counts) ""))
+                 (siz-ico (or (context-navigator-stats--icon :size) ""))
+                 (tok-ico (or (context-navigator-stats--icon :tokens) ""))
+                 (ico-file (or (context-navigator-stats--icon :file) ""))
+                 (ico-buf  (or (context-navigator-stats--icon :buffer) ""))
+                 (ico-sel  (or (context-navigator-stats--icon :selection) ""))
+                 (arrow "▾")
+                 (lbl (context-navigator-i18n :stats))
+                 (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
+                              arrow hdr-ico lbl
+                              (max 0 (or en 0))
+                              (context-navigator-human-size (max 0 (or ben 0)))
+                              (max 0 (or ten 0))
+                              (context-navigator-i18n :stats-tokens)))
+                 (row1 (format "   %s %s: %s %d (%d), %s %d (%d), %s %d (%d)"
+                               cnt-ico
+                               (context-navigator-i18n :stats-counts)
+                               ico-file (max 0 (or f-all 0)) (max 0 (or f-en 0))
+                               ico-buf  (max 0 (or bufs-all 0)) (max 0 (or b-en 0))
+                               ico-sel  (max 0 (or sels-all 0)) (max 0 (or s-en 0))))
+                 (row2 (format "   %s %s: %s ~%s  /  %s ~%s"
+                               siz-ico
+                               (context-navigator-i18n :stats-size)
+                               (context-navigator-i18n :enabled) (context-navigator-human-size (max 0 (or ben 0)))
+                               (context-navigator-i18n :total)    (context-navigator-human-size (max 0 (or b-all 0)))))
+                 (row3 (format "   %s %s: %s %d  /  %s %d"
+                               tok-ico
+                               (context-navigator-i18n :stats-tokens)
+                               (context-navigator-i18n :enabled) (max 0 (or ten 0))
+                               (context-navigator-i18n :total)    (max 0 (or t-all 0)))))
+            (list hdr row1 row2 row3 "")))
+      ;; Default: reuse existing Stats footer (expanded)
+      (let* ((context-navigator-stats--expanded-p t)
+             (raw (or (ignore-errors (context-navigator-stats-footer-lines tw))
+                      (list (propertize (context-navigator-i18n :stats) 'face 'shadow))))
+             (lines (append raw nil)))
+        (cond
+         ((< (length lines) 5) (append lines (make-list (- 5 (length lines)) "")))
+         ((> (length lines) 5) (cl-subseq lines 0 5))
+         (t lines))))))
 
 (defun context-navigator-stats-split--render-lines (total-width)
   "Return exactly 5 lines of Stats content for TOTAL-WIDTH columns.
@@ -303,9 +393,12 @@ the cached aggregate without re-reading group files."
       (let* ((buf (context-navigator-stats-split--ensure-buffer))
              (existing (context-navigator-stats-split--visible-window))
              (win (or existing
-                      (with-selected-window navw
-                        (let* ((target-height (max 1 (or context-navigator-stats-split-height 5))))
-                          (split-window-below target-height))))))
+                      (let* ((side (or (window-parameter navw 'window-side) 'left))
+                             (target-height (max 1 (or context-navigator-stats-split-height 5)))
+                             (params (list (cons 'side side)
+                                           (cons 'slot 1)
+                                           (cons 'window-height target-height))))
+                        (display-buffer-in-side-window buf params)))))
         (when (window-live-p win)
           (set-window-buffer win buf)
           ;; Make this a child window of the sidebar and keep it dedicated

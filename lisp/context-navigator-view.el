@@ -172,6 +172,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--sorted-root nil)            ;; root used for cached items sort
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 (defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
+(defvar-local context-navigator-view--focus-up-once nil)          ;; when t, focus the \"..\" line on next items render
 
 (defun context-navigator-view-toggle-collapse-immediate ()
   "Toggle collapse and render immediately."
@@ -610,6 +611,8 @@ Do not highlight purely decorative separators."
               (slug (car cell)))
     (ignore-errors (context-navigator-group-switch slug))
     (setq context-navigator-view--mode 'items)
+    ;; Focus the \"..\" line on the next items render
+    (setq context-navigator-view--focus-up-once t)
     (context-navigator-view--schedule-render)
     t))
 

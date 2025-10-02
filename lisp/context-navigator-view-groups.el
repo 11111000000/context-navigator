@@ -109,35 +109,36 @@ No inline title or stats in the buffer; only the groups list and a minimal hint.
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)
-    ;; Keep point where user navigated with n/p; only auto-focus when:
-    ;; - entering the groups view (first render in this mode), or
-    ;; - the active group changed since last render.
-    ;; Do not steal point when user moves to footer/help with TAB/Shift-TAB.
+    ;; Simple, robust focus: only when explicitly requested once.
+    ;; Do not move point on incidental re-renders or window switches.
     (unless context-navigator-view--collapsed-p
-      (let* ((active (and (context-navigator-state-p state)
-                          (context-navigator-state-current-group-slug state)))
-             (here (point))
-             (on-group (get-text-property here 'context-navigator-group-slug))
-             (need-focus (or (not (eq context-navigator-view--last-mode 'groups))
-                             (not (equal context-navigator-view--last-active-group active)))))
-        (when need-focus
-          (let (pos)
-            (when (and (stringp active) (not (string-empty-p active)))
+      (when (and (boundp 'context-navigator-view--focus-group-once)
+                 context-navigator-view--focus-group-once)
+        (let* ((want (if (stringp context-navigator-view--focus-group-once)
+                         context-navigator-view--focus-group-once
+                       (and (context-navigator-state-p state)
+                            (context-navigator-state-current-group-slug state)))))
+          (let ((pos nil))
+            (when (and (stringp want) (not (string-empty-p want)))
               (let ((p (point-min)) (found nil))
                 (while (and (not found)
-                            (setq p (text-property-not-all p (point-max) 'context-navigator-group-slug nil)))
-                  (when (equal (get-text-property p 'context-navigator-group-slug) active)
+                            (setq p (text-property-not-all p (point-max)
+                                                           'context-navigator-group-slug nil)))
+                  (when (equal (get-text-property p 'context-navigator-group-slug) want)
                     (setq found p))
                   (setq p (1+ p)))
                 (setq pos found)))
+            ;; Fallback: first group line if requested slug wasn't found.
             (unless pos
               (setq pos (text-property-not-all (point-min) (point-max)
                                                'context-navigator-group-slug nil)))
             (when pos
               (goto-char pos)
-              (beginning-of-line))))
-        (setq context-navigator-view--last-active-group active
-              context-navigator-view--last-mode 'groups)))
+              (beginning-of-line)
+              (when (fboundp 'context-navigator-view--highlight-current-line)
+                (context-navigator-view--highlight-current-line)))))
+        ;; Consume the one-shot focus request.
+        (setq context-navigator-view--focus-group-once nil)))
     lines))
 
 (provide 'context-navigator-view-groups)

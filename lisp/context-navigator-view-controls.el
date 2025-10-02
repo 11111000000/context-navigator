@@ -118,7 +118,7 @@ Rule: selection non-empty AND aggregated enabled items > 0."
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (and (listp items)
          (cl-some (lambda (it) (and (context-navigator-item-p it)
-                               (context-navigator-item-enabled it)))
+                                    (context-navigator-item-enabled it)))
                   items))))
 
 (defun context-navigator-view-controls--push-disabled-reason ()
@@ -185,6 +185,17 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                     (if (and (boundp 'context-navigator--push-to-gptel)
                              context-navigator--push-to-gptel)
                         'on 'off))
+       ;; Spinner while a gptel batch is running (reuses the view spinner timer)
+       :spinner-fn ,(lambda ()
+                      (and (boundp 'context-navigator-view--gptel-batch-start-time)
+                           context-navigator-view--gptel-batch-start-time
+                           (boundp 'context-navigator-view--spinner-index)
+                           (boundp 'context-navigator-view-spinner-frames)
+                           (let* ((frames context-navigator-view-spinner-frames)
+                                  (idx (or context-navigator-view--spinner-index 0))
+                                  (len (length (or frames '()))))
+                             (when (> len 0)
+                               (nth (mod idx len) frames)))))
        :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [→]")

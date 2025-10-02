@@ -52,6 +52,7 @@
 ;; Core helpers for multi-group apply
 (declare-function context-navigator-apply-groups-now "context-navigator-core" (root slugs))
 (declare-function context-navigator-collect-enabled-items-for-groups-async "context-navigator-core" (root slugs callback))
+(declare-function context-navigator--gptel-defer-or-start "context-navigator-core" (items token))
 
 ;; Buffer-local mode flag defined by the main view
 (defvar-local context-navigator-view--mode 'items)
@@ -138,7 +139,20 @@
   (interactive)
   (when (not (eq context-navigator-view--mode 'groups))
     (setq context-navigator-view--mode 'groups)
-    (ignore-errors (context-navigator-groups-open))
+    ;; Remember the current active group explicitly for a single-shot focus.
+    (let* ((st   (ignore-errors (context-navigator--state-get)))
+           (slug (and st (context-navigator-state-current-group-slug st)))
+           ;; Fetch groups synchronously (also returns the list).
+           (lst  (ignore-errors (context-navigator-groups-open))))
+      ;; Install the fresh groups list into the Navigator buffer immediately
+      ;; so the first render doesn't show a placeholder and then jump.
+      (let ((buf (get-buffer "*context-navigator*")))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf
+            (setq-local context-navigator-view--groups (and (listp lst) lst))
+            ;; Single-shot request to focus the group we came from.
+            (setq-local context-navigator-view--focus-group-once
+                        (or (and (stringp slug) (not (string-empty-p slug)) slug) t))))))
     ;; Render immediately for responsive UX (avoid waiting for debounce)
     (context-navigator-view--render-if-visible)))
 
@@ -260,7 +274,11 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
                    (context-navigator-ui-info :autopush-disabled-threshold n thr)
                    (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
                   (t
-                   (ignore-errors (context-navigator-gptel-apply items))))))))
+                   ;; Non-blocking batched apply with spinner; avoid flicker in the groups list
+                   (ignore-errors (context-navigator-gptel-clear-all-now))
+                   (let* ((st (ignore-errors (context-navigator--state-get)))
+                          (token (and st (context-navigator-state-load-token st))))
+                     (ignore-errors (context-navigator--gptel-defer-or-start items token)))))))))
           (context-navigator-view--schedule-render))))))
 ;;;###autoload
 (defun context-navigator-view-toggle-multi-group ()
