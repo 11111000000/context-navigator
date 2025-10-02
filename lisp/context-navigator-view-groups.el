@@ -136,8 +136,8 @@ No inline title or stats in the buffer; only the groups list and a minimal hint.
               (goto-char pos)
               (beginning-of-line)))))
       ;; Consume the one-shot focus request.
-      (setq context-navigator-view--focus-group-once nil)))
-  lines))
+      (setq context-navigator-view--focus-group-once nil))
+    lines))
 
 (provide 'context-navigator-view-groups)
 ;;; context-navigator-view-groups.el ends here

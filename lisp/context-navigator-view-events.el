@@ -143,7 +143,9 @@
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
+                 ;; При входе в items после переключения группы — фокус на «..»
                  (setq context-navigator-view--mode 'items)
+                 (setq context-navigator-view--focus-up-once t)
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs)
   (push (context-navigator-events-subscribe
@@ -222,15 +224,20 @@ the handler for the live sidebar buffer; removal is handled in
 (defun context-navigator-view--install-window-select-hook ()
   "Install window-selection-change hook (idempotent).
 
-When the selected window changes, schedule a render of the sidebar so
-it can become responsive to focus changes."
+Do a lightweight refresh only when the Navigator buffer becomes the selected
+window. Не сбрасываем курсор: не инвалидируем кэши и не используем
+schedule-render здесь."
   (unless context-navigator-view--winselect-fn
     (setq context-navigator-view--winselect-fn
           (lambda (_frame)
             (let ((buf (get-buffer context-navigator-view--buffer-name)))
-              (when (buffer-live-p buf)
+              (when (and (buffer-live-p buf)
+                         (eq (window-buffer (selected-window)) buf))
                 (with-current-buffer buf
-                  (ignore-errors (context-navigator-view--schedule-render)))))))
+                  ;; Обновить статус/модельную строку без тяжёлого рендера
+                  (ignore-errors (force-mode-line-update nil))
+                  ;; Мягкая перерисовка, без сброса кэшей и позиции
+                  (ignore-errors (context-navigator-view--render-if-visible)))))))
     (add-hook 'window-selection-change-functions context-navigator-view--winselect-fn)))
 
 (defun context-navigator-view--initial-compute-counters ()
