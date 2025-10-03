@@ -13,7 +13,7 @@
   "Pinned title (project/group) under header-line for Navigator."
   :group 'context-navigator)
 
-(defcustom context-navigator-pinned-title-enable t
+(defcustom context-navigator-pinned-title-enable nil
   "When non-nil, show a pinned title under the header-line."
   :type 'boolean :group 'context-navigator-pinned-title)
 
