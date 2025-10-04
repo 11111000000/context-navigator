@@ -230,7 +230,7 @@ Constants:
 |--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------+---+---|
 | context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |   |   |
 | context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-controls-style                 | choice (auto    | icons   | text)                                                      | icons                             | Labels style for toggles/actions            | sidebar/context-navigator-view.el |   |   |
+| context-navigator-view-controls-style                 | choice (auto    | icons   | text)                                                      | icons                             | Labels style for toggles/actions            | sidebar/context-navigator-view.el |   |   |
 | context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |   |   |
 | context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |   |   |
 | context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |   |   |
@@ -341,7 +341,7 @@ Constants:
   (context-navigator-view-width 36)
 
   ;; Sidebar & render
-  (context-navigator-controls-style 'icons)
+  (context-navigator-view-controls-style 'icons)
   (context-navigator-highlight-active-group t)
   (context-navigator-openable-count-ttl 0.3)
   (context-navigator-openable-soft-cap 120)

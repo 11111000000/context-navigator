@@ -23,7 +23,7 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-ui)
 (require 'context-navigator-gptel-bridge)
-(require 'context-navigator-controls-icons)
+(require 'context-navigator-view-controls-icons)
 
 ;; Forward decls (byte-compiler friendliness)
 (declare-function context-navigator-state-items "context-navigator-core" (state))
@@ -122,9 +122,9 @@
 
 (defun context-navigator-multifile--icon-or-label (key &optional state text)
   "Return icon for KEY with STATE or fallback TEXT (space-prefixed)."
-  (let ((ico (and (fboundp 'context-navigator-controls-icons-available-p)
-                  (context-navigator-controls-icons-available-p)
-                  (context-navigator-controls-icon key state))))
+  (let ((ico (and (fboundp 'context-navigator-view-controls-icons-available-p)
+                  (context-navigator-view-controls-icons-available-p)
+                  (context-navigator-view-controls-icon key state))))
     (if (and (stringp ico) (> (length ico) 0))
         (concat " " ico)
       (concat " " (or text (symbol-name key))))))

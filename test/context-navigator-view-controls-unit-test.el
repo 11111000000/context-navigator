@@ -17,7 +17,7 @@
 
 (ert-deftest ctxnav-controls/segments-contain-expected-actions-and-toggles ()
   "Controls should expose expected action and toggle symbols as text properties."
-  (let ((context-navigator-controls-style 'text)
+  (let ((context-navigator-view-controls-style 'text)
         (context-navigator-language 'en))
     ;; Pretend gptel is available so push toggle has active help/keys
     (cl-letf (((symbol-function 'context-navigator-gptel-available-p) (lambda () t)))
@@ -34,7 +34,7 @@
 
 (ert-deftest ctxnav-controls/wrap-lines-fit-width ()
   "controls-lines must wrap segments to fit TOTAL-WIDTH."
-  (let ((context-navigator-controls-style 'text)
+  (let ((context-navigator-view-controls-style 'text)
         (context-navigator-language 'en))
     (let ((lines (context-navigator-view-controls-lines 16)))
       (should (and (listp lines) (> (length lines) 0)))

@@ -22,7 +22,7 @@
 (require 'context-navigator-view-segments)
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
-(require 'context-navigator-controls-icons)
+(require 'context-navigator-view-controls-icons)
 
 ;; Declarations to avoid load cycles; provided by context-navigator-view or core.
 (declare-function context-navigator-view-open-all-buffers "context-navigator-view-actions" ())
@@ -59,6 +59,12 @@
 Used as the header-line background in the Navigator buffer."
   :group 'context-navigator-view-controls)
 
+(defface context-navigator-view-controls-disabled-face
+  '((t :foreground "gray25"))
+  "Face for disabled header-line controls.
+Only changes foreground (no height/weight), so icon/text size stays stable."
+  :group 'context-navigator-view-controls)
+
 (defvar-local context-navigator--headerline-face-cookie nil
   "Face-remap cookie for remapping the header-line face in Navigator buffer.")
 
@@ -84,6 +90,20 @@ Used as the header-line background in the Navigator buffer."
 
 ;; Apply default header-line face now if the buffer already exists.
 (context-navigator-view-controls--ensure-headerline-face)
+
+(defun context-navigator-view-controls--after-control-invoke ()
+  "Force immediate UI/header-line refresh after a control command."
+  (let ((buf (get-buffer "*context-navigator*")))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        ;; Invalidate view and headerline caches and refresh immediately.
+        (setq-local context-navigator-render--last-hash nil)
+        (setq-local context-navigator-view--last-render-key nil)
+        (setq-local context-navigator-headerline--cache-key nil)
+        (setq-local context-navigator-headerline--cache-str nil)
+        (force-mode-line-update t)
+        (when (fboundp 'context-navigator-view--render-if-visible)
+          (context-navigator-view--render-if-visible))))))
 
 ;; ---- Small pure helpers for gating push/autopush ---------------------------
 
@@ -123,7 +143,7 @@ Rule: selection non-empty AND aggregated enabled items > 0."
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (and (listp items)
          (cl-some (lambda (it) (and (context-navigator-item-p it)
-                                    (context-navigator-item-enabled it)))
+                               (context-navigator-item-enabled it)))
                   items))))
 
 (defun context-navigator-view-controls--push-disabled-reason ()
@@ -156,7 +176,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
 ;; Registry: declarative descriptors for each control (logic + appearance).
 ;; Each entry is (KEY . plist), where plist supports:
 ;;  :type       'toggle | 'action
-;;  :icon-key   symbol passed to context-navigator-controls-icon
+;;  :icon-key   symbol passed to context-navigator-view-controls-icon
 ;;  :command    function symbol to call on click (mouse-1)
 ;;  :help       string or (lambda () string)
 ;;  :enabled-p  (lambda () boolean)
@@ -165,7 +185,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
 ;;  :spinner-fn (lambda () string-or-nil)   ; optional spinner
 ;;  :label-fn   (lambda (style state) string) ; fallback label when no icon/spinner
 ;;  :face-fn    (lambda (style state) face-or-plist) ; optional face for text fallback
-(defcustom context-navigator-controls-registry
+(defcustom context-navigator-view-controls-registry
   (let ((tr #'context-navigator-i18n))
     `(
       (push
@@ -395,7 +415,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
 (defun context-navigator-view-controls--render (key)
   "Render a single control segment for KEY using the controls registry.
 Returns a propertized string or nil when not visible."
-  (let* ((desc (alist-get key context-navigator-controls-registry))
+  (let* ((desc (alist-get key context-navigator-view-controls-registry))
          (type (plist-get desc :type))
          (cmd  (plist-get desc :command))
          (help (plist-get desc :help))
@@ -403,10 +423,10 @@ Returns a propertized string or nil when not visible."
                       (ignore-errors (funcall fn))))
          (visible-p (let ((fn (or (plist-get desc :visible-p) (lambda () t))))
                       (ignore-errors (funcall fn))))
-         (style (or context-navigator-controls-style 'auto)))
+         (style (or context-navigator-view-controls-style 'auto)))
     (when (and desc visible-p)
-      (let* ((gicons (and (fboundp 'context-navigator-controls-icons-available-p)
-                          (context-navigator-controls-icons-available-p)))
+      (let* ((gicons (and (fboundp 'context-navigator-view-controls-icons-available-p)
+                          (context-navigator-view-controls-icons-available-p)))
              (state (when (eq type 'toggle)
                       (let ((fn (plist-get desc :state-fn)))
                         (when (functionp fn) (ignore-errors (funcall fn))))))
@@ -414,7 +434,7 @@ Returns a propertized string or nil when not visible."
                         (when (functionp fn) (ignore-errors (funcall fn)))))
              (icon-key (plist-get desc :icon-key))
              (ico (and gicons (not spinner)
-                       (context-navigator-controls-icon icon-key state)))
+                       (context-navigator-view-controls-icon icon-key state)))
              (label (cond
                      (spinner (concat " " spinner))
                      (ico     (concat " " ico))
@@ -423,8 +443,15 @@ Returns a propertized string or nil when not visible."
              ;; Ensure we work on a writable string copy
              (s (copy-sequence (or label "")))
              (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0))
-             (km (when (and cmd enabled-p)
-                   (ignore-errors (context-navigator-view-ui-make-keymap cmd))))
+             (km (let ((wrapped
+                        (and cmd enabled-p
+                             (let ((orig cmd))
+                               (lambda ()
+                                 (interactive)
+                                 (call-interactively orig)
+                                 (context-navigator-view-controls--after-control-invoke))))))
+                   (when wrapped
+                     (ignore-errors (context-navigator-view-ui-make-keymap wrapped)))))
              (help-str (context-navigator-view-controls--plist-fn help)))
         (when (> (length s) 0)
           (let ((props (list 'mouse-face 'highlight
@@ -438,8 +465,6 @@ Returns a propertized string or nil when not visible."
             (when (eq type 'action)
               (setq props (append props (list 'context-navigator-action key))))
             (add-text-properties beg (length s) props s))
-          (unless enabled-p
-            (add-text-properties beg (length s) (list 'face 'shadow) s))
           ;; Apply optional face for textual fallback when icons are not used.
           (when-let* ((ff (plist-get desc :face-fn))
                       (face (and (functionp ff) (funcall ff style state))))
@@ -447,7 +472,13 @@ Returns a propertized string or nil when not visible."
               (add-text-properties beg (length s)
                                    (list 'face (or (and (symbolp face) face)
                                                    (and (listp face) face)))
-                                   s))))
+                                   s)))
+          ;; Dim disabled without changing size using a dedicated face (foreground only).
+          (unless enabled-p
+            ;; Prepend the face so its foreground overrides icon/text colors.
+            (add-face-text-property beg (length s)
+                                    'context-navigator-view-controls-disabled-face
+                                    nil s)))
         (and (> (length s) 0) s)))))
 
 (defun context-navigator-view-controls-segments (&optional _where)
@@ -465,7 +496,7 @@ Returns a propertized string or nil when not visible."
 ;; Auto-refresh UI when registry or order variables change.
 (when (fboundp 'add-variable-watcher)
   (dolist (sym '(context-navigator-headerline-controls-order
-                 context-navigator-controls-registry))
+                 context-navigator-view-controls-registry))
     (add-variable-watcher
      sym
      (lambda (&rest _)

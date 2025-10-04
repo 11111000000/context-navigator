@@ -7,10 +7,10 @@
 
 (ert-deftest cn/controls-icons-no-brackets-when-available ()
   "When icon provider is available, first toggle (push) must not contain '['."
-  (cl-letf (((symbol-function 'context-navigator-controls-icons-available-p) (lambda () t))
-            ((symbol-function 'context-navigator-controls-icon)
+  (cl-letf (((symbol-function 'context-navigator-view-controls-icons-available-p) (lambda () t))
+            ((symbol-function 'context-navigator-view-controls-icon)
              (lambda (&rest _args) "◎"))) ;; any single-glyph placeholder
-    (let ((context-navigator-controls-style 'icons))
+    (let ((context-navigator-view-controls-style 'icons))
       (let* ((segs (context-navigator-view-controls-segments :inline))
              (first (car segs)))
         (should (stringp first))
@@ -18,10 +18,10 @@
 
 (ert-deftest cn/controls-fallback-brackets-when-icons-unavailable ()
   "When icons are unavailable, first toggle (push) should fall back to '[...]' compact label."
-  (cl-letf (((symbol-function 'context-navigator-controls-icons-available-p) (lambda () nil))
-            ((symbol-function 'context-navigator-controls-icon)
+  (cl-letf (((symbol-function 'context-navigator-view-controls-icons-available-p) (lambda () nil))
+            ((symbol-function 'context-navigator-view-controls-icon)
              (lambda (&rest _args) nil)))
-    (let ((context-navigator-controls-style 'icons))
+    (let ((context-navigator-view-controls-style 'icons))
       (let* ((segs (context-navigator-view-controls-segments :inline))
              (first (car segs)))
         (should (stringp first))

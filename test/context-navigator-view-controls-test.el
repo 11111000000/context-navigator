@@ -7,7 +7,7 @@
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-off-no-gptel ()
   "When push is OFF and gptel is empty, show [Push now] and [Toggle All Gptel] (disabled)."
-  (let ((context-navigator-controls-style 'text)
+  (let ((context-navigator-view-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf (((symbol-value 'context-navigator--push-to-gptel) nil)
               ((symbol-function 'context-navigator-gptel-pull) (lambda () '())))
@@ -18,7 +18,7 @@
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-off-has-gptel ()
   "When push is OFF and gptel has entries, show both [Push now] and [Toggle All Gptel]."
-  (let ((context-navigator-controls-style 'text)
+  (let ((context-navigator-view-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) nil)
                ((symbol-function 'context-navigator-gptel-pull)
@@ -30,7 +30,7 @@
 
 (ert-deftest ctxnav-sidebar/footer-controls-push-on-has-gptel ()
   "When push is ON and gptel has entries, [Push now] is present (disabled), [Toggle All Gptel] is present."
-  (let ((context-navigator-controls-style 'text)
+  (let ((context-navigator-view-controls-style 'text)
         (context-navigator-language 'en))
     (cl-letf* (((symbol-value 'context-navigator--push-to-gptel) t)
                ((symbol-function 'context-navigator-gptel-pull)

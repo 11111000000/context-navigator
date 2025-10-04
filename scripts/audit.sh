@@ -532,7 +532,7 @@ fi
 # Controls registry/order/icons consistency
 sec "Controls (order/registry/icons) consistency"
 ORDER_FILE="${LISP_DIR}/context-navigator-view-controls.el"
-ICONS_FILE="${LISP_DIR}/context-navigator-controls-icons.el"
+ICONS_FILE="${LISP_DIR}/context-navigator-view-controls-icons.el"
 TMP_ORDER="${TMPD}/controls_order.txt"
 TMP_REG="${TMPD}/controls_registry.txt"
 TMP_ICONS="${TMPD}/controls_icons.txt"
@@ -554,7 +554,7 @@ if have emacs; then
   emacs --batch -Q -L "${LISP_DIR}" \
     --eval "(progn
               (require 'context-navigator-view-controls)
-              (dolist (cell (bound-and-true-p context-navigator-controls-registry))
+              (dolist (cell (bound-and-true-p context-navigator-view-controls-registry))
                 (let ((k (car-safe cell)))
                   (when (symbolp k) (princ (symbol-name k)) (terpri)))))" \
     | sort -u > "${TMP_REG}" || true
@@ -562,8 +562,8 @@ if have emacs; then
   # ICONS keys (top-level alist keys)
   emacs --batch -Q -L "${LISP_DIR}" \
     --eval "(progn
-              (require 'context-navigator-controls-icons)
-              (dolist (cell (bound-and-true-p context-navigator-controls-icon-map))
+              (require 'context-navigator-view-controls-icons)
+              (dolist (cell (bound-and-true-p context-navigator-view-controls-icon-map))
                 (let ((k (car-safe cell)))
                   (when (symbolp k) (princ (symbol-name k)) (terpri)))))" \
     | sort -u > "${TMP_ICONS}" || true
@@ -578,10 +578,10 @@ else
       | egrep -E '^[A-Za-z0-9_-]+$' \
       | sort -u > "${TMP_ORDER}" || :
 
-    ${RG} --no-filename --pcre2 "(?s)defcustom\\s+context-navigator-controls-registry.*?(?:\\n\\s*\\(([A-Za-z0-9_-]+)\\b)" "${ORDER_FILE}" \
+    ${RG} --no-filename --pcre2 "(?s)defcustom\\s+context-navigator-view-controls-registry.*?(?:\\n\\s*\\(([A-Za-z0-9_-]+)\\b)" "${ORDER_FILE}" \
       --replace '$1' | sort -u > "${TMP_REG}" || :
 
-    ${RG} --no-filename --pcre2 "(?s)defcustom\\s+context-navigator-controls-icon-map.*?\\n\\s*\\('?\\(([A-Za-z0-9_-]+)[[:space:]]*\\.)" "${ICONS_FILE}" \
+    ${RG} --no-filename --pcre2 "(?s)defcustom\\s+context-navigator-view-controls-icon-map.*?\\n\\s*\\('?\\(([A-Za-z0-9_-]+)[[:space:]]*\\.)" "${ICONS_FILE}" \
       --replace '$1' \
       | grep -Ev '^(on|off|faicon|material|octicon)$' \
       | sort -u > "${TMP_ICONS}" || :
@@ -592,10 +592,10 @@ else
       | grep -E '^[A-Za-z0-9_-]+$' \
       | grep -v '^gap$' \
       | sort -u > "${TMP_ORDER}" || :
-    sed -n '/defcustom[[:space:]]\+context-navigator-controls-registry/,/)/p' "${ORDER_FILE}" \
+    sed -n '/defcustom[[:space:]]\+context-navigator-view-controls-registry/,/)/p' "${ORDER_FILE}" \
       | sed -n 's/^[[:space:]]*(\([A-Za-z0-9_-]\+\)).*/\1/p' \
       | sort -u > "${TMP_REG}" || :
-    sed -n '/defcustom[[:space:]]\+context-navigator-controls-icon-map/,/)/p' "${ICONS_FILE}" \
+    sed -n '/defcustom[[:space:]]\+context-navigator-view-controls-icon-map/,/)/p' "${ICONS_FILE}" \
       | sed "s/'//g" \
       | sed -n 's/^[[:space:]]*(\([A-Za-z0-9_-]\+\)[[:space:]]*\..*/\1/p' \
       | grep -Ev '^(on|off|faicon|material|octicon)$' \
@@ -631,7 +631,7 @@ TMP_LOCAL="${TMPD}/icon_local_prefixes.txt"
 : > "${TMP_LOCAL}"
 if have emacs; then
   emacs --batch -Q -L "${LISP_DIR}" \
-    --eval "(progn (require 'context-navigator-controls-icons) (dolist (p (bound-and-true-p context-navigator-controls-icon-local-prefixes)) (princ p) (terpri)))" \
+    --eval "(progn (require 'context-navigator-view-controls-icons) (dolist (p (bound-and-true-p context-navigator-view-controls-icon-local-prefixes)) (princ p) (terpri)))" \
     > "${TMP_LOCAL}" || true
 fi
 if [[ -s "${TMP_LOCAL}" ]]; then
