@@ -19,6 +19,11 @@
 (require 'context-navigator-stats)
 (require 'context-navigator-log)
 (require 'context-navigator-view-pinned-title)
+(require 'context-navigator-persist)
+
+(defcustom context-navigator-view-restore-cursor t
+  "When non-nil, restore last cursor position in items view per group between sessions."
+  :type 'boolean :group 'context-navigator)
 
 ;;;###autoload
 (defun context-navigator-view-items-header-lines (total-width)
@@ -303,6 +308,105 @@ REST is a list of item lines."
 
 
 
+(defun context-navigator-view--items--head-lines (hl)
+  "Return header lines list depending on HL presence."
+  (if (and (stringp hl) (> (length (string-trim hl)) 0))
+      (list hl "")
+    (list (propertize " " 'context-navigator-reserved-line t))))
+
+(defun context-navigator-view--items--build-lines (hl up rest footer)
+  "Assemble final list of lines from pieces."
+  (let* ((head (context-navigator-view--items--head-lines hl))
+         (body (append head (list up) rest footer)))
+    body))
+
+(defun context-navigator-view--items--apply-lines (lines header)
+  "Apply LINES to current buffer and record bookkeeping; emit debug trace."
+  (setq context-navigator-view--last-lines lines
+        context-navigator-view--header header)
+  (let ((context-navigator-render--skip-restore context-navigator-view--restore-once))
+    (context-navigator-render-apply-to-buffer (current-buffer) lines))
+  (ignore-errors
+    (when (fboundp 'context-navigator-debug)
+      (let ((props (text-properties-at (point))))
+        (context-navigator-debug :trace :ui
+                                 "after-apply: point=%d header=%s interactive=%s up=%s"
+                                 (point)
+                                 (and (plist-member props 'context-navigator-header) t)
+                                 (and (plist-member props 'context-navigator-interactive) t)
+                                 (and (plist-member props 'context-navigator-groups-up) t)))))
+  lines)
+
+(defun context-navigator-view--items--sticky-restore ()
+  "Restore sticky cursor position if requested; consumes sticky flags."
+  (when (and (boundp 'context-navigator-view--sticky-item-key)
+             context-navigator-view--sticky-item-key)
+    (let* ((target-key context-navigator-view--sticky-item-key)
+           (saved-start (and (boundp 'context-navigator-view--sticky-window-start)
+                             context-navigator-view--sticky-window-start))
+           (win (get-buffer-window (current-buffer) t))
+           (pos (save-excursion
+                  (let ((p (point-min)) (found nil))
+                    (while (and (not found)
+                                (setq p (text-property-not-all p (point-max)
+                                                               'context-navigator-item nil)))
+                      (let* ((it (get-text-property p 'context-navigator-item))
+                             (k  (and it (context-navigator-model-item-key it))))
+                        (when (and (stringp k) (string= k target-key))
+                          (setq found p)))
+                      (setq p (1+ p)))
+                    found))))
+      (ignore-errors
+        (context-navigator-debug :trace :ui "sticky-restore: key=%s pos=%s saved-start=%s"
+                                 target-key pos saved-start))
+      (when pos
+        (goto-char pos)
+        (beginning-of-line))
+      (when (and (window-live-p win)
+                 (integerp saved-start))
+        (set-window-start win saved-start t)))
+    ;; consume sticky flags
+    (setq context-navigator-view--sticky-item-key nil)
+    (setq context-navigator-view--sticky-window-start nil)))
+
+(defun context-navigator-view--items--persist-restore ()
+  "Restore saved cursor (item key or \"..\") once after the first full items render.
+Does not adjust window-start; Emacs will ensure point visibility."
+  (when (and (boundp 'context-navigator-view--restore-once)
+             context-navigator-view--restore-once)
+    (setq context-navigator-view--restore-once nil)
+    (let* ((st (ignore-errors (context-navigator--state-get)))
+           (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+           (slug (and st (ignore-errors (context-navigator-state-current-group-slug st))))
+           (pos (and (stringp slug)
+                     (ignore-errors (context-navigator-persist-state-get-last-pos root slug))))
+           (key (and (listp pos) (plist-get pos :key)))
+           (target nil))
+      (setq key (if (and (stringp key) (not (string-empty-p key))) key ".."))
+      (cond
+       ((string= key "..")
+        (setq target (text-property-not-all (point-min) (point-max)
+                                            'context-navigator-groups-up nil)))
+       (t
+        (let ((p (point-min)) (found nil))
+          (while (and (not found)
+                      (setq p (text-property-not-all p (point-max)
+                                                     'context-navigator-item nil)))
+            (let* ((it (get-text-property p 'context-navigator-item))
+                   (k  (and it (context-navigator-model-item-key it))))
+              (when (and (stringp k) (string= k key))
+                (setq found p)))
+            (setq p (1+ p)))
+          (setq target found))))
+      (unless target
+        (setq target (text-property-not-all (point-min) (point-max)
+                                            'context-navigator-groups-up nil)))
+      (when target
+        (goto-char target)
+        (beginning-of-line))
+      (when (and (stringp key) (not (string-empty-p key)))
+        (setq-local context-navigator-view--last-cursor-key key)))))
+
 ;;;###autoload
 (defun context-navigator-view-render-items (state header total-width)
   "Render items view using STATE and TOTAL-WIDTH (with inline fallback title when needed).
@@ -310,63 +414,10 @@ Returns the list of lines that were rendered."
   (cl-destructuring-bind (hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
     (let* ((footer (context-navigator-view-items-footer-lines total-width))
-           ;; posframe активен → hl пустой: добавляем одну служебную пустую строку (неинтерактивную)
-           ;; fallback-инлайн → показываем заголовок и пустую строку под ним
-           (head (if (and (stringp hl) (> (length (string-trim hl)) 0))
-                     (list hl "")
-                   (list (propertize " " 'context-navigator-reserved-line t))))
-           (body (append head (list up) rest footer))
-           (lines body))
-      (setq context-navigator-view--last-lines lines
-            context-navigator-view--header header)
-      ;; When we explicitly want to focus \"..\" (entering items from groups),
-      ;; skip restoring old point/window-start inside render-apply to avoid
-      ;; keeping the previous line index from the groups list.
-      (let ((context-navigator-render--skip-restore context-navigator-view--focus-up-once))
-        (context-navigator-render-apply-to-buffer (current-buffer) lines))
-      ;; Focus the \"..\" line (second visible строка) при входе из групп
-      (when (and (boundp 'context-navigator-view--focus-up-once)
-                 context-navigator-view--focus-up-once)
-        (setq context-navigator-view--focus-up-once nil)
-        (let ((pos (or
-                    ;; точечно: искать строку \"..\"
-                    (text-property-not-all (point-min) (point-max)
-                                           'context-navigator-groups-up nil)
-                    ;; иначе первый интерактивный элемент
-                    (ignore-errors (context-navigator-view--find-next-interactive-pos (point-min)))
-                    ;; запасной вариант — вторая строка
-                    (save-excursion (goto-char (point-min)) (forward-line 1) (point)))))
-          (when pos
-            (goto-char pos)
-            (beginning-of-line))))
-
-      ;; Sticky restore: keep point and scroll on the same item line after soft re-render.
-      (when (and (boundp 'context-navigator-view--sticky-item-key)
-                 context-navigator-view--sticky-item-key)
-        (let* ((target-key context-navigator-view--sticky-item-key)
-               (saved-start (and (boundp 'context-navigator-view--sticky-window-start)
-                                 context-navigator-view--sticky-window-start))
-               (win (get-buffer-window (current-buffer) t))
-               (pos (save-excursion
-                      (let ((p (point-min)) (found nil))
-                        (while (and (not found)
-                                    (setq p (text-property-not-all p (point-max)
-                                                                   'context-navigator-item nil)))
-                          (let* ((it (get-text-property p 'context-navigator-item))
-                                 (k  (and it (context-navigator-model-item-key it))))
-                            (when (and (stringp k) (string= k target-key))
-                              (setq found p)))
-                          (setq p (1+ p)))
-                        found))))
-          (when pos
-            (goto-char pos)
-            (beginning-of-line))
-          (when (and (window-live-p win)
-                     (integerp saved-start))
-            (set-window-start win saved-start t)))
-        ;; consume sticky flags
-        (setq context-navigator-view--sticky-item-key nil)
-        (setq context-navigator-view--sticky-window-start nil))
+           (lines (context-navigator-view--items--build-lines hl up rest footer)))
+      (context-navigator-view--items--apply-lines lines header)
+      (context-navigator-view--items--sticky-restore)
+      (context-navigator-view--items--persist-restore)
       lines)))
 
 (defun context-navigator-view-debug-dump-lines ()

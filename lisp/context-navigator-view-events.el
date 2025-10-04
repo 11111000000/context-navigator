@@ -18,6 +18,9 @@
 (require 'context-navigator-events)
 (require 'context-navigator-core)
 (require 'context-navigator-view-constants)
+(require 'context-navigator-persist)
+(require 'context-navigator-model)
+(require 'context-navigator-log)
 
 ;; Buffer-local state from the main view (declared there)
 (defvar context-navigator-view--subs nil)
@@ -33,6 +36,83 @@
 (declare-function context-navigator-view--invalidate-openable "context-navigator-view" ())
 (declare-function context-navigator-view--spinner-start "context-navigator-view" ())
 (declare-function context-navigator-view--spinner-stop "context-navigator-view" ())
+
+;; Navigation helpers used to find nearest itemish anchors
+(declare-function context-navigator-view--find-prev-itemish-pos "context-navigator-view-navigation" (&optional start))
+(declare-function context-navigator-view--find-next-itemish-pos "context-navigator-view-navigation" (&optional start))
+
+(defun context-navigator-view--track-cursor-post-cmd ()
+  "Buffer-local post-command hook: track last cursor anchor in items view.
+Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
+  (when (eq context-navigator-view--mode 'items)
+    (let ((key nil))
+      (cond
+       ((get-text-property (point) 'context-navigator-item)
+        (let ((it (get-text-property (point) 'context-navigator-item)))
+          (setq key (and it (context-navigator-model-item-key it)))))
+       ((get-text-property (point) 'context-navigator-groups-up)
+        (setq key ".."))
+       (t
+        ;; find nearest itemish (prev/next) and prefer the closest by line distance
+        (let* ((here (line-number-at-pos))
+               (pp (context-navigator-view--find-prev-itemish-pos (point)))
+               (np (context-navigator-view--find-next-itemish-pos (point)))
+               (dprev (and pp (save-excursion (goto-char pp) (line-number-at-pos))))
+               (dnext (and np (save-excursion (goto-char np) (line-number-at-pos))))
+               (choose
+                (cond
+                 ((and dprev dnext)
+                  (if (<= (abs (- here dprev)) (abs (- dnext here))) pp np))
+                 (dprev pp)
+                 (dnext np)
+                 (t nil))))
+          (when choose
+            (save-excursion
+              (goto-char choose)
+              (cond
+               ((get-text-property (point) 'context-navigator-item)
+                (let ((it (get-text-property (point) 'context-navigator-item)))
+                  (setq key (and it (context-navigator-model-item-key it)))))
+               ((get-text-property (point) 'context-navigator-groups-up)
+                (setq key ".."))))))))
+      (when (and (stringp key) (not (string-empty-p key)))
+        (setq context-navigator-view--last-cursor-key key)))))
+
+(defun context-navigator-view--save-items-cursor-state ()
+  "Capture current items cursor (key or \"..\") and persist per group in state.el."
+  (when (and (eq major-mode 'context-navigator-view-mode)
+             (eq context-navigator-view--mode 'items))
+    (let* ((key (and (stringp context-navigator-view--last-cursor-key)
+                     (not (string-empty-p context-navigator-view--last-cursor-key))
+                     context-navigator-view--last-cursor-key)))
+      (unless key
+        (cond
+         ((get-text-property (point) 'context-navigator-item)
+          (let ((it (get-text-property (point) 'context-navigator-item)))
+            (setq key (and it (context-navigator-model-item-key it)))))
+         ((get-text-property (point) 'context-navigator-groups-up)
+          (setq key ".."))
+         (t
+          (let* ((pp (context-navigator-view--find-prev-itemish-pos (point)))
+                 (np (context-navigator-view--find-next-itemish-pos (point)))
+                 (choose (or pp np)))
+            (when choose
+              (save-excursion
+                (goto-char choose)
+                (cond
+                 ((get-text-property (point) 'context-navigator-item)
+                  (let ((it (get-text-property (point) 'context-navigator-item)))
+                    (setq key (and it (context-navigator-model-item-key it)))))
+                 ((get-text-property (point) 'context-navigator-groups-up)
+                  (setq key "..")))))))))
+      (setq key (or key ".."))
+      (let* ((st (ignore-errors (context-navigator--state-get)))
+             (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+             (slug (and st (ignore-errors (context-navigator-state-current-group-slug st)))))
+        (when (and (stringp slug) (not (string-empty-p slug)))
+          (ignore-errors
+            (context-navigator-persist-state-put-last-pos root slug (list :key key)))))
+      key)))
 
 ;;;###autoload
 (defun context-navigator-view-refresh ()
@@ -62,86 +142,92 @@
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
+;; Handlers for load lifecycle and gptel batch events (small and focused)
+
+(defun context-navigator-view--on-context-load-start (&rest _)
+  "Handler: context load started."
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq context-navigator-view--load-progress t)
+        (ignore-errors (context-navigator-view--spinner-start))
+        (context-navigator-view--schedule-render)))))
+
+(defun context-navigator-view--on-context-load-step (_root pos total)
+  "Handler: context load progress step (debounced to avoid render storms)."
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq context-navigator-view--load-progress
+              (and (numberp pos) (numberp total) (cons pos total)))
+        (context-navigator-events-debounce
+         :preloader-render 0.12
+         (lambda ()
+           (let ((b (get-buffer context-navigator-view--buffer-name)))
+             (when (buffer-live-p b)
+               (with-current-buffer b
+                 (context-navigator-view--schedule-render))))))))))
+
+(defun context-navigator-view--on-context-load-done (&rest _)
+  "Handler: context load finished."
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq context-navigator-view--load-progress nil)
+        (ignore-errors (context-navigator-view--spinner-stop))
+        (context-navigator-view--schedule-render)))))
+
+(defun context-navigator-view--on-gptel-change (subtype &rest args)
+  "Handler: gptel batch lifecycle events."
+  (let ((buf (get-buffer context-navigator-view--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (pcase subtype
+          (:batch-start
+           (ignore-errors (context-navigator-view--spinner-start))
+           (context-navigator-view--schedule-render)
+           (when (and (integerp (car-safe args)))
+             (let ((total (car args))
+                   (start (cadr args)))
+               (setq context-navigator-view--gptel-batch-start-time
+                     (or (and (numberp start) start) (float-time)))
+               (context-navigator-ui-info :push-state
+                                          (format "Pushing %d items..." total)))))
+          (:batch-done
+           (ignore-errors (context-navigator-view--spinner-stop))
+           (context-navigator-view--schedule-render)
+           (let ((total (car-safe args))
+                 (now (float-time))
+                 (start (or context-navigator-view--gptel-batch-start-time 0.0)))
+             (when (and (integerp total))
+               (context-navigator-ui-info :pushed-items total))
+             (when (and (numberp start) (> start 0.0))
+               (let ((dur (format "%.2fs" (max 0.0 (- now start)))))
+                 (context-navigator-ui-info :pushed-items-done (or total 0) dur)))
+             (setq context-navigator-view--gptel-batch-start-time nil)))
+          (:batch-cancel
+           (ignore-errors (context-navigator-view--spinner-stop))
+           (setq context-navigator-view--gptel-batch-start-time nil)
+           (context-navigator-view--schedule-render))
+          (_ nil))))))
+
 (defun context-navigator-view--subscribe-load-events ()
-  "Subscribe to context load lifecycle to show a lightweight preloader."
+  "Subscribe to context load lifecycle and gptel batch events."
   ;; Start: mark progress, kick spinner, force a render
   (push (context-navigator-events-subscribe
-         :context-load-start
-         (lambda (&rest _)
-           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (setq context-navigator-view--load-progress t)
-                 (ignore-errors (context-navigator-view--spinner-start))
-                 (context-navigator-view--schedule-render))))))
+         :context-load-start #'context-navigator-view--on-context-load-start)
         context-navigator-view--subs)
   ;; Step: update (pos . total), keep spinner running, re-render
   (push (context-navigator-events-subscribe
-         :context-load-step
-         (lambda (_root pos total)
-           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (setq context-navigator-view--load-progress
-                       (and (numberp pos) (numberp total) (cons pos total)))
-                 (context-navigator-view--schedule-render))))))
+         :context-load-step #'context-navigator-view--on-context-load-step)
         context-navigator-view--subs)
   ;; Done: clear progress, stop spinner, re-render
   (push (context-navigator-events-subscribe
-         :context-load-done
-         (lambda (&rest _)
-           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (setq context-navigator-view--load-progress nil)
-                 (ignore-errors (context-navigator-view--spinner-stop))
-                 (context-navigator-view--schedule-render))))))
+         :context-load-done #'context-navigator-view--on-context-load-done)
         context-navigator-view--subs)
-
-  ;; Subscribe to gptel batch lifecycle events to show spinner/progress in the sidebar.
-  ;; Events published by core: (context-navigator-events-publish :gptel-change :batch-start N START-TIME)
-  ;;                                (context-navigator-events-publish :gptel-change :batch-done N)
-  ;;                                (context-navigator-events-publish :gptel-change :batch-cancel)
+  ;; GPTel batch lifecycle
   (push (context-navigator-events-subscribe
-         :gptel-change
-         (lambda (subtype &rest args)
-           (let ((buf (get-buffer context-navigator-view--buffer-name)))
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (pcase subtype
-                   (:batch-start
-                    ;; Start spinner and schedule render; args => (TOTAL START-TIME)
-                    (ignore-errors (context-navigator-view--spinner-start))
-                    (context-navigator-view--schedule-render)
-                    (when (and (integerp (car-safe args)))
-                      ;; record start time in buffer-local var if provided
-                      (let ((total (car args))
-                            (start (cadr args)))
-                        (setq context-navigator-view--gptel-batch-start-time
-                              (or (and (numberp start) start) (float-time)))
-                        (context-navigator-ui-info :push-state
-                                                   (format "Pushing %d items..." total)))))
-                   (:batch-done
-                    ;; Stop spinner, show done message and schedule render; args => (TOTAL)
-                    (ignore-errors (context-navigator-view--spinner-stop))
-                    (context-navigator-view--schedule-render)
-                    (let ((total (car-safe args))
-                          (now (float-time))
-                          (start (or context-navigator-view--gptel-batch-start-time 0.0)))
-                      (when (and (integerp total))
-                        (context-navigator-ui-info :pushed-items total))
-                      ;; Show duration if start time available
-                      (when (and (numberp start) (> start 0.0))
-                        (let ((dur (format "%.2fs" (max 0.0 (- now start)))))
-                          (context-navigator-ui-info :pushed-items-done (or total 0) dur)))
-                      ;; reset buffer-local start time
-                      (setq context-navigator-view--gptel-batch-start-time nil)))
-                   (:batch-cancel
-                    ;; Stop spinner and schedule render
-                    (ignore-errors (context-navigator-view--spinner-stop))
-                    (setq context-navigator-view--gptel-batch-start-time nil)
-                    (context-navigator-view--schedule-render))
-                   (_ nil)))))))
+         :gptel-change #'context-navigator-view--on-gptel-change)
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-groups-events ()
@@ -152,9 +238,10 @@
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
-                 ;; При входе в items после переключения группы — фокус на «..»
+                 (ignore-errors (context-navigator-view--save-items-cursor-state))
                  (setq context-navigator-view--mode 'items)
-                 (setq context-navigator-view--focus-up-once t)
+                 ;; one-shot restore on first full items render after load
+                 (setq context-navigator-view--restore-once t)
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs)
   (push (context-navigator-events-subscribe
@@ -207,8 +294,11 @@
            (let ((buf (get-buffer context-navigator-view--buffer-name)))
              (when (buffer-live-p buf)
                (with-current-buffer buf
+                 (ignore-errors (context-navigator-view--save-items-cursor-state))
                  ;; ensure the next render is not short-circuited
                  (setq context-navigator-view--last-render-key nil)
+                 ;; force restore once when first items render comes after load
+                 (setq context-navigator-view--restore-once t)
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
@@ -293,14 +383,7 @@ hooks and a post-command updater. Also starts optional gptel polling."
                        (boundp 'context-navigator-view-modeline-enable)
                        context-navigator-view-modeline-enable)
               (force-mode-line-update nil))
-            ;; Не допускать курсор на служебной первой строке (под заголовком):
-            ;; если попали на неё (скролл/команды) — сдвинуться к первому интерактивному элементу.
-            (when (and (eq major-mode 'context-navigator-view-mode)
-                       (get-text-property (point) 'context-navigator-reserved-line))
-              (let ((pos (or
-                          (ignore-errors (context-navigator-view--find-next-interactive-pos (point-min)))
-                          (save-excursion (goto-char (point-min)) (forward-line 1) (point)))))
-                (when pos (goto-char pos))))))
+            ))
     (add-hook 'post-command-hook context-navigator-view--status-post-cmd-fn nil t)
     (when (fboundp 'context-navigator-view--initial-compute-counters)
       (context-navigator-view--initial-compute-counters))

@@ -134,6 +134,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-view-events-install "context-navigator-view-events" ())
 (declare-function context-navigator-view-events-remove "context-navigator-view-events" ())
 (declare-function context-navigator-view--subscribe-gptel-events "context-navigator-view-indicators" ())
+(declare-function context-navigator-view--track-cursor-post-cmd "context-navigator-view-events" ())
+(declare-function context-navigator-view--save-items-cursor-state "context-navigator-view-events" ())
 (declare-function context-navigator-view--init-gptel-cache       "context-navigator-view-indicators" ())
 (declare-function context-navigator-view--start-gptel-poll-timer "context-navigator-view-indicators" ())
 (declare-function context-navigator-view-help "context-navigator-view-help" ())
@@ -173,9 +175,12 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--sorted-root nil)            ;; root used for cached items sort
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 (defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
-(defvar-local context-navigator-view--focus-up-once nil)          ;; when t, focus the \"..\" line on next items render
+
 (defvar-local context-navigator-view--sticky-item-key nil)        ;; sticky: stable key of item to keep point on after re-render
 (defvar-local context-navigator-view--sticky-window-start nil)    ;; sticky: window-start to restore after re-render
+(defvar-local context-navigator-view--restore-once nil)           ;; one-shot: force cursor restore on next items render
+(defvar-local context-navigator-view--last-cursor-key nil)        ;; last observed cursor anchor (item key or "..")
+(defvar-local context-navigator-view--cursor-post-cmd-fn nil)     ;; post-command hook to track cursor anchor
 
 (defun context-navigator-view-toggle-collapse-immediate ()
   "Toggle collapse and render immediately."
@@ -344,12 +349,23 @@ background."
                          context-navigator--auto-project-switch))
            ;; Compose key (include session flags so toggles force a refresh)
            (key (list gen mode total gptel-hash openable plus header push-on auto-on context-navigator-view--collapsed-p)))
+      (when (equal key context-navigator-view--last-render-key)
+        (ignore-errors
+          (context-navigator-debug :trace :ui "render: skip (same key) %S" key)))
       (unless (equal key context-navigator-view--last-render-key)
+        (ignore-errors
+          (context-navigator-debug :trace :ui "render: run key=%S mode=%s total=%s" key mode total))
         (setq context-navigator-view--last-render-key key)
         ;; Fast path: show minimal preloader when loading or when progress is reported by events.
         (when (or (and (context-navigator-state-p state)
                        (context-navigator-state-loading-p state))
                   context-navigator-view--load-progress)
+          (ignore-errors
+            (context-navigator-debug :trace :ui
+                                     "render: preloader loading-p=%s progress=%s"
+                                     (and (context-navigator-state-p state)
+                                          (context-navigator-state-loading-p state))
+                                     context-navigator-view--load-progress))
           (context-navigator-view--render-loading state header total)
           (throw 'context-navigator-view--render nil))
         (cond
@@ -368,6 +384,10 @@ background."
               (win (get-buffer-window buf t)))
     (with-selected-window win
       (with-current-buffer buf
+        (ignore-errors
+          (context-navigator-debug :trace :ui
+                                   "render-if-visible: win=%s sel=%s"
+                                   win (eq (selected-window) win)))
         (context-navigator-view--render)))))
 
 (defun context-navigator-view--schedule-render (&optional also-invalidate)
@@ -382,6 +402,8 @@ model generation changed."
         (when also-invalidate
           ;; Reset caches only when explicitly requested
           (context-navigator-view--invalidate-render-caches t)))))
+  (ignore-errors
+    (context-navigator-debug :trace :ui "schedule-render also-invalidate=%s" also-invalidate))
   (context-navigator-events-debounce
    :sidebar-render 0.12
    #'context-navigator-view--render-if-visible))
@@ -529,7 +551,10 @@ Do not highlight purely decorative separators."
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
   ;; Используем стандартный hl-line (без собственных оверлеев)
-  (hl-line-mode 1))
+  (hl-line-mode 1)
+  ;; Track last cursor anchor (item key or "..") cheaply on every command; persist only on exit.
+  (setq context-navigator-view--cursor-post-cmd-fn #'context-navigator-view--track-cursor-post-cmd)
+  (add-hook 'post-command-hook context-navigator-view--cursor-post-cmd-fn nil t))
 
 ;;;###autoload
 (defun context-navigator-view-open ()
@@ -593,6 +618,10 @@ Do not highlight purely decorative separators."
     (when (buffer-live-p buf)
       ;; Remove buffer-local subscriptions/timers safely.
       (with-current-buffer buf
+        (ignore-errors (context-navigator-view--save-items-cursor-state))
+        ;; remove our local post-command hook (idempotent)
+        (ignore-errors (when context-navigator-view--cursor-post-cmd-fn
+                         (remove-hook 'post-command-hook context-navigator-view--cursor-post-cmd-fn t)))
         (ignore-errors
           (when (fboundp 'context-navigator-view-events-remove)
             (context-navigator-view-events-remove))))
@@ -639,8 +668,6 @@ Do not highlight purely decorative separators."
               (slug (car cell)))
     (ignore-errors (context-navigator-group-switch slug))
     (setq context-navigator-view--mode 'items)
-    ;; Focus the \"..\" line on the next items render
-    (setq context-navigator-view--focus-up-once t)
     (context-navigator-view--schedule-render)
     t))
 
@@ -665,6 +692,7 @@ Do not highlight purely decorative separators."
       (setq buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
+        (ignore-errors (context-navigator-view--save-items-cursor-state))
         (setq context-navigator-view--mode 'groups)
         ;; Force focus logic on next render: clear last-active so render will focus active group.
         (setq context-navigator-view--last-active-group nil))

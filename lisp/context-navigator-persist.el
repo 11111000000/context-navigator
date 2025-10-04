@@ -305,6 +305,35 @@ Publishes :context-load-step events during progress."
          (context-navigator-debug :error :persist "state save error: %S" err)
          nil)))))
 
+(defun context-navigator-persist-state--get-last-items-map (state)
+  "Extract last-items map from STATE (:last-items-pos alist) or return empty list."
+  (let ((m (and (listp state) (plist-get state :last-items-pos))))
+    (if (listp m) m '())))
+
+(defun context-navigator-persist-state-get-last-pos (root slug)
+  "Return saved last position plist for SLUG in ROOT (or global), or nil.
+
+Returned plist shape: (:key STRING :offset INT)
+:key may be \"..\" for the up-line; :offset is screen-lines from window-start."
+  (let* ((st (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+         (mp (context-navigator-persist-state--get-last-items-map st)))
+    (and (stringp slug)
+         (cdr (assoc slug mp)))))
+
+(defun context-navigator-persist-state-put-last-pos (root slug pos)
+  "Persist last position POS for group SLUG in ROOT (or global), return POS or nil.
+
+POS is a plist: (:key STRING :offset INT). :key may be \"..\"."
+  (when (and (stringp slug) (not (string-empty-p slug))
+             (listp pos))
+    (let* ((st (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+           (mp (context-navigator-persist-state--get-last-items-map st))
+           (mp2 (assq-delete-all slug mp))
+           (mp3 (cons (cons slug pos) mp2))
+           (st2 (plist-put (copy-sequence st) :last-items-pos mp3)))
+      (ignore-errors (context-navigator-persist-state-save root st2))
+      pos)))
+
 (defun context-navigator-persist-slugify (name)
   "Normalize NAME to a safe group slug:
 - downcase

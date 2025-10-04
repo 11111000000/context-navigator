@@ -94,6 +94,13 @@
                          (list 'face 'context-navigator-pinned-title-face
                                'context-navigator-header t)
                          s)
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :trace :ui
+                                 "pinned-title inline: mode=%s slug=%s posframe=%s"
+                                 (context-navigator-pinned-title--mode)
+                                 slug
+                                 (context-navigator-pinned-title--want-posframe-p))))
     s))
 
 (defun context-navigator-pinned-title--nav-window ()

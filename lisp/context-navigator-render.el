@@ -465,20 +465,57 @@ WIN is the window that shows the buffer, or nil."
     (when (and (window-live-p win) start)
       (set-window-start win start t))))
 
+(defun context-navigator-render--compute-apply-plan (buffer lines)
+  "Prepare a plan for applying LINES to BUFFER.
+Returns plist: (:win WIN :state STATE :new-hash HASH :changed BOOL)."
+  (let* ((win (context-navigator-render--window-for-buffer buffer))
+         (state (context-navigator-render--capture-window-state win))
+         (new-hash (context-navigator-render--lines-hash lines))
+         (changed (not (equal context-navigator-render--last-hash new-hash))))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :trace :render
+                                 "apply: changed=%s skip=%s old(line=%s col=%s) start=%s"
+                                 changed context-navigator-render--skip-restore
+                                 (plist-get state :point-line) (plist-get state :point-col)
+                                 (and (window-live-p win)
+                                      (with-current-buffer buffer
+                                        (save-excursion
+                                          (goto-char (or (window-start win) (point-min)))
+                                          (line-number-at-pos)))))))
+    (list :win win :state state :new-hash new-hash :changed changed)))
+
+(defun context-navigator-render--perform-apply (buffer lines plan)
+  "Apply LINES to BUFFER using PLAN from `context-navigator-render--compute-apply-plan'."
+  (let* ((inhibit-read-only t)
+         (win (plist-get plan :win))
+         (state (plist-get plan :state))
+         (new-hash (plist-get plan :new-hash)))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :trace :render "apply: writing %d lines" (length lines))))
+    (context-navigator-render--write-lines lines)
+    (setq context-navigator-render--last-hash new-hash)
+    (unless context-navigator-render--skip-restore
+      (context-navigator-render--restore-window-state win state))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (let ((cur-line (line-number-at-pos))
+              (wstart (and (window-live-p win)
+                           (with-current-buffer buffer
+                             (save-excursion
+                               (goto-char (or (window-start win) (point-min)))
+                               (line-number-at-pos))))))
+          (context-navigator-debug :trace :render
+                                   "apply: restored line=%s start=%s" cur-line wstart))))))
+
 (defun context-navigator-render-apply-to-buffer (buffer lines)
   "Replace BUFFER text with LINES when different.
 Preserve window point/column, mark and window-start best effort."
   (with-current-buffer buffer
-    (let* ((inhibit-read-only t)
-           (win (context-navigator-render--window-for-buffer buffer))
-           (state (context-navigator-render--capture-window-state win))
-           (new-hash (context-navigator-render--lines-hash lines))
-           (changed (not (equal context-navigator-render--last-hash new-hash))))
-      (when changed
-        (context-navigator-render--write-lines lines)
-        (setq context-navigator-render--last-hash new-hash)
-        (unless context-navigator-render--skip-restore
-          (context-navigator-render--restore-window-state win state))))))
+    (let ((plan (context-navigator-render--compute-apply-plan buffer lines)))
+      (when (plist-get plan :changed)
+        (context-navigator-render--perform-apply buffer lines plan)))))
 
 (defun context-navigator-render-build-lines (items &optional _header icon-fn left-width)
   "Compatibility wrapper kept after refactor: build item lines only; HEADER is ignored."

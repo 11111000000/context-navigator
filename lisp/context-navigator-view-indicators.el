@@ -71,15 +71,38 @@ Intended to run inside the view buffer."
     (context-navigator-view--update-gptel-keys-if-changed keys)))
 
 (defun context-navigator-view--on-gptel-change (&rest args)
-  "Handler for :gptel-change events.
+  "Handler for :gptel-change events (debounced, batch-aware).
 
-ARGS typically contain a source symbol; ignore noisy sources."
-  (let ((src (car args)))
-    (unless (context-navigator-view--gptel-noisy-src-p src)
-      (let ((buf (get-buffer context-navigator-view--buffer-name)))
-        (when (buffer-live-p buf)
-          (with-current-buffer buf
-            (context-navigator-view--maybe-refresh-gptel-keys)))))))
+- For lifecycle subtypes (:batch-start/:batch-done/:batch-cancel) we either
+  do nothing (start/cancel) or refresh once on :batch-done.
+- For noisy variable-watcher-like sources, ignore.
+- For regular changes, debounce keys snapshot refresh to coalesce bursts."
+  (let ((sub (car args)))
+    (cond
+     ;; Lifecycle subtypes from core batcher
+     ((keywordp sub)
+      (pcase sub
+        (:batch-start nil)
+        (:batch-cancel nil)
+        (:batch-done
+         (let ((buf (get-buffer context-navigator-view--buffer-name)))
+           (when (buffer-live-p buf)
+             (with-current-buffer buf
+               (context-navigator-view--maybe-refresh-gptel-keys))))))
+      nil)
+     ;; Regular/source-symbol changes
+     (t
+      (unless (context-navigator-view--gptel-noisy-src-p sub)
+        (let ((buf (get-buffer context-navigator-view--buffer-name)))
+          (when (buffer-live-p buf)
+            (with-current-buffer buf
+              (context-navigator-events-debounce
+               :gptel-keys 0.2
+               (lambda ()
+                 (let ((b (get-buffer context-navigator-view--buffer-name)))
+                   (when (buffer-live-p b)
+                     (with-current-buffer b
+                       (context-navigator-view--maybe-refresh-gptel-keys))))))))))))))
 
 (defun context-navigator-view--subscribe-gptel-events ()
   "Subscribe to :gptel-change and keep the cached keys in sync."
