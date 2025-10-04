@@ -137,7 +137,11 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                                         (cl-remove-if-not #'context-navigator-item-enabled items)))
                           (keys (mapcar #'context-navigator-model-item-key enabled)))
                      (setq-local context-navigator-view--gptel-keys keys
-                                 context-navigator-view--gptel-keys-hash (sxhash-equal keys))))
+                                 context-navigator-view--gptel-keys-hash (sxhash-equal keys))
+                     (when (fboundp 'context-navigator-debug)
+                       (context-navigator-debug :debug :ui
+                                                "predictive lamps: enabled=%d"
+                                                (length (or keys '()))))))
                  (ignore-errors (context-navigator-view--invalidate-openable))
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))

@@ -18,7 +18,7 @@
 (require 'context-navigator-core)
 (require 'context-navigator-stats)
 (require 'context-navigator-log)
-(require 'context-navigator-view-pinned-title)
+(require 'context-navigator-view-title)
 (require 'context-navigator-persist)
 
 (defcustom context-navigator-view-restore-cursor t
@@ -223,8 +223,8 @@ Also maintains relpath cache per generation/root."
 
 (defun context-navigator-view--items--title-line (_header)
   "Return pinned title as inline fallback when posframe is unavailable."
-  (or (and (fboundp 'context-navigator-pinned-title-fallback-line)
-           (context-navigator-pinned-title-fallback-line 'items))
+  (or (and (fboundp 'context-navigator-title-fallback-line)
+           (context-navigator-title-fallback-line 'items))
       ""))
 
 (defun context-navigator-view--items--up-line ()

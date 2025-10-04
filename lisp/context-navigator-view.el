@@ -39,11 +39,9 @@
 (require 'context-navigator-view-items)
 (require 'context-navigator-view-navigation)
 (require 'context-navigator-view-spinner)
-
 (require 'context-navigator-view-segments)
 (require 'context-navigator-view-windows)
-(require 'context-navigator-view-pinned-title)
-
+(require 'context-navigator-view-title)
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -175,7 +173,6 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--sorted-root nil)            ;; root used for cached items sort
 (defvar-local context-navigator-view--relpaths-hash nil)          ;; cache: item-key -> relpath for current generation/root
 (defvar-local context-navigator-view--collapsed-p nil)            ;; when non-nil, hide everything below the title (TAB toggles)
-
 (defvar-local context-navigator-view--sticky-item-key nil)        ;; sticky: stable key of item to keep point on after re-render
 (defvar-local context-navigator-view--sticky-window-start nil)    ;; sticky: window-start to restore after re-render
 (defvar-local context-navigator-view--restore-once nil)           ;; one-shot: force cursor restore on next items render
@@ -375,8 +372,8 @@ background."
           (context-navigator-view-render-items state header total)))
         ;; Refresh pinned title (posframe) after render
         (ignore-errors
-          (when (fboundp 'context-navigator-pinned-title-refresh)
-            (context-navigator-pinned-title-refresh)))))))
+          (when (fboundp 'context-navigator-title-refresh)
+            (context-navigator-title-refresh)))))))
 
 (defun context-navigator-view--render-if-visible ()
   "Render sidebar if its buffer is visible."
@@ -590,8 +587,8 @@ Do not highlight purely decorative separators."
                    (not (context-navigator-stats-split-visible-p)))
           (ignore-errors (context-navigator-stats-split-open)))
         ;; Enable pinned title (posframe when available, else fallback)
-        (when (fboundp 'context-navigator-pinned-title-enable)
-          (ignore-errors (context-navigator-pinned-title-enable)))))
+        (when (fboundp 'context-navigator-title-enable)
+          (ignore-errors (context-navigator-title-enable)))))
     (when (window-live-p win)
       ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
       ;; If the buffer is shown in multiple windows (rare), mark them all.
@@ -627,8 +624,8 @@ Do not highlight purely decorative separators."
             (context-navigator-view-events-remove))))
       ;; Disable pinned title
       (ignore-errors
-        (when (fboundp 'context-navigator-pinned-title-disable)
-          (context-navigator-pinned-title-disable)))
+        (when (fboundp 'context-navigator-title-disable)
+          (context-navigator-title-disable)))
       ;; Close Stats split (if open) before deleting sidebar windows
       (ignore-errors
         (when (fboundp 'context-navigator-stats-split-close)

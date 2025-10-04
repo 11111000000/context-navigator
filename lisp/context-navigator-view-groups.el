@@ -12,7 +12,7 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-stats)
 (require 'context-navigator-core)
-(require 'context-navigator-view-pinned-title)
+(require 'context-navigator-view-title)
 
 ;;;###autoload
 (defun context-navigator-view-groups-header-lines (_header _total-width)
@@ -93,8 +93,8 @@ the display name and the items count."
 No inline title or stats in the buffer; only the groups list and a minimal hint."
   (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
-         (title (and (fboundp 'context-navigator-pinned-title-fallback-line)
-                     (context-navigator-pinned-title-fallback-line 'groups)))
+         (title (and (fboundp 'context-navigator-title-fallback-line)
+                     (context-navigator-title-fallback-line 'groups)))
          (title-lines (if (and (stringp title) (> (length (string-trim title)) 0))
                           (list title "")
                         (list (propertize " " 'context-navigator-reserved-line t))))

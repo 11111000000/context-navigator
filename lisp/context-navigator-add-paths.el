@@ -538,43 +538,75 @@ so auto-push works even when gptel buffer is hidden."
              (h (sxhash-equal keys)))
         (with-current-buffer (get-buffer-create "*context-navigator*")
           (setq-local context-navigator-view--gptel-keys keys)
-          (setq-local context-navigator-view--gptel-keys-hash h))))))
+          (setq-local context-navigator-view--gptel-keys-hash h))
+        ;; Schedule a lightweight UI refresh so indicators update immediately.
+        (when (fboundp 'context-navigator-view--schedule-render-soft)
+          (context-navigator-view--schedule-render-soft))
+        (when (fboundp 'context-navigator-view--render-if-visible)
+          (context-navigator-view--render-if-visible))))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
-  "Append FILES as enabled file items to the model in one batch. Return count added.
-
-Ensures uniqueness by absolute path: existing items (file/buffer) that reference
-the same file are replaced instead of duplicated."
+  "Append FILES as enabled file items to the model in one batch.
+If a file item already exists, re-enable it instead of duplicating.
+Return count of items that became present/enabled (new + re-enabled)."
   (let* ((abs (delq nil (mapcar (lambda (p) (and (stringp p) (expand-file-name p))) files)))
-         (aset (let ((h (make-hash-table :test 'equal)))
-                 (dolist (p abs) (puthash p t h)) h))
-         (st (ignore-errors (context-navigator--state-get)))
+         ;; Track paths for quick path-based filtering
+         (abs-set (let ((h (make-hash-table :test 'equal)))
+                    (dolist (p abs) (puthash p t h)) h))
+         (st  (ignore-errors (context-navigator--state-get)))
+         (idx (and st (context-navigator-state-index st)))
          (old (and (context-navigator-state-p st) (context-navigator-state-items st)))
-         (keep
-          (cl-remove-if
-           (lambda (it)
-             (let* ((p (context-navigator-item-path it))
-                    (bp (and (bufferp (context-navigator-item-buffer it))
-                             (buffer-live-p (context-navigator-item-buffer it))
-                             (buffer-local-value 'buffer-file-name (context-navigator-item-buffer it))))
-                    (pp (and (stringp p) (expand-file-name p)))
-                    (bb (and (stringp bp) (expand-file-name bp))))
-               (or (and pp (gethash pp aset))
-                   (and bb (gethash bb aset)))))
-           (or old '())))
-         (new-items (delq nil
-                          (mapcar (lambda (p)
-                                    (when (and (stringp p) (file-exists-p p) (file-regular-p p))
-                                      (context-navigator-item-create
-                                       :type 'file
-                                       :name (file-name-nondirectory p)
-                                       :path (expand-file-name p)
-                                       :enabled t)))
-                                  files)))
-         (added (length new-items))
-         (merged (append keep new-items)))
-    (context-navigator-set-items merged)
-    added))
+         (keys-to-replace (make-hash-table :test 'equal))
+         (replacements '())
+         (apply-items '()))
+    ;; Build replacements (new or re-enabled) for each requested file
+    (dolist (p abs)
+      (when (and (stringp p) (file-exists-p p) (file-regular-p p))
+        (let* ((tmp (context-navigator-item-create :type 'file
+                                                   :name (file-name-nondirectory p)
+                                                   :path p :enabled t))
+               (key (context-navigator-model-item-key tmp))
+               (existing (and (hash-table-p idx) (gethash key idx))))
+          (if (context-navigator-item-p existing)
+              (let* ((en (context-navigator-item-enabled existing))
+                     (upd (if en existing
+                            (context-navigator-item-create
+                             :type (context-navigator-item-type existing)
+                             :name (context-navigator-item-name existing)
+                             :path (context-navigator-item-path existing)
+                             :buffer (context-navigator-item-buffer existing)
+                             :beg (context-navigator-item-beg existing)
+                             :end (context-navigator-item-end existing)
+                             :size (context-navigator-item-size existing)
+                             :enabled t
+                             :meta (context-navigator-item-meta existing)))))
+                (puthash key t keys-to-replace)
+                (when (context-navigator-item-p upd)
+                  (push upd replacements))
+                (when (and (context-navigator-item-p upd) (not en))
+                  (push upd apply-items)))
+            (let ((it (context-navigator-item-create
+                       :type 'file
+                       :name (file-name-nondirectory p)
+                       :path (expand-file-name p)
+                       :enabled t)))
+              (when it
+                (push it replacements)
+                (push it apply-items)))))))
+    ;; Keep old items except ones replaced by key or referencing these paths
+    (let* ((keep
+            (cl-remove-if
+             (lambda (it)
+               (let* ((p (and (stringp (context-navigator-item-path it))
+                              (expand-file-name (context-navigator-item-path it))))
+                      (key (context-navigator-model-item-key it)))
+                 (or (and p (gethash p abs-set))
+                     (and key (gethash key keys-to-replace)))))
+             (or old '())))
+           (merged (append keep (nreverse replacements)))
+           (added (length apply-items)))
+      (context-navigator-set-items merged)
+      added)))
 
 (cl-defun context-navigator-add-files-from-names (tokens &optional _interactive)
   "Resolve TOKENS relative to current root and add resulting files to model.

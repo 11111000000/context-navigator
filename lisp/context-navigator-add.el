@@ -154,14 +154,64 @@ Files larger than this threshold are skipped."
    (or old-items '())))
 
 (defun context-navigator-add--merge-files-into-items (old-items files)
-  "Return cons (MERGED . NEW-ITEMS) by merging FILES into OLD-ITEMS, deduping by path."
+  "Return cons (MERGED . NEW-OR-ENABLED) by merging FILES into OLD-ITEMS.
+If a file item already exists (same stable key), re-enable it instead of duplicating.
+NEW-OR-ENABLED contains items that should be applied to gptel immediately (new or re-enabled)."
   (let* ((abs (context-navigator-add--normalize-paths files))
-         (aset (let ((h (make-hash-table :test 'equal)))
-                 (dolist (p abs) (puthash p t h)) h))
-         (keep (context-navigator-add--dedupe-old-items old-items aset))
-         (new-items (delq nil (mapcar #'context-navigator-add--build-file-item files)))
-         (merged (append keep new-items)))
-    (cons merged new-items)))
+         ;; Absolute-path set: drop any old items that reference these file paths
+         (abs-set (let ((h (make-hash-table :test 'equal)))
+                    (dolist (p abs) (puthash p t h)) h))
+         ;; Current index (key -> item) to locate existing entries quickly
+         (st  (ignore-errors (context-navigator--state-get)))
+         (idx (and st (context-navigator-state-index st)))
+         (keys-to-replace (make-hash-table :test 'equal))
+         (apply-items '())
+         (replacements '()))
+    ;; For each requested file path decide: re-enable existing or create new
+    (dolist (p abs)
+      (let* ((tmp (context-navigator-item-create :type 'file
+                                                 :name (file-name-nondirectory p)
+                                                 :path p :enabled t))
+             (key (context-navigator-model-item-key tmp))
+             (existing (and (hash-table-p idx) (gethash key idx))))
+        (if (context-navigator-item-p existing)
+            ;; Re-enable existing item when needed; keep all other fields
+            (let* ((en (context-navigator-item-enabled existing))
+                   (upd (if en
+                            existing
+                          (context-navigator-item-create
+                           :type (context-navigator-item-type existing)
+                           :name (context-navigator-item-name existing)
+                           :path (context-navigator-item-path existing)
+                           :buffer (context-navigator-item-buffer existing)
+                           :beg (context-navigator-item-beg existing)
+                           :end (context-navigator-item-end existing)
+                           :size (context-navigator-item-size existing)
+                           :enabled t
+                           :meta (context-navigator-item-meta existing)))))
+              (puthash key t keys-to-replace)
+              (when (context-navigator-item-p upd)
+                (push upd replacements))
+              ;; Only schedule for apply when we flipped enabled from nil -> t
+              (when (and (context-navigator-item-p upd) (not en))
+                (push upd apply-items)))
+          ;; No existing item -> create a new enabled file item
+          (let ((it (context-navigator-add--build-file-item p)))
+            (when it
+              (push it replacements)
+              (push it apply-items))))))
+    ;; Keep old items except ones replaced by key or path
+    (let* ((keep
+            (cl-remove-if
+             (lambda (it)
+               (let* ((p (and (stringp (context-navigator-item-path it))
+                              (expand-file-name (context-navigator-item-path it))))
+                      (key (context-navigator-model-item-key it)))
+                 (or (and p (gethash p abs-set))
+                     (and key (gethash key keys-to-replace)))))
+             (or old-items '())))
+           (merged (append keep (nreverse replacements))))
+      (cons merged (nreverse apply-items)))))
 
 ;; ---------------- gptel batched apply helpers ----------------
 
@@ -174,7 +224,35 @@ Files larger than this threshold are skipped."
            (h (sxhash-equal keys)))
       (with-current-buffer (get-buffer-create "*context-navigator*")
         (setq-local context-navigator-view--gptel-keys keys)
-        (setq-local context-navigator-view--gptel-keys-hash h)))))
+        (setq-local context-navigator-view--gptel-keys-hash h))
+      (ignore-errors
+        (when (fboundp 'context-navigator-debug)
+          (context-navigator-debug :debug :ui
+                                   "add: gptel-keys snapshot set: %d (h=%s)"
+                                   (length (or keys '())) h)))
+      ;; Immediately request a lightweight UI refresh so indicator lamps update now.
+      (when (fboundp 'context-navigator-view--schedule-render-soft)
+        (context-navigator-view--schedule-render-soft))
+      (when (fboundp 'context-navigator-view--render-if-visible)
+        (context-navigator-view--render-if-visible)))))
+
+(defun context-navigator-add--ui-refresh-now (&optional invalidate)
+  "Force a quick Navigator UI refresh; when INVALIDATE is non-nil, drop render caches."
+  (ignore-errors
+    (let ((buf (get-buffer "*context-navigator*")))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (when invalidate
+            (setq-local context-navigator-render--last-hash nil)
+            (setq-local context-navigator-view--last-render-key nil)
+            (setq-local context-navigator-headerline--cache-key nil)
+            (setq-local context-navigator-headerline--cache-str nil))
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (context-navigator-view--render-if-visible))
+          (when (fboundp 'context-navigator-debug)
+            (context-navigator-debug :trace :ui
+                                     "add: ui-refresh-now invalidate=%s"
+                                     (and invalidate t))))))))
 
 (defun context-navigator-add--apply-items-batched (items)
   "Background-apply ITEMS to gptel via core batch when push is ON."
@@ -200,6 +278,14 @@ Replace any existing items that reference the same files. Apply to gptel (batche
          (merged (car res))
          (new-items (cdr res)))
     (context-navigator-set-items merged)
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :debug :add
+                                 "add-files: merged=%d apply=%d"
+                                 (length (or merged '()))
+                                 (length (or new-items '())))))
+    ;; Force a quick UI refresh so lamps can update immediately; invalidate caches to avoid skips.
+    (context-navigator-add--ui-refresh-now t)
     (context-navigator-add--apply-items-batched new-items)
     (context-navigator-ui-info :added-files (length new-items))))
 
