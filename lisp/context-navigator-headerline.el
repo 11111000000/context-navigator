@@ -25,7 +25,7 @@
   :group 'context-navigator)
 
 (defcustom context-navigator-view-headerline-enable t
-  "When non-nil, show Navigator controls and toggles in the header-line."
+  "When non-nil, show the Navigator title in the header-line."
   :type 'boolean :group 'context-navigator-headerline)
 
 ;; Declarations for byte-compiler friendliness (provided by context-navigator-view).
@@ -34,80 +34,29 @@
 (declare-function context-navigator--state-get "context-navigator-core" ())
 (declare-function context-navigator-state-last-project-root "context-navigator-core" (state))
 (declare-function context-navigator-persist-state-load "context-navigator-persist" (root))
+(declare-function context-navigator-title-fallback-line "context-navigator-view-title" (&optional mode))
 
 (defvar-local context-navigator-headerline--cache-key nil)
 (defvar-local context-navigator-headerline--cache-str nil)
 
 (defun context-navigator-headerline-format ()
-  "Return header-line content for Navigator buffers (with light caching).
+  "Return header-line content for Navigator buffers (title with light caching).
 
-Shows only control toggles and action segments; the project/group title is
-rendered inside the buffer itself (above the \"..\" line).
-
-Cache key includes:
-- controls style and icons availability,
-- session toggles (push/auto),
-- Occam spinner state/index (when available),
-- current view mode (items/groups),
-- selection size and multi-group flag (per-project),
-so that frequent redisplays reuse the same string unless a relevant bit changes."
+Now renders the project/group title in the header-line. Controls are shown
+inside the buffer at the top."
   (when (eq major-mode 'context-navigator-view-mode)
-    (let* ((style (and (boundp 'context-navigator-controls-style)
-                       context-navigator-controls-style))
-           (icons-on (and (fboundp 'context-navigator-controls-icons-available-p)
-                          (context-navigator-controls-icons-available-p)))
-           (push-on (and (boundp 'context-navigator--push-to-gptel)
-                         context-navigator--push-to-gptel))
-           (auto-on (and (boundp 'context-navigator--auto-project-switch)
-                         context-navigator--auto-project-switch))
-           ;; Occam spinner state (optional; present only when razor module is loaded)
-           (razor-run (and (boundp 'context-navigator-razor--running)
-                           context-navigator-razor--running))
-           (razor-idx (and (boundp 'context-navigator-razor--spinner-index)
-                           context-navigator-razor--spinner-index))
-           ;; Include gptel batch spinner bits so cache invalidates correctly
-           (batch-run (and (boundp 'context-navigator-view--gptel-batch-start-time)
-                           context-navigator-view--gptel-batch-start-time))
-           (spin-idx (and (boundp 'context-navigator-view--spinner-index)
-                          context-navigator-view--spinner-index))
-           ;; Additional bits to make headerline cache sensitive to selection/mode.
-           (mode-sym (and (boundp 'context-navigator-view--mode)
+    (let* ((mode-sym (and (boundp 'context-navigator-view--mode)
                           context-navigator-view--mode))
-           (sel-count
-            (ignore-errors
-              (let* ((st (context-navigator--state-get))
-                     (root (and st (context-navigator-state-last-project-root st)))
-                     (ps (and (stringp root)
-                              (context-navigator-persist-state-load root)))
-                     (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
-                (if (listp sel) (length sel) 0))))
-           (mg-flag
-            (ignore-errors
-              (let* ((st (context-navigator--state-get))
-                     (root (and st (context-navigator-state-last-project-root st)))
-                     (ps (and (stringp root)
-                              (context-navigator-persist-state-load root))))
-                (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))))
-           (key (list style icons-on push-on auto-on
-                      razor-run razor-idx
-                      batch-run spin-idx
-                      mode-sym sel-count mg-flag)))
+           (title (ignore-errors
+                    (when (fboundp 'context-navigator-title-fallback-line)
+                      (context-navigator-title-fallback-line mode-sym))))
+           (title (if (stringp title) title ""))
+           (key (list mode-sym title)))
       (if (equal key context-navigator-headerline--cache-key)
-          ;; Reuse cached string
           context-navigator-headerline--cache-str
-        ;; Build headerline segments using the controls module.
-        ;; Apply a small downward shift for graphic icons in the header-line so
-        ;; they visually have a tiny top offset (space above the icons).
-        (let ((controls (ignore-errors
-                          (when (fboundp 'context-navigator-view-controls-segments)
-                            (let ((context-navigator-controls-icon-raise -0.08))
-                              (context-navigator-view-controls-segments))))))
-          (when (and (listp controls) controls)
-            ;; Preserve exact spacing from segments (tests rely on it).
-            (let ((s (mapconcat #'identity controls "")))
-              (setq context-navigator-headerline--cache-key key
-                    context-navigator-headerline--cache-str s)
-              s)))))))
+        (setq context-navigator-headerline--cache-key key
+              context-navigator-headerline--cache-str title)
+        title))))
 
 (defun context-navigator-headerline--apply (buffer)
   "Apply or remove header-line controls in BUFFER based on the feature flag."

@@ -222,10 +222,9 @@ Also maintains relpath cache per generation/root."
   (max 16 (min (- total-width 10) (floor (* 0.55 total-width)))))
 
 (defun context-navigator-view--items--title-line (_header)
-  "Return pinned title as inline fallback when posframe is unavailable."
-  (or (and (fboundp 'context-navigator-title-fallback-line)
-           (context-navigator-title-fallback-line 'items))
-      ""))
+  "Deprecated: title is rendered in header-line. Kept for compatibility."
+  (ignore _header)
+  "")
 
 (defun context-navigator-view--items--up-line ()
   "\"..\" line that navigates up to groups."
@@ -249,7 +248,8 @@ Also maintains relpath cache per generation/root."
 ;;;###autoload
 (defun context-navigator-view--items-base-lines (state header total-width)
   "Return a list: (hl sep up rest...) for items view base lines.
-HL is the clickable [project[: group]] title line placed above \"..\".
+
+HL is deprecated (title now lives in header-line); it is returned as an empty string.
 SEP is currently empty (no extra separator in the buffer).
 UP is the \"..\" line.
 REST is a list of item lines."
@@ -257,7 +257,7 @@ REST is a list of item lines."
          (sorted-items (context-navigator-view--items--sorted state items))
          (left-width (context-navigator-view--items--left-width total-width))
          (item-lines (context-navigator-view--items--item-lines sorted-items left-width))
-         (hl (context-navigator-view--items--title-line header))
+         (hl "")
          (sep "")
          (rest item-lines)
          (up (context-navigator-view--items--up-line)))
@@ -314,9 +314,12 @@ REST is a list of item lines."
       (list hl "")
     (list (propertize " " 'context-navigator-reserved-line t))))
 
-(defun context-navigator-view--items--build-lines (hl up rest footer)
-  "Assemble final list of lines from pieces."
-  (let* ((head (context-navigator-view--items--head-lines hl))
+(defun context-navigator-view--items--build-lines (ctrl up rest footer)
+  "Assemble final list of lines: controls (top), then \"..\", items and footer.
+CTRL is a list of control lines to render at the top."
+  (let* ((head (if (and (listp ctrl) (> (length ctrl) 0))
+                   (append ctrl (list ""))
+                 (list (propertize " " 'context-navigator-reserved-line t))))
          (body (append head (list up) rest footer)))
     body))
 
@@ -409,12 +412,14 @@ Does not adjust window-start; Emacs will ensure point visibility."
 
 ;;;###autoload
 (defun context-navigator-view-render-items (state header total-width)
-  "Render items view using STATE and TOTAL-WIDTH (with inline fallback title when needed).
-Returns the list of lines that were rendered."
-  (cl-destructuring-bind (hl _sep up rest)
+  "Render items view using STATE and TOTAL-WIDTH.
+Title is shown in the header-line; controls are rendered at the top of the buffer."
+  (cl-destructuring-bind (_hl _sep up rest)
       (context-navigator-view--items-base-lines state header total-width)
-    (let* ((footer (context-navigator-view-items-footer-lines total-width))
-           (lines (context-navigator-view--items--build-lines hl up rest footer)))
+    (let* ((ctrl (and (fboundp 'context-navigator-view-items-header-lines)
+                      (context-navigator-view-items-header-lines total-width)))
+           (footer (context-navigator-view-items-footer-lines total-width))
+           (lines (context-navigator-view--items--build-lines ctrl up rest footer)))
       (context-navigator-view--items--apply-lines lines header)
       (context-navigator-view--items--sticky-restore)
       (context-navigator-view--items--persist-restore)

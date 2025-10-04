@@ -12,7 +12,7 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-stats)
 (require 'context-navigator-core)
-(require 'context-navigator-view-title)
+
 
 ;;;###autoload
 (defun context-navigator-view-groups-header-lines (_header _total-width)
@@ -90,15 +90,15 @@ the display name and the items count."
 ;;;###autoload
 (defun context-navigator-view-render-groups (state header total-width)
   "Render groups view using STATE and TOTAL-WIDTH.
-No inline title or stats in the buffer; only the groups list and a minimal hint."
+Title is shown in the header-line; the buffer shows controls (top), groups, and a minimal hint."
   (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
-         (title (and (fboundp 'context-navigator-title-fallback-line)
-                     (context-navigator-title-fallback-line 'groups)))
-         (title-lines (if (and (stringp title) (> (length (string-trim title)) 0))
-                          (list title "")
-                        (list (propertize " " 'context-navigator-reserved-line t))))
-         (lines (append title-lines groups-lines help-lines)))
+         (ctrl (and (fboundp 'context-navigator-view-controls-lines)
+                    (context-navigator-view-controls-lines total-width)))
+         (head (if (and (listp ctrl) (> (length ctrl) 0))
+                   (append ctrl (list ""))
+                 (list (propertize " " 'context-navigator-reserved-line t))))
+         (lines (append head groups-lines help-lines)))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)

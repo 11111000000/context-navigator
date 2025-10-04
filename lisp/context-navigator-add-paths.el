@@ -530,20 +530,24 @@ so auto-push works even when gptel buffer is hidden."
             (ignore-errors (context-navigator--gptel-defer-or-start only-items token))
           (let ((items (and st (context-navigator-state-items st))))
             (ignore-errors (context-navigator-gptel-apply (or items '())))))))
-    ;; Best-effort refresh of Navigator indicators after applying to gptel.
+    ;; Post-apply: не затираем предиктивные лампы устаревшим снапшотом.
+    ;; Вместо этого — отложенный refresh и "подсказка" событием для View.
     (ignore-errors
-      (let* ((lst (context-navigator-gptel-pull))
-             (keys (and (listp lst)
-                        (mapcar #'context-navigator-model-item-key lst)))
-             (h (sxhash-equal keys)))
-        (with-current-buffer (get-buffer-create "*context-navigator*")
-          (setq-local context-navigator-view--gptel-keys keys)
-          (setq-local context-navigator-view--gptel-keys-hash h))
-        ;; Schedule a lightweight UI refresh so indicators update immediately.
-        (when (fboundp 'context-navigator-view--schedule-render-soft)
-          (context-navigator-view--schedule-render-soft))
-        (when (fboundp 'context-navigator-view--render-if-visible)
-          (context-navigator-view--render-if-visible))))))
+      (when (fboundp 'context-navigator-add--refresh-gptel-keys-snapshot)
+        (run-at-time 0.12 nil #'context-navigator-add--refresh-gptel-keys-snapshot)))
+    (ignore-errors
+      (let* ((st (and (fboundp 'context-navigator--state-get) (context-navigator--state-get)))
+             (items (and st (fboundp 'context-navigator-state-items) (context-navigator-state-items st)))
+             (n (length (or items '()))))
+        ;; Для "полного" apply (не батч) View не получает :gptel-change; подадим "done",
+        ;; чтобы индикаторы обновились (View на :batch-done обновит keys и перерисует).
+        (when (fboundp 'context-navigator-events-publish)
+          (context-navigator-events-publish :gptel-change :batch-done n))))
+    ;; Сохраняем отзывчивость UI: мягкий ререндер, чтобы остались предиктивные лампы.
+    (when (fboundp 'context-navigator-view--schedule-render-soft)
+      (context-navigator-view--schedule-render-soft))
+    (when (fboundp 'context-navigator-view--render-if-visible)
+      (context-navigator-view--render-if-visible))))
 
 (defun context-navigator-path-add--append-files-as-items (files)
   "Append FILES as enabled file items to the model in one batch.
@@ -651,6 +655,8 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                (items-after (and st-after (context-navigator-state-items st-after)))
                (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                (adds (plist-get diff :add)))
+          (when (fboundp 'context-navigator-add--ui-refresh-now)
+            (context-navigator-add--ui-refresh-now t))
           (context-navigator-path-add--maybe-apply-to-gptel adds)
           (context-navigator-ui-info :added-files added)
           (plist-put (copy-sequence res) :added added))))))
@@ -716,6 +722,8 @@ Handles ambiguities/unresolved/limits/remote confirmation. Returns plist result.
                    (items-after (and st-after (context-navigator-state-items st-after)))
                    (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                    (adds (plist-get diff :add)))
+              (when (fboundp 'context-navigator-add--ui-refresh-now)
+                (context-navigator-add--ui-refresh-now t))
               (context-navigator-path-add--maybe-apply-to-gptel adds)
               (context-navigator-ui-info :added-files added))))))))
 
@@ -1067,6 +1075,8 @@ Respects case sensitivity and dotfiles rule."
                        (items-after (and st-after (context-navigator-state-items st-after)))
                        (diff (context-navigator-model-diff (or items-before '()) (or items-after '())))
                        (adds (plist-get diff :add)))
+                  (when (fboundp 'context-navigator-add--ui-refresh-now)
+                    (context-navigator-add--ui-refresh-now t))
                   (context-navigator-path-add--maybe-apply-to-gptel adds)
                   (context-navigator-ui-info :added-files added)
                   (list :files files :added added)))))))

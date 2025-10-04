@@ -78,6 +78,10 @@ Used as the header-line background in the Navigator buffer."
         ;; Force header-line redraw
         (force-mode-line-update t)))))
 
+(defun context-navigator-header--ensure-face ()
+  "Generic alias to ensure Navigator header-line face is applied for the buffer."
+  (context-navigator-view-controls--ensure-headerline-face))
+
 ;; Apply default header-line face now if the buffer already exists.
 (context-navigator-view-controls--ensure-headerline-face)
 
@@ -119,7 +123,7 @@ Rule: selection non-empty AND aggregated enabled items > 0."
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (and (listp items)
          (cl-some (lambda (it) (and (context-navigator-item-p it)
-                               (context-navigator-item-enabled it)))
+                                    (context-navigator-item-enabled it)))
                   items))))
 
 (defun context-navigator-view-controls--push-disabled-reason ()

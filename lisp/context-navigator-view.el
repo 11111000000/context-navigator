@@ -538,8 +538,8 @@ Do not highlight purely decorative separators."
   (buffer-disable-undo)
   (setq truncate-lines t
         cursor-type t)
-  (when (fboundp 'context-navigator-view-controls--ensure-headerline-face)
-    (context-navigator-view-controls--ensure-headerline-face))
+  (when (fboundp 'context-navigator-header--ensure-face)
+    (context-navigator-header--ensure-face))
   ;; Modeline disabled temporarily to avoid state/plist mismatch during redisplay.
   ;; See: selection toggle error after [t] in groups causing plist access on struct state.
   (when (fboundp 'context-navigator-headerline--apply)
@@ -586,9 +586,7 @@ Do not highlight purely decorative separators."
                    (fboundp 'context-navigator-stats-split-visible-p)
                    (not (context-navigator-stats-split-visible-p)))
           (ignore-errors (context-navigator-stats-split-open)))
-        ;; Enable pinned title (posframe when available, else fallback)
-        (when (fboundp 'context-navigator-title-enable)
-          (ignore-errors (context-navigator-title-enable)))))
+        ))
     (when (window-live-p win)
       ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
       ;; If the buffer is shown in multiple windows (rare), mark them all.

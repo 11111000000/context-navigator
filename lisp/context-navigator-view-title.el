@@ -1,7 +1,6 @@
-;;; context-navigator-view-title.el --- Pinned title under headerline -*- lexical-binding: t; -*-
+;;; context-navigator-view-title.el --- Title builders and placement helpers -*- lexical-binding: t; -*-
 
-;; Optional posframe-based pinned title under the header-line.
-;; Fallback: inline first line (scrolls) when posframe is unavailable.
+;; Title string builders (project/group) and simple placement helpers.
 
 (require 'cl-lib)
 (require 'subr-x)
@@ -10,11 +9,11 @@
 (require 'context-navigator-icons)
 
 (defgroup context-navigator-title nil
-  "Pinned title (project/group) under header-line for Navigator."
+  "Title (project/group) for Navigator."
   :group 'context-navigator)
 
 (defcustom context-navigator-title-enable nil
-  "When non-nil, show a pinned title under the header-line."
+  "Deprecated: no-op. Title is shown in the header-line by default."
   :type 'boolean :group 'context-navigator-title)
 
 (defface context-navigator-title-face
