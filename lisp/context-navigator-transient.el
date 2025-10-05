@@ -75,12 +75,13 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
      context-navigator-select-by-name)
     ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)
     ("m" (lambda () (context-navigator-i18n :tr-multifile)) context-navigator-multifile-open)]
-   ["GPTel"
-    ("G" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
+   ["Control"
+    ("G" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-toggle-multi-group)
+    ("V" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
     ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
-    ("M" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-enable-all-gptel)
-    ("U" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-disable-all-gptel)
-    ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-enable-all-gptel)
+    ("M" (lambda () (context-navigator-i18n :enable-all-gptel)) context-navigator-view-enable-all-gptel)
+    ("U" (lambda () (context-navigator-i18n :disable-all-gptel)) context-navigator-view-disable-all-gptel)
+    ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
     ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
     ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
@@ -133,14 +134,14 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
    [:description (lambda () (context-navigator-i18n :tr-groups))
                  :if (lambda () (eq context-navigator-view--mode 'groups))
                  ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate-safe)
-                 ("a"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
-                 ("r"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
-                 ("e"   (lambda ()
+                 ("+"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
+                 ("R"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
+                 ("E"   (lambda ()
                           (or (ignore-errors (context-navigator-i18n :groups-help-edit-description))
                               "Edit description"))
                   context-navigator-view-group-edit-description)
-                 ("c"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
-                 ("d"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
+                 ("C"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
+                 ("D"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
                  ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
    [:description (lambda () (context-navigator-i18n :tr-session))
                  ("G" (lambda ()
@@ -156,7 +157,6 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
                                           context-navigator--auto-project-switch) :on :off))))
                   context-navigator-view-toggle-auto-project)
                  ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
-                 ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-view-clear-gptel)
                  ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-view-clear-group)
                  ("X" (lambda () (context-navigator-i18n :tr-unload))   context-navigator-context-unload)]
    ["Help/Exit"

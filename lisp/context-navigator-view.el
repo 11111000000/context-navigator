@@ -530,17 +530,15 @@ model generation changed."
 
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
 
-    (define-key m (kbd "G")   #'context-navigator-view-show-groups)
-    (define-key m (kbd "x")   #'context-navigator-view-toggle-push)
+    (define-key m (kbd "h")   #'context-navigator-view-show-groups)
+    (define-key m (kbd "V")   #'context-navigator-view-toggle-push)
     (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
     (define-key m (kbd "P")   #'context-navigator-view-push-now)
     (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
 
     (define-key m (kbd "U")   #'context-navigator-view-disable-all-gptel)
-    (define-key m (kbd "C")   #'context-navigator-view-clear-gptel)
     (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)
     (define-key m (kbd "g")   #'context-navigator-view-refresh-dispatch)
-    (define-key m (kbd "O")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
     (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
     (define-key m (kbd "E")   #'context-navigator-view-clear-group)
