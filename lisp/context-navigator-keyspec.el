@@ -50,7 +50,7 @@
 
     ;; Items actions
     (:id toggle-enabled :cmd context-navigator-view-toggle-enabled
-         :keys ("SPC" "t" "m") :contexts (items) :section act :desc-key :help-toggle-gptel)
+         :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items) :section act :desc-key :toggle-all-gptel)
     (:id disable-all :cmd context-navigator-view-disable-all-gptel
@@ -79,6 +79,8 @@
          :keys ("A") :contexts (items groups) :section session :desc-key :help-toggle-auto)
     (:id push-now :cmd context-navigator-view-push-now
          :keys ("p") :contexts (items groups) :section session :desc-key :help-push-now)
+    (:id unload :cmd context-navigator-context-unload
+         :keys ("U") :contexts (items groups) :section session :desc-key :tr-unload)
 
     ;; Groups CRUD / selection
     (:id group-create :cmd context-navigator-view-group-create
@@ -92,7 +94,7 @@
     (:id group-delete :cmd context-navigator-view-delete-dispatch
          :keys ("d") :contexts (groups) :section groups :desc-key :groups-help-delete)
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys ("SPC" "t" "m") :contexts (groups) :section groups :desc-key :toggle-multi-group)
+         :keys ("SPC" "t") :contexts (groups) :section groups :desc-key :toggle-multi-group)
     (:id multigroup-toggle :cmd context-navigator-view-toggle-multi-group
          :keys ("G") :contexts (groups) :section groups :desc-key :toggle-multi-group)
 
@@ -168,6 +170,95 @@
                  (push (cons sec (nreverse (delete-dups lst))) res))
                by-section)
       (nreverse res))))
+
+;;;###autoload
+(defun context-navigator-keys-keys-for (id context)
+  "Return list of key strings for action ID in CONTEXT.
+Falls back to broader contexts when exact CONTEXT not found:
+- items<->groups share many actions; try each other when missing
+- global as last resort."
+  (let* ((entries context-navigator-keyspec)
+         (ctx-chain
+          (cond
+           ((eq context 'items)    '(items groups global))
+           ((eq context 'groups)   '(groups items global))
+           ((eq context 'multifile) '(multifile global))
+           (t                      (list context 'global)))))
+    (catch 'hit
+      (dolist (ctx ctx-chain)
+        (dolist (pl entries)
+          (when (and (eq (plist-get pl :id) id)
+                     (memq ctx (plist-get pl :contexts)))
+            (let ((ks (plist-get pl :keys)))
+              (when (and ks (listp ks) (> (length ks) 0))
+                (throw 'hit (copy-sequence ks)))))))
+      nil)))
+
+;;;###autoload
+(defun context-navigator-keys-first-key (id context)
+  "Return the first key string for action ID in CONTEXT, or nil."
+  (let ((lst (context-navigator-keys-keys-for id context)))
+    (car-safe lst)))
+
+(defun context-navigator-keys--collision-alist (context)
+  "Return alist of (KEY . IDS) for duplicate keys in CONTEXT."
+  (let* ((entries (context-navigator-keys--entries-for context))
+         (acc (make-hash-table :test 'equal)))
+    (dolist (pl entries)
+      (let* ((id   (plist-get pl :id))
+             (keys (or (plist-get pl :keys) '())))
+        (dolist (k keys)
+          (puthash k (cons id (gethash k acc)) acc))))
+    (let (res)
+      (maphash (lambda (k ids)
+                 (when (> (length ids) 1)
+                   (push (cons k (nreverse ids)) res)))
+               acc)
+      (nreverse res))))
+
+;;;###autoload
+(defun context-navigator-keys-lint-collisions (&optional context)
+  "Interactive lint: show collisions for CONTEXT (default items)."
+  (interactive)
+  (let* ((ctx (or context 'items))
+         (cols (context-navigator-keys--collision-alist ctx)))
+    (if (null cols)
+        (message "[keyspec] No collisions in %s" ctx)
+      (with-current-buffer (get-buffer-create "*CN Key Lint*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "Collisions in %s:\n\n" ctx))
+          (dolist (cell cols)
+            (insert (format "  %s -> %s\n" (car cell) (mapconcat #'symbol-name (cdr cell) ", "))))
+          (goto-char (point-min))
+          (view-mode 1))
+        (display-buffer "*CN Key Lint*")))))
+
+;;;###autoload
+(defun context-navigator-keys-apply-known-keymaps ()
+  "Apply keyspec to known mode maps (idempotent, safe).
+- context-navigator-view-mode-map      ← items + groups + global
+- context-navigator-multifile-mode-map ← multifile + global"
+  (interactive)
+  ;; View (items/groups/global live in the same major-mode map)
+  (when (and (boundp 'context-navigator-view-mode-map)
+             (keymapp context-navigator-view-mode-map))
+    (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
+    (context-navigator-keys-apply-to context-navigator-view-mode-map 'items)
+    (context-navigator-keys-apply-to context-navigator-view-mode-map 'groups))
+  ;; Multifile
+  (when (and (boundp 'context-navigator-multifile-mode-map)
+             (keymapp context-navigator-multifile-mode-map))
+    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'multifile)
+    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'global))
+  t)
+
+;; Auto-reapply on spec changes (when available)
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher
+   'context-navigator-keyspec
+   (lambda (_sym _val _op _where)
+     (ignore-errors (context-navigator-keys-apply-known-keymaps)))))
 
 (provide 'context-navigator-keyspec)
 ;;; context-navigator-keyspec.el ends here

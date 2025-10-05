@@ -176,5 +176,7 @@
 (autoload 'context-navigator-multifile-close "context-navigator-multifile"
   "Close Context Multifile View." t)
 
+;; Optional which-key integration (auto-applies labels from keyspec)
+(ignore-errors (require 'context-navigator-which-key nil t))
 (provide 'context-navigator)
 ;;; context-navigator.el ends here

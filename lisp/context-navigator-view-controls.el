@@ -24,6 +24,7 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-view-controls-icons)
+(require 'context-navigator-keyspec)
 
 ;; Declarations to avoid load cycles; provided by context-navigator-view or core.
 (declare-function context-navigator-view-open-all-buffers "context-navigator-view-actions" ())
@@ -91,6 +92,30 @@ Only changes foreground (no height/weight), so icon/text size stays stable."
 
 ;; Apply default header-line face now if the buffer already exists.
 (context-navigator-view-controls--ensure-headerline-face)
+
+;; --- Keys fallback labels from keyspec (Middle Path) ------------------------
+
+(defun context-navigator-view-controls--keyspec-first-key (id)
+  "Return first key string from keyspec for action ID in current view context."
+  (let* ((ctx (if (and (boundp 'context-navigator-view--mode)
+                       (eq context-navigator-view--mode 'groups))
+                  'groups
+                'items)))
+    (and (fboundp 'context-navigator-keys-first-key)
+         (context-navigator-keys-first-key id ctx))))
+
+(defun context-navigator-view-controls--keyspec-label (id default)
+  "Return bracketed label \" [k]\" for ID from keyspec; fallback to DEFAULT.
+DEFAULT should be a short key text like \"p\", \"x\", \"RET\", etc."
+  (let* ((k (or (context-navigator-view-controls--keyspec-first-key id) default))
+         (disp (cond
+                ((null k) default)
+                ((member k '("RET" "<return>" "<kp-enter>")) "RET")
+                ((member k '("SPC")) "SPC")
+                ((member k '("TAB" "<tab>" "C-i")) "TAB")
+                ((member k '("<backtab>" "S-<tab>")) "S-TAB")
+                (t k))))
+    (format " [%s]" disp)))
 
 (defun context-navigator-view-controls--after-control-invoke ()
   "Force immediate UI/header-line refresh after a control command."
@@ -352,7 +377,8 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                                  (concat fr fr))))))
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :push-now))) " [p]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :push-now)))
+                      (context-navigator-view-controls--keyspec-label 'push-now "p")))
       (open-buffers
        :type action
        :icon-key open-buffers
@@ -362,7 +388,8 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :open-buffers))) " [O]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :open-buffers)))
+                      (context-navigator-view-controls--keyspec-label 'open-buffers "o"))))
       (close-buffers
        :type action
        :icon-key close-buffers
@@ -372,18 +399,9 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :close-buffers))) " [c]")))
-      ;; (clear-gptel
-      ;;  :type action
-      ;;  :icon-key clear-gptel
-      ;;  :command context-navigator-view-clear-gptel
-      ;;  :help ,(lambda () (funcall tr :clear-tip))
-      ;;  :enabled-p ,(lambda () t)
-      ;;  :visible-p ,(lambda () t)
-      ;;  :label-fn ,(lambda (style _s)
-      ;;               (if (eq style 'text)
-      ;;                   (format " [%s]" (context-navigator-i18n :clear-gptel))
-      ;;                 " [C]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :close-buffers)))
+                      (context-navigator-view-controls--keyspec-label 'close-buffers "c"))))
+
       (clear-group
        :type action
        :icon-key clear-group
@@ -393,7 +411,8 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :clear-group))) " [x]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :clear-group)))
+                      (context-navigator-view-controls--keyspec-label 'clear-group "x"))))
       (toggle-all-gptel
        :type action
        :icon-key toggle-all-gptel
@@ -403,7 +422,8 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel))) " [T]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :toggle-all-gptel)))
+                      (context-navigator-view-controls--keyspec-label 'toggle-all "T"))))
       (multifile
        :type action
        :icon-key multifile
@@ -415,7 +435,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                     (pcase style
                       ((or 'icons 'auto) " [MF]")
                       (_ " [Multifile]"))))
-      ))
+      )))
   "Registry of Navigator controls for header-line toolbar."
   :type '(alist :key-type symbol :value-type plist)
   :group 'context-navigator-view-controls)

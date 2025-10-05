@@ -8,13 +8,11 @@
 ;;  p: switch to current buffer's project
 ;;  a: add current file/region/buffer/dired selection (minimal)
 ;;  g: groups list
-;;  s: save context
-;;  l: load context
-;;  u: unload context
-;;  x: toggle push → gptel
-;;  T: toggle auto-project
-;;  P: push now
-;;  C: clear gptel
+;;  x: clear current group
+;;  V: toggle push → gptel
+;;  A: toggle auto-project
+;;  p: push now
+;;  X: clear gptel
 
 ;;; Code:
 
@@ -34,6 +32,7 @@
 (require 'context-navigator-util)
 (require 'context-navigator-ui)
 (require 'context-navigator-view-multifile)
+(require 'context-navigator-transient-build)
 
 (declare-function context-navigator-multifile-open "context-navigator-view-multifile" ())
 
@@ -96,73 +95,61 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
 ;;;###autoload
 (transient-define-prefix context-navigator-view-transient ()
   "Navigator menu"
-  [[:description (lambda () (context-navigator-i18n :tr-navigate))
-                 ("RET" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate-safe)
-                 ("SPC" (lambda () (context-navigator-i18n :help-preview))  context-navigator-view-preview)
-                 ("n"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
-                 ("p"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
-                 ("j"   (lambda () (context-navigator-i18n :help-next-item))     context-navigator-view-next-item)
-                 ("k"   (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
-                 ("b"   (lambda () (or (ignore-errors (context-navigator-i18n :select-by-name)) "Select by name"))
-                  context-navigator-select-by-name)
-                 ("h"   (lambda ()
-                          (if (eq context-navigator-view--mode 'groups)
-                              (context-navigator-i18n :groups-help-back)
-                            (context-navigator-i18n :items-help-view-groups)))
-                  context-navigator-view-go-up)]
-   [:description (lambda () (context-navigator-i18n :tr-items))
-                 :if (lambda () (eq context-navigator-view--mode 'items))
-                 ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
-                 ("m" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
-                 ("d" (lambda () (context-navigator-i18n :help-delete))       context-navigator-view-delete-dispatch)
-                 ("g" (lambda () (context-navigator-i18n :help-refresh))      context-navigator-view-refresh-dispatch)
-                 ("o" (lambda ()
-                        (cl-destructuring-bind (n . plus) (context-navigator-view--openable-count-get)
-                          (format "%s (%d%s)" (context-navigator-i18n :open-buffers) n (if plus "+" ""))))
-                  context-navigator-view-open-all-buffers)
-                 ("c" (lambda ()
-                        (let ((n (length (context-navigator-view--collect-closable-buffers))))
-                          (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
-                  context-navigator-view-close-all-buffers)
-                 ("R" (lambda () (context-navigator-i18n :tr-razor))
-                  context-navigator-view-razor-run
-                  :if (lambda ()
-                        (cl-some (lambda (b)
-                                   (with-current-buffer b
-                                     (derived-mode-p 'org-mode)))
-                                 (buffer-list)))) ]
-   [:description (lambda () (context-navigator-i18n :tr-groups))
-                 :if (lambda () (eq context-navigator-view--mode 'groups))
-                 ("RET" (lambda () (context-navigator-i18n :groups-help-open))   context-navigator-view-activate-safe)
-                 ("+"   (lambda () (context-navigator-i18n :groups-help-add))    context-navigator-view-group-create)
-                 ("R"   (lambda () (context-navigator-i18n :groups-help-rename)) context-navigator-view-group-rename)
-                 ("E"   (lambda ()
-                          (or (ignore-errors (context-navigator-i18n :groups-help-edit-description))
-                              "Edit description"))
-                  context-navigator-view-group-edit-description)
-                 ("y"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
-                 ("D"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
-                 ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
-   [:description (lambda () (context-navigator-i18n :tr-session))
-                 ("G" (lambda ()
-                        (format (context-navigator-i18n :push-state)
-                                (context-navigator-i18n
-                                 (if (and (boundp 'context-navigator--push-to-gptel)
-                                          context-navigator--push-to-gptel) :on :off))))
-                  context-navigator-view-toggle-push)
-                 ("A" (lambda ()
-                        (format (context-navigator-i18n :auto-project-state)
-                                (context-navigator-i18n
-                                 (if (and (boundp 'context-navigator--auto-project-switch)
-                                          context-navigator--auto-project-switch) :on :off))))
-                  context-navigator-view-toggle-auto-project)
-                 ("p" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
-                 ("x" (lambda () (context-navigator-i18n :clear-group))  context-navigator-view-clear-group)
-                 ("X" (lambda () (context-navigator-i18n :clear-gptel))  context-navigator-view-clear-gptel)
-                 ("U" (lambda () (context-navigator-i18n :tr-unload))    context-navigator-context-unload)]
-   ["Help/Exit"
-    ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
-    ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)]])
+  [ ["Navigate"
+     ("j" (lambda () (context-navigator-i18n :help-next-item)) context-navigator-view-next-item)
+     ("k" (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
+     ("l" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate-safe)
+     ("h" (lambda () (context-navigator-i18n :help-go-up)) context-navigator-view-go-up)
+     ("TAB" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-tab-next)
+     ("S-<tab>" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-tab-previous)
+     ("v" (lambda () (context-navigator-i18n :help-preview)) context-navigator-view-preview)]
+    ;; Items-only actions
+    [:description (lambda () (context-navigator-i18n :tr-items))
+                  :if (lambda () (eq context-navigator-view--mode 'items))
+                  ("o" (lambda ()
+                         (cl-destructuring-bind (n . plus) (context-navigator-view--openable-count-get)
+                           (format "%s (%d%s)" (context-navigator-i18n :open-buffers) n (if plus "+" ""))))
+                   context-navigator-view-open-all-buffers)
+                  ("c" (lambda ()
+                         (let ((n (length (context-navigator-view--collect-closable-buffers))))
+                           (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
+                   context-navigator-view-close-all-buffers)
+                  ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
+                  ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
+                  ("U" (lambda () (context-navigator-i18n :disable-all-gptel)) context-navigator-view-disable-all-gptel)
+                  ("M" (lambda () (context-navigator-i18n :enable-all-gptel)) context-navigator-view-enable-all-gptel)
+                  ("d" (lambda () (context-navigator-i18n :help-delete)) context-navigator-view-delete-dispatch)
+                  ("g" (lambda () (context-navigator-i18n :help-refresh)) context-navigator-view-refresh-dispatch)
+                  ("x" (lambda () (context-navigator-i18n :help-clear-group)) context-navigator-view-clear-group)
+                  ("X" (lambda () (context-navigator-i18n :help-clear-gptel)) context-navigator-view-clear-gptel)
+                  ("s" (lambda () (context-navigator-i18n :stats)) context-navigator-view-stats-toggle)
+                  ("R" (lambda () (context-navigator-i18n :tr-razor))
+                   context-navigator-view-razor-run
+                   :if (lambda ()
+                         (cl-some (lambda (b)
+                                    (with-current-buffer b
+                                      (derived-mode-p 'org-mode)))
+                                  (buffer-list)))) ]
+    ;; Groups-only actions
+    [:description (lambda () (context-navigator-i18n :tr-groups))
+                  :if (lambda () (eq context-navigator-view--mode 'groups))
+                  ("a" (lambda () (context-navigator-i18n :help-group-create)) context-navigator-view-group-create)
+                  ("r" (lambda () (context-navigator-i18n :help-group-rename)) context-navigator-view-group-rename)
+                  ("e" (lambda () (context-navigator-i18n :groups-help-edit-description)) context-navigator-view-group-edit-description)
+                  ("y" (lambda () (context-navigator-i18n :help-group-duplicate)) context-navigator-view-group-duplicate)
+                  ("d" (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
+                  ("SPC" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-group-toggle-select)
+                  ("G" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-toggle-multi-group)]
+    ;; Session
+    ["Session"
+     ("V" (lambda () (context-navigator-i18n :help-toggle-push)) context-navigator-view-toggle-push)
+     ("A" (lambda () (context-navigator-i18n :help-toggle-auto)) context-navigator-view-toggle-auto-project)
+     ("p" (lambda () (context-navigator-i18n :help-push-now)) context-navigator-view-push-now)
+     ("U" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]
+    ;; Help/Exit
+    ["Help/Exit"
+     ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
+     ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)] ])
 
 ;; Add logic moved to context-navigator-add.el
 
