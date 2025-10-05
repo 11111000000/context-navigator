@@ -1137,35 +1137,120 @@ Also clears gptel context when push→gptel is enabled."
           (context-navigator-ui-info :cleared-current-group slug))
       (context-navigator-ui-info :no-active-group))))
 
-;;;###autoload
-(defun context-navigator-context-unload ()
-  "Unload/clear context and switch to global (nil root).
-Removes all gptel context entries and resets state flags safely."
-  (interactive)
-  ;; Cancel any pending autosave first to avoid cross-root writes.
+(defun context-navigator--unload-begin ()
+  "Begin unload sequence: cancel autosave and set inhibit flags + global root."
   (ignore-errors (context-navigator-events-cancel :autosave))
-  ;; Atomically enable inhibits and set root to nil so no save can target a new location mid-switch.
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur)))
     (setf (context-navigator-state-inhibit-refresh new) t)
     (setf (context-navigator-state-inhibit-autosave new) t)
     (setf (context-navigator-state-loading-p new) t)
     (setf (context-navigator-state-last-project-root new) nil)
-    (context-navigator--set-state new))
-  ;; Clear gptel asynchronously (do not block UI)
+    (context-navigator--set-state new)))
+
+(defun context-navigator--unload-clear-gptel-async ()
+  "Best-effort async clear of gptel context when push→gptel is enabled."
   (when context-navigator--push-to-gptel
-    (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now)))))
-  ;; Clear model (inhibited autosave prevents accidental writes)
-  (context-navigator-set-items '())
-  ;; Drop inhibits and notify done
-  (let* ((cur2 (context-navigator--state-get))
-         (new2 (context-navigator--state-copy cur2)))
-    (setf (context-navigator-state-inhibit-refresh new2) nil)
-    (setf (context-navigator-state-inhibit-autosave new2) nil)
-    (setf (context-navigator-state-loading-p new2) nil)
-    (context-navigator--set-state new2))
+    (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-gptel-clear-all-now))))))
+
+(defun context-navigator--unload-clear-model ()
+  "Clear the current model items (autosave is inhibited during unload)."
+  (context-navigator-set-items '()))
+
+(defun context-navigator--unload-finalize ()
+  "Drop inhibit flags and mark loading finished after unload."
+  (let* ((cur (context-navigator--state-get))
+         (new (context-navigator--state-copy cur)))
+    (setf (context-navigator-state-inhibit-refresh new) nil)
+    (setf (context-navigator-state-inhibit-autosave new) nil)
+    (setf (context-navigator-state-loading-p new) nil)
+    (context-navigator--set-state new)))
+
+;;;###autoload
+(defun context-navigator-context-unload ()
+  "Unload/clear context and switch to global (nil root).
+Removes all gptel context entries and resets state flags safely."
+  (interactive)
+  (context-navigator--unload-begin)
+  (context-navigator--unload-clear-gptel-async)
+  (context-navigator--unload-clear-model)
+  (context-navigator--unload-finalize)
   (context-navigator-events-publish :context-load-done nil nil)
   (context-navigator-ui-info :context-unloaded))
+
+(defun context-navigator--on-model-refreshed (state)
+  "Handle :model-refreshed by pushing to gptel when allowed."
+  (when (and (boundp 'context-navigator--push-to-gptel)
+             context-navigator--push-to-gptel
+             (fboundp 'context-navigator-gptel-apply)
+             (context-navigator--apply-allowed-p))
+    (context-navigator-events-debounce
+     :gptel-apply
+     0.03
+     (lambda ()
+       (let ((st (ignore-errors (context-navigator--state-get))))
+         (when (and (context-navigator-state-p st)
+                    ;; Skip while loading to avoid fighting load-batch.
+                    (not (context-navigator-state-loading-p st))
+                    ;; Ensure we act on the latest generation we’ve seen.
+                    (>= (or (context-navigator-state-generation st) 0)
+                        (or (and (context-navigator-state-p state)
+                                 (context-navigator-state-generation state))
+                            0)))
+           (let* ((root (ignore-errors (context-navigator-state-last-project-root st)))
+                  (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+                  (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+                  (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+             (cond
+              ;; MG ON + non-empty selection → push ALL items across selected groups (forced enabled)
+              ((and mg (listp sel) (> (length sel) 0))
+               (context-navigator-collect-items-for-groups-async
+                root sel
+                (lambda (items)
+                  (let* ((token (and st (context-navigator-state-load-token st)))
+                         (forced (context-navigator--force-enable-items items)))
+                    (ignore-errors (context-navigator--gptel-defer-or-start (or forced '()) token))))))
+              ;; MG ON + empty selection → clear gptel now
+              (mg
+               (ignore-errors (context-navigator-gptel-clear-all-now)))
+              ;; MG OFF → apply current model (enabled-only semantics inside bridge)
+              (t
+               (let ((items (context-navigator-state-items st)))
+                 (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))))
+
+(defun context-navigator--subscribe-project-switch ()
+  "Subscribe to :project-switch and track the token."
+  (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
+        context-navigator--event-tokens))
+
+(defun context-navigator--subscribe-model-refreshed ()
+  "Subscribe to :model-refreshed and track the token."
+  (push (context-navigator-events-subscribe :model-refreshed #'context-navigator--on-model-refreshed)
+        context-navigator--event-tokens))
+
+(defun context-navigator--mode-enable ()
+  "Enable Context Navigator: wiring, hooks, subscriptions."
+  ;; Ensure global keybinding is applied when the mode is enabled
+  (ignore-errors (context-navigator--update-global-keybinding))
+  ;; Install project hooks
+  (ignore-errors (context-navigator-project-setup-hooks))
+  ;; Event subscriptions
+  ;; gptel-change subscription disabled (no pull from gptel anymore)
+  (context-navigator--subscribe-project-switch)
+  (context-navigator--subscribe-model-refreshed)
+  ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
+  ;; If auto-project is already ON, trigger an initial project switch immediately.
+  (when context-navigator--auto-project-switch
+    (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+      (context-navigator-events-publish :project-switch root)))
+  (context-navigator--log "mode enabled"))
+
+(defun context-navigator--mode-disable ()
+  "Disable Context Navigator: unsubscribe and teardown hooks."
+  (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
+  (setq context-navigator--event-tokens nil)
+  (ignore-errors (context-navigator-project-teardown-hooks))
+  (context-navigator--log "mode disabled"))
 
 ;;;###autoload
 (define-minor-mode context-navigator-mode
@@ -1175,69 +1260,8 @@ Sets up event wiring and keybindings."
   :global t
   :keymap context-navigator-mode-map
   (if context-navigator-mode
-      (progn
-        ;; Ensure global keybinding is applied when the mode is enabled
-        (ignore-errors (context-navigator--update-global-keybinding))
-        ;; Install project hooks
-        (ignore-errors (context-navigator-project-setup-hooks))
-        ;; Subscribe to events
-        ;; gptel-change subscription disabled (no pull from gptel anymore)
-        (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
-              context-navigator--event-tokens)
-
-        ;; Apply to gptel immediately (light debounce) when push→gptel is ON and allowed.
-        (push (context-navigator-events-subscribe
-               :model-refreshed
-               (lambda (state)
-                 (when (and (boundp 'context-navigator--push-to-gptel)
-                            context-navigator--push-to-gptel
-                            (fboundp 'context-navigator-gptel-apply)
-                            (context-navigator--apply-allowed-p))
-                   (context-navigator-events-debounce
-                    :gptel-apply
-                    0.03
-                    (lambda ()
-                      (let ((st (ignore-errors (context-navigator--state-get))))
-                        (when (and (context-navigator-state-p st)
-                                   ;; Skip while loading to avoid fighting load-batch.
-                                   (not (context-navigator-state-loading-p st))
-                                   ;; Ensure we act on the latest generation we’ve seen.
-                                   (>= (or (context-navigator-state-generation st) 0)
-                                       (or (and (context-navigator-state-p state)
-                                                (context-navigator-state-generation state))
-                                           0)))
-                          (let* ((root (ignore-errors (context-navigator-state-last-project-root st)))
-                                 (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
-                                 (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
-                                 (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
-                            (cond
-                             ;; MG ON + non-empty selection → push ALL items across selected groups (forced enabled)
-                             ((and mg (listp sel) (> (length sel) 0))
-                              (context-navigator-collect-items-for-groups-async
-                               root sel
-                               (lambda (items)
-                                 (let* ((token (and st (context-navigator-state-load-token st)))
-                                        (forced (context-navigator--force-enable-items items)))
-                                   (ignore-errors (context-navigator--gptel-defer-or-start (or forced '()) token))))))
-                             ;; MG ON + empty selection → clear gptel now
-                             (mg
-                              (ignore-errors (context-navigator-gptel-clear-all-now)))
-                             ;; MG OFF → apply current model (enabled-only semantics inside bridge)
-                             (t
-                              (let ((items (context-navigator-state-items st)))
-                                (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))))))
-              context-navigator--event-tokens)
-        ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
-        ;; If auto-project is already ON, trigger an initial project switch immediately.
-        (when context-navigator--auto-project-switch
-          (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
-            (context-navigator-events-publish :project-switch root)))
-        (context-navigator--log "mode enabled"))
-    ;; Teardown
-    (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
-    (setq context-navigator--event-tokens nil)
-    (ignore-errors (context-navigator-project-teardown-hooks))
-    (context-navigator--log "mode disabled"))
+      (context-navigator--mode-enable)
+    (context-navigator--mode-disable)))
 
 (defun context-navigator-set-items (items)
   "Replace current model ITEMS with ITEMS and publish :model-refreshed.
@@ -1347,70 +1371,35 @@ Strategy:
                                (buffer-list))))
      (and buf-any (context-navigator-project-root buf-any)))))
 
+(defun context-navigator--reinit-resubscribe ()
+  "Reinstall hooks and core event subscriptions after reload."
+  ;; Unsubscribe only our own tokens; do not reset the global event bus
+  ;; to avoid breaking other modules’ subscriptions (logs, UI, etc.).
+  (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
+  (setq context-navigator--event-tokens nil)
+  ;; Ensure project hooks installed
+  (ignore-errors (context-navigator-project-setup-hooks))
+  ;; Re-subscribe core listeners
+  (context-navigator--subscribe-project-switch)
+  (context-navigator--subscribe-model-refreshed))
+
+(defun context-navigator--reload-active-group-or-autoproject ()
+  "Reload active group from disk; otherwise pick a reasonable project root."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (slug (and st (context-navigator-state-current-group-slug st))))
+    (if (and (stringp slug) (not (string-empty-p slug)))
+        (ignore-errors (context-navigator--load-group-for-root root slug))
+      (when context-navigator--auto-project-switch
+        (let ((r (ignore-errors (context-navigator--pick-root-for-autoproject))))
+          (context-navigator-events-publish :project-switch r))))))
+
 (defun context-navigator--reinit-after-reload ()
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
 Also reload the currently active group from disk (no clearing)."
   (when (bound-and-true-p context-navigator-mode)
-    ;; Unsubscribe only our own tokens; do not reset the global event bus
-    ;; to avoid breaking other modules’ subscriptions (logs, UI, etc.).
-    (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
-    (setq context-navigator--event-tokens nil)
-    ;; Ensure project hooks installed
-    (ignore-errors (context-navigator-project-setup-hooks))
-    ;; Re-subscribe core listeners
-    (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
-          context-navigator--event-tokens)
-
-    ;; Reinstall immediate apply to gptel after reload too.
-    (push (context-navigator-events-subscribe
-           :model-refreshed
-           (lambda (state)
-             (when (and (boundp 'context-navigator--push-to-gptel)
-                        context-navigator--push-to-gptel
-                        (fboundp 'context-navigator-gptel-apply)
-                        (context-navigator--apply-allowed-p))
-               (context-navigator-events-debounce
-                :gptel-apply
-                0.03
-                (lambda ()
-                  (let ((st (ignore-errors (context-navigator--state-get))))
-                    (when (and (context-navigator-state-p st)
-                               (not (context-navigator-state-loading-p st))
-                               (>= (or (context-navigator-state-generation st) 0)
-                                   (or (and (context-navigator-state-p state)
-                                            (context-navigator-state-generation state))
-                                       0)))
-                      (let* ((root (ignore-errors (context-navigator-state-last-project-root st)))
-                             (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
-                             (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
-                             (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
-                        (cond
-                         ;; MG ON + non-empty selection → push ALL items across selected groups (forced enabled)
-                         ((and mg (listp sel) (> (length sel) 0))
-                          (context-navigator-collect-items-for-groups-async
-                           root sel
-                           (lambda (items)
-                             (let* ((token (and st (context-navigator-state-load-token st)))
-                                    (forced (context-navigator--force-enable-items items)))
-                               (ignore-errors (context-navigator--gptel-defer-or-start (or forced '()) token))))))
-                         ;; MG ON + empty selection → clear gptel now
-                         (mg
-                          (ignore-errors (context-navigator-gptel-clear-all-now)))
-                         ;; MG OFF → apply current model (enabled-only semantics inside bridge)
-                         (t
-                          (let ((items (context-navigator-state-items st)))
-                            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))))))
-          context-navigator--event-tokens)
-    ;; Reload the currently active group from disk (no clearing). If no active group,
-    ;; fallback to the previous behavior (pick a reasonable project root).
-    (let* ((st (ignore-errors (context-navigator--state-get)))
-           (root (and st (context-navigator-state-last-project-root st)))
-           (slug (and st (context-navigator-state-current-group-slug st))))
-      (if (and (stringp slug) (not (string-empty-p slug)))
-          (ignore-errors (context-navigator--load-group-for-root root slug))
-        (when context-navigator--auto-project-switch
-          (let ((r (ignore-errors (context-navigator--pick-root-for-autoproject))))
-            (context-navigator-events-publish :project-switch r))))))
+    (context-navigator--reinit-resubscribe)
+    (context-navigator--reload-active-group-or-autoproject)))
 
 ;;;###autoload
 (defun context-navigator-restart ()
