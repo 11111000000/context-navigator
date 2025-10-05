@@ -127,7 +127,10 @@
   (interactive)
   (if (eq context-navigator-view--mode 'groups)
       (if-let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
-          (ignore-errors (context-navigator-group-delete slug))
+          (progn
+            (ignore-errors (context-navigator-group-delete slug))
+            (context-navigator-view--schedule-render)
+            (context-navigator-view--render-if-visible))
         (context-navigator-ui-info :no-group-at-point))
     (when (fboundp 'context-navigator-view-delete-from-model)
       (call-interactively 'context-navigator-view-delete-from-model))))
@@ -176,7 +179,9 @@
   (interactive)
   (if (eq context-navigator-view--mode 'groups)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
-        (ignore-errors (context-navigator-group-rename slug)))
+        (ignore-errors (context-navigator-group-rename slug))
+        (context-navigator-view--schedule-render)
+        (context-navigator-view--render-if-visible))
     (context-navigator-ui-info :press-h-open-groups-first)))
 
 ;;;###autoload
@@ -185,7 +190,9 @@
   (interactive)
   (if (eq context-navigator-view--mode 'groups)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
-        (ignore-errors (context-navigator-group-duplicate slug)))
+        (ignore-errors (context-navigator-group-duplicate slug))
+        (context-navigator-view--schedule-render)
+        (context-navigator-view--render-if-visible))
     (context-navigator-ui-info :press-h-open-groups-first)))
 
 ;;;###autoload
@@ -194,8 +201,13 @@
   (interactive)
   (if (eq context-navigator-view--mode 'groups)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
-        (ignore-errors (context-navigator-group-edit-description slug)))
-    (ignore-errors (context-navigator-group-edit-description))))
+        (ignore-errors (context-navigator-group-edit-description slug))
+        (context-navigator-view--schedule-render)
+        (context-navigator-view--render-if-visible))
+    (progn
+      (ignore-errors (context-navigator-group-edit-description))
+      (context-navigator-view--schedule-render)
+      (context-navigator-view--render-if-visible))))
 
 ;;;###autoload
 (defun context-navigator-view-group-toggle-select ()

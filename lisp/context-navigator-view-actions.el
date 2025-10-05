@@ -204,7 +204,13 @@ updated set to gptel immediately. The new state is persisted via autosave."
            (items (and (context-navigator-state-p st) (context-navigator-state-items st))))
       (when (and items (boundp 'context-navigator--push-to-gptel) context-navigator--push-to-gptel)
         (ignore-errors (context-navigator-gptel-apply items)))
-      (context-navigator-ui-info :deleted-from-model (or (context-navigator-item-name item) key)))))
+      (context-navigator-ui-info :deleted-from-model (or (context-navigator-item-name item) key))
+      ;; Force immediate UI refresh so the item disappears now
+      (let ((buf (get-buffer context-navigator-view--buffer-name)))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf
+            (context-navigator-view--invalidate-render-caches t)
+            (context-navigator-view--render-if-visible)))))))
 
 ;;;###autoload
 (defun context-navigator-view-open-all-buffers ()
