@@ -10,6 +10,7 @@
 
 (require 'subr-x)
 (require 'context-navigator-i18n)
+(require 'context-navigator-keyspec)
 
 (defvar context-navigator-view-mode-map)
 
@@ -19,103 +20,64 @@
 
 ;;;###autoload
 (defun context-navigator-view-help ()
-  "Show localized, column-formatted help for Context Navigator without truncation."
+  "Show localized, sectioned help for Context Navigator based on the central keyspec."
   (interactive)
   (with-help-window "*Context Navigator Help*"
-    (let* ((map context-navigator-view-mode-map)
-           ;; Command → i18n key for description
-           (pairs '((context-navigator-view-next-item         . :help-next-item)
-                    (context-navigator-view-previous-item     . :help-previous-item)
-                    (context-navigator-view-activate          . :help-activate)
-                    (context-navigator-view-preview           . :help-preview)
-                    (context-navigator-view-toggle-enabled     . :help-toggle-gptel)
-                    (context-navigator-view-delete-dispatch   . :help-delete)
-                    (context-navigator-view-refresh-dispatch  . :help-refresh)
-                    (context-navigator-view-go-up             . :help-go-up)
-                    (context-navigator-view-group-create      . :help-group-create)
-                    (context-navigator-view-group-rename      . :help-group-rename)
-                    (context-navigator-view-group-duplicate   . :help-group-duplicate)
-                    (context-navigator-view-toggle-push       . :help-toggle-push)
-                    (context-navigator-view-toggle-auto-project . :help-toggle-auto)
-                    (context-navigator-view-open-all-buffers  . :help-open-all)
-                    (context-navigator-view-push-now          . :help-push-now)
-                    (context-navigator-view-clear-group       . :help-clear-group)
-                    (context-navigator-view-clear-gptel       . :help-clear-gptel)
-                    (context-navigator-view-quit              . :help-quit)
-                    (context-navigator-view-help              . :help-help)))
-           ;; Build (keys . desc) then padded line strings
-           (rows-raw
-            (mapcar
-             (lambda (cell)
-               (let* ((cmd  (car cell))
-                      (desc (context-navigator-i18n (cdr cell)))
-                      (keys (mapcar #'key-description (where-is-internal cmd map)))
-                      (ks   (if keys (string-join keys ", ") "<unbound>")))
-                 (cons ks desc)))
-             pairs))
-           (keyw (apply #'max 0 (mapcar (lambda (x) (string-width (car x))) rows-raw)))
-           (lines (mapcar (lambda (x) (format (format "%%-%ds %%s" (max 14 keyw)) (car x) (cdr x)))
-                          rows-raw))
-           ;; Detect/help the real window width for proper column calculation.
-           (ww (let* ((buf "*Context Navigator Help*")
-                      (win (or (get-buffer-window buf t)
-                               (get-buffer-window (current-buffer) t)))
-                      (maxw (apply #'max 80 (mapcar #'window-body-width (window-list)))))
-                 (or (and win (window-body-width win))
-                     maxw
-                     (frame-width)
-                     80)))
-           (spacing "  ")
-           ;; Try to place in 3/2/1 columns to fit without truncation.
-           (choose-cols
-            (lambda ()
-              (let ((n (length lines)))
-                (cl-loop for c in '(3 2 1) do
-                         (let* ((cols c)
-                                (rows (ceiling (/ (float n) (max 1 cols))))
-                                ;; compute column widths for this layout
-                                (colw
-                                 (cl-loop for ci from 0 below cols collect
-                                          (let ((w 0))
-                                            (cl-loop for ri from 0 below rows
-                                                     for idx = (+ ri (* ci rows))
-                                                     when (< idx n) do
-                                                     (setq w (max w (string-width (nth idx lines)))))
-                                            w)))
-                                (total (+ (apply #'+ colw) (* (string-width spacing) (1- cols)))))
-                           (when (<= total ww)
-                             (cl-return cols))))
-                1)))  ;; default 1
-           (cols (funcall choose-cols))
-           (rows (ceiling (/ (float (length lines)) (max 1 cols))))
-           ;; Recompute exact per-column widths for chosen layout
-           (colw
-            (cl-loop for ci from 0 below cols collect
-                     (let ((w 0))
-                       (cl-loop for ri from 0 below rows
-                                for idx = (+ ri (* ci rows))
-                                when (< idx (length lines)) do
-                                (setq w (max w (string-width (nth idx lines)))))
-                       w))))
+    (let* ((nav-buf (get-buffer "*context-navigator*"))
+           (mode (with-current-buffer (or nav-buf (current-buffer))
+                   (if (boundp 'context-navigator-view--mode)
+                       context-navigator-view--mode
+                     'items)))
+           (print-section
+            (lambda (title pairs)
+              (when (and pairs (> (length pairs) 0))
+                (princ title) (princ "\n")
+                (let* ((keyw (apply #'max 0 (mapcar (lambda (x) (string-width (car x))) pairs)))
+                       (fmt (format "  %%-%ds — %%s\n" (max 2 keyw))))
+                  (dolist (cell pairs)
+                    (princ (format fmt (car cell) (cdr cell)))))
+                (princ "\n"))))
+           (flatten
+            (lambda (alist)
+              (let (acc)
+                (dolist (sec alist (nreverse acc))
+                  (dolist (p (cdr sec))
+                    (push p acc))))))
+           (localize-section
+            (lambda (sec)
+              (pcase sec
+                ('navigate (context-navigator-i18n :tr-navigate))
+                ('act      (context-navigator-i18n :tr-actions))
+                ('groups   (context-navigator-i18n :tr-groups))
+                ('session  (context-navigator-i18n :tr-session))
+                (_         "Tools"))))
+           (order '(navigate act groups session tools))
+           (global-help (and (fboundp 'context-navigator-keys-help)
+                             (context-navigator-keys-help 'global)))
+           (ctx (if (eq mode 'groups) 'groups 'items))
+           (ctx-help (and (fboundp 'context-navigator-keys-help)
+                          (context-navigator-keys-help ctx))))
       ;; Title
       (princ (context-navigator-i18n :help-title)) (princ "\n\n")
-      ;; Emit lines as rows×cols grid with padding; no truncation.
-      (dotimes (r rows)
-        (let ((acc ""))
-          (dotimes (c cols)
-            (let* ((idx (+ r (* c rows)))
-                   (s (or (nth idx lines) ""))
-                   (pad (if (< c (1- cols))
-                            (format (format "%%-%ds" (nth c colw)) s)
-                          s)))
-              (setq acc (if (string-empty-p acc) pad (concat acc spacing pad)))))
-          (princ acc) (princ "\n")))
-      (princ "\n")
-      ;; Global keys section (localized)
-      (princ (context-navigator-i18n :help-global-title)) (princ "\n")
-      (princ (context-navigator-i18n :help-global-summary)) (princ "\n\n")
-      ;; Groups mode summary (localized)
-      (princ (context-navigator-i18n :help-groups-summary)) (princ "\n"))))
+      ;; Global keys
+      (funcall print-section
+               (context-navigator-i18n :help-global-title)
+               (funcall flatten global-help))
+      ;; Context keys (Items/Groups)
+      (princ (if (eq ctx 'groups) (context-navigator-i18n :tr-groups)
+               (context-navigator-i18n :tr-items)))
+      (princ "\n\n")
+      (dolist (sec order)
+        (let* ((block (assoc sec ctx-help))
+               (pairs (and block (cdr block)))
+               (title (funcall localize-section sec)))
+          (when pairs
+            (funcall print-section title pairs))))
+      ;; Small summaries
+      (when (eq ctx 'items)
+        (princ (context-navigator-i18n :items-help-view-groups)) (princ (context-navigator-i18n :items-help-help)) (princ "\n"))
+      (when (eq ctx 'groups)
+        (princ (context-navigator-i18n :help-groups-summary)) (princ "\n")))))
 
 ;;;###autoload
 (defun context-navigator-view-open-menu ()

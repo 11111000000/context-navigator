@@ -352,7 +352,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                                  (concat fr fr))))))
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :push-now))) " [P]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :push-now))) " [p]")))
       (open-buffers
        :type action
        :icon-key open-buffers
@@ -372,7 +372,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :close-buffers))) " [K]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :close-buffers))) " [c]")))
       ;; (clear-gptel
       ;;  :type action
       ;;  :icon-key clear-gptel
@@ -393,7 +393,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :visible-p ,(lambda () t)
        :label-fn ,(lambda (style _s)
                     (if (eq style 'text)
-                        (format " [%s]" (capitalize (context-navigator-i18n :clear-group))) " [E]")))
+                        (format " [%s]" (capitalize (context-navigator-i18n :clear-group))) " [x]")))
       (toggle-all-gptel
        :type action
        :icon-key toggle-all-gptel

@@ -66,7 +66,7 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
     ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
    ["Context/Groups"
     ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
-    ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-context-clear-current-group)]
+    ("x" (lambda () (context-navigator-i18n :clear-group)) context-navigator-context-clear-current-group)]
    ["Actions"
     ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
     ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
@@ -82,8 +82,8 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
     ("M" (lambda () (context-navigator-i18n :enable-all-gptel)) context-navigator-view-enable-all-gptel)
     ("U" (lambda () (context-navigator-i18n :disable-all-gptel)) context-navigator-view-disable-all-gptel)
     ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
-    ("P" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
-    ("C" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
+    ("p" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
+    ("X" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
     ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
      :if (lambda () (derived-mode-p 'org-mode)))]
    [:description (lambda () (context-navigator-i18n :tr-logs))
@@ -120,7 +120,7 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
                         (cl-destructuring-bind (n . plus) (context-navigator-view--openable-count-get)
                           (format "%s (%d%s)" (context-navigator-i18n :open-buffers) n (if plus "+" ""))))
                   context-navigator-view-open-all-buffers)
-                 ("K" (lambda ()
+                 ("c" (lambda ()
                         (let ((n (length (context-navigator-view--collect-closable-buffers))))
                           (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
                   context-navigator-view-close-all-buffers)
@@ -140,7 +140,7 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
                           (or (ignore-errors (context-navigator-i18n :groups-help-edit-description))
                               "Edit description"))
                   context-navigator-view-group-edit-description)
-                 ("C"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
+                 ("y"   (lambda () (context-navigator-i18n :groups-help-copy))   context-navigator-view-group-duplicate)
                  ("D"   (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
                  ("g"   (lambda () (context-navigator-i18n :groups-help-refresh)) context-navigator-view-refresh-dispatch)]
    [:description (lambda () (context-navigator-i18n :tr-session))
@@ -156,9 +156,10 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
                                  (if (and (boundp 'context-navigator--auto-project-switch)
                                           context-navigator--auto-project-switch) :on :off))))
                   context-navigator-view-toggle-auto-project)
-                 ("P" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
-                 ("E" (lambda () (context-navigator-i18n :clear-group)) context-navigator-view-clear-group)
-                 ("X" (lambda () (context-navigator-i18n :tr-unload))   context-navigator-context-unload)]
+                 ("p" (lambda () (context-navigator-i18n :push-now))     context-navigator-view-push-now)
+                 ("x" (lambda () (context-navigator-i18n :clear-group))  context-navigator-view-clear-group)
+                 ("X" (lambda () (context-navigator-i18n :clear-gptel))  context-navigator-view-clear-gptel)
+                 ("U" (lambda () (context-navigator-i18n :tr-unload))    context-navigator-context-unload)]
    ["Help/Exit"
     ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
     ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)]])

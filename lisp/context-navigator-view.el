@@ -42,6 +42,7 @@
 ;; moved: UI keymap helpers now live here (no separate segments module)
 (require 'context-navigator-view-windows)
 (require 'context-navigator-view-title)
+(require 'context-navigator-keyspec)
 
 ;; --- UI keymap helpers (moved from context-navigator-view-segments.el) -------
 
@@ -483,76 +484,20 @@ model generation changed."
 
 (defvar context-navigator-view--group-line-keymap
   (let ((m (make-sparse-keymap)))
+    ;; Mouse only; all keyboard keys come from the parent mode-map via keyspec.
     (define-key m [mouse-1] #'context-navigator-view-mouse-open-group)
-    ;; Explicit keyboard bindings on group lines for reliability
-    (define-key m (kbd "RET")       #'context-navigator-view-activate)
-    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
-    (define-key m [return]          #'context-navigator-view-activate)
-    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
-    (define-key m [kp-enter]        #'context-navigator-view-activate)
-    (define-key m (kbd "l")         #'context-navigator-view-activate)
-    ;; Toggle selection of a group in groups mode (MG): t/m/SPC
-    (define-key m (kbd "t")         #'context-navigator-view-group-toggle-select)
-    (define-key m (kbd "m")         #'context-navigator-view-group-toggle-select)
-    (define-key m (kbd "SPC")       #'context-navigator-view-group-toggle-select)
     m)
-  "Keymap attached to group lines to support mouse and keyboard activation.")
+  "Keymap attached to group lines.
+Keyboard bindings are inherited from `context-navigator-view-mode-map'.")
 
 (defvar context-navigator-view-mode-map
   (let ((m (make-sparse-keymap)))
-    (define-key m (kbd "RET")       #'context-navigator-view-activate)
-    (define-key m (kbd "C-m")       #'context-navigator-view-activate)
-    (define-key m [return]          #'context-navigator-view-activate)
-    (define-key m (kbd "<return>")  #'context-navigator-view-activate)
-    (define-key m [kp-enter]        #'context-navigator-view-activate)
-    (define-key m (kbd "v")       #'context-navigator-view-preview)
-    (define-key m (kbd "n")   #'context-navigator-view-next-item)
-    (define-key m (kbd "p")   #'context-navigator-view-previous-item)
-    (define-key m (kbd "j")   #'context-navigator-view-next-item)
-    (define-key m (kbd "k")   #'context-navigator-view-previous-item)
-    (define-key m (kbd "<down>") #'context-navigator-view-next-item)
-    (define-key m (kbd "<up>")   #'context-navigator-view-previous-item)
-    (define-key m (kbd "l")   #'context-navigator-view-activate)
-    (define-key m (kbd "SPC")   #'context-navigator-view-toggle-enabled)
-    (define-key m (kbd "t")   #'context-navigator-view-toggle-enabled)
-    (define-key m (kbd "m")   #'context-navigator-view-toggle-enabled)
-    (define-key m (kbd "T")   #'context-navigator-view-toggle-all-gptel)
-    (define-key m (kbd "U")   #'context-navigator-view-disable-all-gptel)
-    (define-key m (kbd "M")   #'context-navigator-view-enable-all-gptel)
-    (define-key m (kbd "TAB")       #'context-navigator-view-tab-next)
-    (define-key m (kbd "<tab>")     #'context-navigator-view-tab-next)
-    (define-key m [tab]             #'context-navigator-view-tab-next)
-    (define-key m (kbd "C-i")       #'context-navigator-view-tab-next)
-    (define-key m (kbd "<backtab>") #'context-navigator-view-tab-previous)
-    (define-key m [backtab]         #'context-navigator-view-tab-previous)
-    (define-key m (kbd "S-<tab>")   #'context-navigator-view-tab-previous)
-    (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
-
+    ;; Keep only essential remaps here; all other bindings come from keyspec.
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
-
-    (define-key m (kbd "h")   #'context-navigator-view-show-groups)
-    (define-key m (kbd "V")   #'context-navigator-view-toggle-push)
-    (define-key m (kbd "A")   #'context-navigator-view-toggle-auto-project)
-    (define-key m (kbd "P")   #'context-navigator-view-push-now)
-    (define-key m (kbd "s")   #'context-navigator-view-stats-toggle)
-
-    (define-key m (kbd "U")   #'context-navigator-view-disable-all-gptel)
-    (define-key m (kbd "d")   #'context-navigator-view-delete-dispatch)
-    (define-key m (kbd "g")   #'context-navigator-view-refresh-dispatch)
-    (define-key m (kbd "o")   #'context-navigator-view-open-all-buffers)
-    (define-key m (kbd "K")   #'context-navigator-view-close-all-buffers)
-    (define-key m (kbd "E")   #'context-navigator-view-clear-group)
-
-    (define-key m (kbd "h")   #'context-navigator-view-go-up)      ;; alias (help/docs use h)
-    (define-key m (kbd "a")   #'context-navigator-view-group-create)
-    (define-key m (kbd "+")   #'context-navigator-view-group-create)
-    (define-key m (kbd "r")   #'context-navigator-view-group-rename)
-    (define-key m (kbd "e")   #'context-navigator-view-group-edit-description)
-    (define-key m (kbd "c")   #'context-navigator-view-group-duplicate)
-    (define-key m (kbd "q")   #'context-navigator-view-quit)
-    (define-key m (kbd "?")   #'context-navigator-view-open-menu)
+    (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
     m)
-  "Keymap for =context-navigator-view-mode'.")
+  "Keymap for =context-navigator-view-mode'.
+Only minimal remaps are defined here; all other bindings are applied from `context-navigator-keyspec'.")
 
 ;; Ensure group line keymap inherits major mode map so keyboard works on group lines
 (when (and (keymapp context-navigator-view--group-line-keymap)
@@ -562,6 +507,12 @@ model generation changed."
            (keymapp context-navigator-view--title-line-keymap)
            (keymapp context-navigator-view-mode-map))
   (set-keymap-parent context-navigator-view--title-line-keymap context-navigator-view-mode-map))
+
+;; Apply centralized keyspec bindings (middle path)
+(when (fboundp 'context-navigator-keys-apply-to)
+  (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
+  (context-navigator-keys-apply-to context-navigator-view-mode-map 'items)
+  (context-navigator-keys-apply-to context-navigator-view-mode-map 'groups))
 
 (defun context-navigator-view--hl-line-range ()
   "Return region to highlight for the current line.

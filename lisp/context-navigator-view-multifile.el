@@ -24,6 +24,7 @@
 (require 'context-navigator-ui)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-view-controls-icons)
+(require 'context-navigator-keyspec)
 
 ;; Forward decls (byte-compiler friendliness)
 (declare-function context-navigator-state-items "context-navigator-core" (state))
@@ -85,28 +86,16 @@
 
 (defvar context-navigator-multifile-mode-map
   (let ((m (make-sparse-keymap)))
-    (define-key m (kbd "RET") #'context-navigator-multifile-activate)
-    (define-key m (kbd "C-m") #'context-navigator-multifile-activate)
-    (define-key m (kbd "v")   #'context-navigator-multifile-visit)
-    (define-key m (kbd "n")   #'context-navigator-multifile-next)
-    (define-key m (kbd "j")   #'context-navigator-multifile-next)
-    (define-key m (kbd "k")   #'context-navigator-multifile-prev)
-    (define-key m (kbd "t")   #'context-navigator-multifile-toggle)
-    (define-key m (kbd "d")   #'context-navigator-multifile-delete)
-    (define-key m (kbd "p")   #'context-navigator-multifile-push)
-    (define-key m (kbd "P")   #'context-navigator-multifile-push)
-    (define-key m (kbd "f")   #'context-navigator-multifile-toggle-filter)
-    (define-key m (kbd "E")   #'context-navigator-multifile-edit-all)
-    (define-key m (kbd "z")   #'context-navigator-multifile-toggle-collapse-all)
-    ;; Toggle section collapse on TAB when point is on a header
+    ;; Keep only section toggle keys here; action/navigation bindings come from keyspec.
     (define-key m (kbd "TAB")       #'context-navigator-multifile-toggle-section)
     (define-key m (kbd "<tab>")     #'context-navigator-multifile-toggle-section)
     (define-key m [tab]             #'context-navigator-multifile-toggle-section)
     (define-key m (kbd "C-i")       #'context-navigator-multifile-toggle-section)
-    (define-key m (kbd "?")   #'context-navigator-multifile-help)
-    (define-key m (kbd "q")   #'context-navigator-multifile-close)
     m)
   "Keymap for `context-navigator-multifile-mode'.")
+;; Apply centralized keyspec bindings
+(when (fboundp 'context-navigator-keys-apply-to)
+  (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'multifile))
 
 (define-derived-mode context-navigator-multifile-mode special-mode "Context-MF"
   "Major mode for Context Multifile View."
