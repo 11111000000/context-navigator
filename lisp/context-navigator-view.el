@@ -388,8 +388,11 @@ background."
                          context-navigator--push-to-gptel))
            (auto-on (and (boundp 'context-navigator--auto-project-switch)
                          context-navigator--auto-project-switch))
+           ;; Include groups list fingerprint in groups mode so list changes force rerender.
+           (groups-hash (and (eq mode 'groups)
+                             (sxhash-equal context-navigator-view--groups)))
            ;; Compose key (include session flags so toggles force a refresh)
-           (key (list gen mode total gptel-hash openable plus header push-on auto-on context-navigator-view--collapsed-p)))
+           (key (list gen mode total gptel-hash openable plus header push-on auto-on context-navigator-view--collapsed-p groups-hash)))
       (when (equal key context-navigator-view--last-render-key)
         (ignore-errors
           (context-navigator-debug :trace :ui "render: skip (same key) %S" key)))
