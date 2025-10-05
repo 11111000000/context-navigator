@@ -23,7 +23,7 @@
 (defun context-navigator-view-groups-body-lines (state)
   "Return list of lines for groups body using STATE.
 
-Each group shows a selection marker (or checkbox for multi-group mode),
+Each group shows a selection indicator (lamp in multi-group mode),
 the display name and the items count."
   (let* ((active (and (context-navigator-state-p state)
                       (context-navigator-state-current-group-slug state)))
@@ -44,21 +44,14 @@ the display name and the items count."
                  (path (or (plist-get pl :path) nil))
                  (cnt  (or (ignore-errors (context-navigator-persist-group-item-count path)) 0))
                  (sel-p (member slug selected))
-                 (cb   (when mg
-                         (if (fboundp 'all-the-icons-material)
-                             (if sel-p
-                                 (all-the-icons-material "check_box"
-                                                         :face 'success
-                                                         :v-adjust -0.05)
-                               (all-the-icons-material "check_box_outline_blank"
-                                                       :face 'shadow
-                                                       :v-adjust -0.05))
-                           (if sel-p "[x]" "[ ]"))))
+                 ;; Lamp indicator like in items (green=selected, gray=not selected)
+                 (lamp (when mg
+                         (ignore-errors (context-navigator-indicator-string sel-p t))))
                  (gico "📁")
                  (cnt-str (format "%d" (max 0 (or cnt 0))))
                  (prefix (string-trim
                           (mapconcat #'identity
-                                     (delq nil (if mg (list cb gico) (list gico)))
+                                     (delq nil (if mg (list lamp gico) (list gico)))
                                      " ")))
                  (s (concat prefix " " disp " (" cnt-str ")")))
             (add-text-properties 0 (length s)
@@ -93,12 +86,7 @@ the display name and the items count."
 Title is shown in the header-line; the buffer shows controls (top), groups, and a minimal hint."
   (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
-         (ctrl (and (fboundp 'context-navigator-view-controls-lines)
-                    (context-navigator-view-controls-lines total-width)))
-         (head (if (and (listp ctrl) (> (length ctrl) 0))
-                   (append ctrl (list ""))
-                 (list (propertize " " 'context-navigator-reserved-line t))))
-         (lines (append head groups-lines help-lines)))
+         (lines (append groups-lines help-lines)))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)

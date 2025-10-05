@@ -710,6 +710,12 @@
     (:no-enabled-in-selection
      (en . "No enabled items in selected groups")
      (ru . "Нет включённых элементов в выбранных группах"))
+    (:no-items-in-selection
+     (en . "No items in selected groups")
+     (ru . "Нет элементов в выбранных группах"))
+    (:mg-toggle-locked
+     (en . "In multi-group mode item toggling is disabled")
+     (ru . "В режиме мультигрупп переключение элементов отключено"))
     (:autopush-disabled-threshold
      (en . "Auto-push disabled: %d enabled items (> %d). Use manual Push (P).")
      (ru . "Автопуш отключён: включённых элементов %d (> %d). Используйте ручной Push (P)."))

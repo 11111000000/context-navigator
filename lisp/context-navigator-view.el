@@ -31,7 +31,7 @@
 (require 'context-navigator-view-constants)
 (require 'context-navigator-view-controls)
 (require 'context-navigator-view-counters)
-(require 'context-navigator-view-dispatch)
+;; defer dispatch: autoloaded when invoked; avoid early require to prevent load errors
 (require 'context-navigator-view-events)
 (require 'context-navigator-view-groups)
 (require 'context-navigator-view-help)
@@ -39,9 +39,53 @@
 (require 'context-navigator-view-items)
 (require 'context-navigator-view-navigation)
 (require 'context-navigator-view-spinner)
-(require 'context-navigator-view-segments)
+;; moved: UI keymap helpers now live here (no separate segments module)
 (require 'context-navigator-view-windows)
 (require 'context-navigator-view-title)
+
+;; --- UI keymap helpers (moved from context-navigator-view-segments.el) -------
+
+(defvar context-navigator-view-ui--fallback-parent nil
+  "Fallback parent keymap for Navigator interactive segments when the major mode map is not yet available.")
+
+(defun context-navigator-view-ui-parent-keymap ()
+  "Return a reliable parent keymap for Navigator UI segments.
+Prefers `context-navigator-view-mode-map' when it is bound and a keymap.
+Falls back to a lazily created sparse keymap cached in
+`context-navigator-view-ui--fallback-parent'."
+  (or (and (boundp 'context-navigator-view-mode-map)
+           (keymapp context-navigator-view-mode-map)
+           context-navigator-view-mode-map)
+      (progn
+        (unless (keymapp context-navigator-view-ui--fallback-parent)
+          (setq context-navigator-view-ui--fallback-parent (make-sparse-keymap)))
+        context-navigator-view-ui--fallback-parent)))
+
+(defun context-navigator-view-ui-make-keymap (command &optional parent)
+  "Return a sparse keymap for interactive segment bound to COMMAND.
+When PARENT is a keymap, inherit it so navigation keys (n/p, j/k, arrows)
+continue to work within the segment. If PARENT is nil or not a keymap,
+inherit from a reliable Navigator parent keymap."
+  (let* ((m (make-sparse-keymap))
+         (p (or (and (keymapp parent) parent)
+                (context-navigator-view-ui-parent-keymap))))
+    (when (keymapp p)
+      (set-keymap-parent m p))
+    ;; Mouse clicks (regular, header-line and mode-line areas)
+    (define-key m [mouse-1] command)
+    (define-key m [header-line mouse-1] command)
+    (define-key m [mode-line mouse-1] command)
+    ;; RET variants
+    (define-key m (kbd "RET")      command)
+    (define-key m (kbd "C-m")      command)
+    (define-key m [return]         command)
+    (define-key m (kbd "<return>") command)
+    ;; TAB variants (handy for toggles)
+    (define-key m (kbd "TAB")   command)
+    (define-key m (kbd "<tab>") command)
+    (define-key m [tab]         command)
+    (define-key m (kbd "C-i")   command)
+    m))
 
 (defcustom context-navigator-auto-open-groups-on-error t
   "When non-nil, automatically switch the sidebar to the groups list if a group fails to load."
@@ -692,19 +736,6 @@ Do not highlight purely decorative separators."
         ;; Force focus logic on next render: clear last-active so render will focus active group.
         (setq context-navigator-view--last-active-group nil))
       (ignore-errors (context-navigator-groups-open))
-      ;; If no groups are selected, clear model and (when auto-push ON) clear gptel.
-      (ignore-errors
-        (let* ((st (context-navigator--state-get))
-               (root (and st (context-navigator-state-last-project-root st)))
-               (ps (or (ignore-errors (context-navigator-persist-state-load root)) '()))
-               (sel (and (plist-member ps :selected) (plist-get ps :selected))))
-          (unless (and (listp sel) (> (length sel) 0))
-            ;; Clear model items
-            (context-navigator-set-items '())
-            ;; Clear gptel now only when push→gptel is ON
-            (when (and (boundp 'context-navigator--push-to-gptel)
-                       context-navigator--push-to-gptel)
-              (context-navigator-clear-gptel-now)))))
       (when-let ((win (get-buffer-window buf t)))
         (select-window win))
       (context-navigator-view--schedule-render))))

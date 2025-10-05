@@ -20,6 +20,9 @@
 (require 'context-navigator-events)
 (require 'context-navigator-log)
 
+(defvar context-navigator-persist-suppress-empty-save nil
+  "When non-nil, skip saving when ITEMS is empty/nil (used during restart/load phases).")
+
 (defun context-navigator-persist--ensure-dir (dir)
   "Create DIR if missing, returning DIR."
   (unless (file-directory-p dir)
@@ -163,6 +166,12 @@ legacy single-file path (context.el) for backward compatibility."
   "Persist ITEMS for ROOT (or global) to disk using v3 format.
 When GROUP-SLUG is non-nil, save into that group's file <dir>/<group-slug>.el.
 Returns the file path or nil on error."
+  ;; Suppress writing empty payloads during restart/load windows to avoid accidental clearing.
+  (when (and context-navigator-persist-suppress-empty-save
+             (or (null items)
+                 (and (listp items) (= (length items) 0))))
+    (context-navigator-debug :warn :persist "suppress empty save (root=%s slug=%s)" (or root "~") (or group-slug "<nil>"))
+    (cl-return-from context-navigator-persist-save nil))
   (let* ((file (context-navigator-persist-context-file root group-slug))
          (dir (file-name-directory file))
          (payload

@@ -686,6 +686,8 @@ Graceful when gptel is absent: show an informative message and do nothing."
   (let* ((cur (context-navigator--state-get))
          (new (context-navigator--state-copy cur))
          (token (1+ (or (context-navigator-state-load-token new) 0))))
+    ;; During load, suppress empty autosaves to avoid wiping files mid-reload.
+    (setq context-navigator-persist-suppress-empty-save t)
     (setf (context-navigator-state-inhibit-refresh new) t)
     (setf (context-navigator-state-inhibit-autosave new) t)
     (setf (context-navigator-state-loading-p new) t)
@@ -751,12 +753,13 @@ Does nothing when push→gptel is disabled."
            (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
            (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected))))
       (if (and mg (listp sel) (> (length sel) 0))
-          ;; Multi-group ON: aggregate enabled items across the selection
-          (context-navigator-collect-enabled-items-for-groups-async
+          ;; Multi-group ON: aggregate ALL items across the selection (ignore enabled)
+          (context-navigator-collect-items-for-groups-async
            root sel
            (lambda (agg-items)
-             (context-navigator--push-after-load--single agg-items token)))
-        ;; Single-group or no selection: push current group's items
+             (let ((forced (context-navigator--force-enable-items agg-items)))
+               (context-navigator--push-after-load--single forced token))))
+        ;; Single-group or no selection: push current group's items as-is
         (context-navigator--push-after-load--single items token)))))
 
 (defun context-navigator--install-loaded-items (root slug items prev-items)
@@ -779,6 +782,8 @@ Does nothing when push→gptel is disabled."
       (context-navigator--install-loaded-items root slug items prev-items))
     ;; Финализация и события — безусловно.
     (context-navigator--finalize-load)
+    ;; Lift the empty-save suppression after a group load completes.
+    (setq context-navigator-persist-suppress-empty-save nil)
     (context-navigator-events-publish :context-load-done root (listp items))
     (context-navigator-events-publish :group-switch-done root slug (listp items))))
 
@@ -928,6 +933,21 @@ and only manual push is allowed."
 (defvar context-navigator--autopush-disabled-notified nil
   "Non-nil when we've already shown the auto-push disabled notification for the current session/selection.")
 
+(defun context-navigator--force-enable-items (items)
+  "Return copies of ITEMS with :enabled t, preserving other fields."
+  (mapcar (lambda (it)
+            (context-navigator-item-create
+             :type (context-navigator-item-type it)
+             :name (context-navigator-item-name it)
+             :path (context-navigator-item-path it)
+             :buffer (context-navigator-item-buffer it)
+             :beg (context-navigator-item-beg it)
+             :end (context-navigator-item-end it)
+             :size (context-navigator-item-size it)
+             :enabled t
+             :meta (context-navigator-item-meta it)))
+          (or items '())))
+
 (defun context-navigator--enabled-only (items)
   "Return a list of ITEMS filtered to enabled ones (pure)."
   (cl-remove-if-not (lambda (it) (context-navigator-item-enabled it)) (or items '())))
@@ -962,19 +982,21 @@ When ENABLED-ONLY is non-nil, filter to enabled items before deduplication."
   (context-navigator-collect-items-for-groups-async root slugs callback t))
 
 (defun context-navigator-apply-groups-now (root slugs)
-  "Manually push aggregated enabled items from SLUGS under ROOT to gptel (batched)."
+  "Manually push aggregated ALL items from SLUGS under ROOT to gptel (batched)."
   (interactive)
-  (context-navigator-collect-enabled-items-for-groups-async
+  (context-navigator-collect-items-for-groups-async
    root slugs
    (lambda (items)
-     (let ((n (length (or items '()))))
+     (let* ((all (or items '()))
+            (n (length all)))
        (if (= n 0)
-           (context-navigator-ui-info :no-enabled-in-selection)
-         ;; Best-effort clear, then background batch add (no UI freeze).
+           (context-navigator-ui-info :no-items-in-selection)
+         ;; Clear gptel (without touching model) and push forced-enabled copies
          (ignore-errors (context-navigator-gptel-clear-all-now))
          (let* ((st (context-navigator--state-get))
-                (token (and st (context-navigator-state-load-token st))))
-           (ignore-errors (context-navigator--gptel-defer-or-start (or items '()) token)))
+                (token (and st (context-navigator-state-load-token st)))
+                (forced (context-navigator--force-enable-items all)))
+           (ignore-errors (context-navigator--gptel-defer-or-start forced token)))
          (context-navigator-ui-info :pushed-items n))))))
 
 ;; ---- Multi-group auto-push gating (small helpers + thin effect wrapper) ----
@@ -1162,27 +1184,7 @@ Sets up event wiring and keybindings."
         ;; gptel-change subscription disabled (no pull from gptel anymore)
         (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
               context-navigator--event-tokens)
-        (push (context-navigator-events-subscribe
-               :model-refreshed
-               (lambda (_state)
-                 ;; Debounced autosave: schedule a save using the latest state when the timer fires.
-                 ;; We debounce at the module-level to coalesce many rapid model updates.
-                 (when context-navigator-autosave
-                   (context-navigator-events-debounce
-                    :autosave
-                    (or context-navigator-autosave-debounce 0.5)
-                    (lambda ()
-                      (let ((st (context-navigator--state-get)))
-                        (when (and context-navigator-autosave
-                                   (context-navigator-state-p st)
-                                   (not (context-navigator-state-inhibit-autosave st)))
-                          (let ((root (context-navigator-state-last-project-root st))
-                                (slug (context-navigator-state-current-group-slug st))
-                                (items (context-navigator-state-items st)))
-                            ;; Guard: do not save when no active group; avoid legacy single-file write.
-                            (when (and (stringp slug) (not (string-empty-p slug)))
-                              (ignore-errors (context-navigator-persist-save items root slug)))))))))))
-              context-navigator--event-tokens)
+
         ;; Apply to gptel immediately (light debounce) when push→gptel is ON and allowed.
         (push (context-navigator-events-subscribe
                :model-refreshed
@@ -1204,8 +1206,26 @@ Sets up event wiring and keybindings."
                                        (or (and (context-navigator-state-p state)
                                                 (context-navigator-state-generation state))
                                            0)))
-                          (let ((items (context-navigator-state-items st)))
-                            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))
+                          (let* ((root (ignore-errors (context-navigator-state-last-project-root st)))
+                                 (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+                                 (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+                                 (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+                            (cond
+                             ;; MG ON + non-empty selection → push ALL items across selected groups (forced enabled)
+                             ((and mg (listp sel) (> (length sel) 0))
+                              (context-navigator-collect-items-for-groups-async
+                               root sel
+                               (lambda (items)
+                                 (let* ((token (and st (context-navigator-state-load-token st)))
+                                        (forced (context-navigator--force-enable-items items)))
+                                   (ignore-errors (context-navigator--gptel-defer-or-start (or forced '()) token))))))
+                             ;; MG ON + empty selection → clear gptel now
+                             (mg
+                              (ignore-errors (context-navigator-gptel-clear-all-now)))
+                             ;; MG OFF → apply current model (enabled-only semantics inside bridge)
+                             (t
+                              (let ((items (context-navigator-state-items st)))
+                                (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))))))
               context-navigator--event-tokens)
         ;; Initial gptel sync disabled (Navigator no longer pulls from gptel)
         ;; If auto-project is already ON, trigger an initial project switch immediately.
@@ -1217,7 +1237,7 @@ Sets up event wiring and keybindings."
     (mapc #'context-navigator-events-unsubscribe context-navigator--event-tokens)
     (setq context-navigator--event-tokens nil)
     (ignore-errors (context-navigator-project-teardown-hooks))
-    (context-navigator--log "mode disabled")))
+    (context-navigator--log "mode disabled"))
 
 (defun context-navigator-set-items (items)
   "Replace current model ITEMS with ITEMS and publish :model-refreshed.
@@ -1235,15 +1255,22 @@ Prunes dead buffer items (non-live buffers). Return the new state."
       (context-navigator-ui-info :removed-dead-items removed))
     (context-navigator--set-state new)
     (context-navigator-events-publish :model-refreshed new)
-    ;; Immediate autosave on any change (in addition to debounced autosave):
+    ;; Autosave only when items actually changed (no saves on pure refresh/reinit).
     (when (and context-navigator-autosave
                (context-navigator-state-p new)
                (not (context-navigator-state-inhibit-autosave new)))
-      (let ((root (context-navigator-state-last-project-root new))
-            (slug (context-navigator-state-current-group-slug new))
-            (items (context-navigator-state-items new)))
-        ;; Save only when a named group is active; avoid legacy single-file writes.
-        (when (and (stringp slug) (not (string-empty-p slug)))
+      (let* ((old-items (and (context-navigator-state-p cur)
+                             (context-navigator-state-items cur)))
+             (diff (context-navigator-model-diff (or old-items '()) pruned))
+             (changed (or (plist-get diff :add)
+                          (plist-get diff :remove)
+                          (plist-get diff :update)))
+             (root (context-navigator-state-last-project-root new))
+             (slug (context-navigator-state-current-group-slug new))
+             (items (context-navigator-state-items new)))
+        ;; Save only when a named group is active and there was a real change.
+        (when (and changed
+                   (stringp slug) (not (string-empty-p slug)))
           (ignore-errors (context-navigator-persist-save items root slug)))))
     new))
 
@@ -1322,7 +1349,7 @@ Strategy:
 
 (defun context-navigator--reinit-after-reload ()
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
-Also triggers an immediate project switch so header shows actual project."
+Also reload the currently active group from disk (no clearing)."
   (when (bound-and-true-p context-navigator-mode)
     ;; Unsubscribe only our own tokens; do not reset the global event bus
     ;; to avoid breaking other modules’ subscriptions (logs, UI, etc.).
@@ -1333,25 +1360,7 @@ Also triggers an immediate project switch so header shows actual project."
     ;; Re-subscribe core listeners
     (push (context-navigator-events-subscribe :project-switch #'context-navigator--on-project-switch)
           context-navigator--event-tokens)
-    (push (context-navigator-events-subscribe
-           :model-refreshed
-           (lambda (_state)
-             ;; Debounced autosave (latest state at execution time)
-             (when context-navigator-autosave
-               (context-navigator-events-debounce
-                :autosave
-                (or context-navigator-autosave-debounce 0.5)
-                (lambda ()
-                  (let ((st (context-navigator--state-get)))
-                    (when (and context-navigator-autosave
-                               (context-navigator-state-p st)
-                               (not (context-navigator-state-inhibit-autosave st)))
-                      (let ((root (context-navigator-state-last-project-root st))
-                            (slug (context-navigator-state-current-group-slug st))
-                            (items (context-navigator-state-items st)))
-                        (when (and (stringp slug) (not (string-empty-p slug)))
-                          (ignore-errors (context-navigator-persist-save items root slug)))))))))))
-          context-navigator--event-tokens)
+
     ;; Reinstall immediate apply to gptel after reload too.
     (push (context-navigator-events-subscribe
            :model-refreshed
@@ -1371,13 +1380,37 @@ Also triggers an immediate project switch so header shows actual project."
                                    (or (and (context-navigator-state-p state)
                                             (context-navigator-state-generation state))
                                        0)))
-                      (let ((items (context-navigator-state-items st)))
-                        (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))
+                      (let* ((root (ignore-errors (context-navigator-state-last-project-root st)))
+                             (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+                             (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+                             (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
+                        (cond
+                         ;; MG ON + non-empty selection → push ALL items across selected groups (forced enabled)
+                         ((and mg (listp sel) (> (length sel) 0))
+                          (context-navigator-collect-items-for-groups-async
+                           root sel
+                           (lambda (items)
+                             (let* ((token (and st (context-navigator-state-load-token st)))
+                                    (forced (context-navigator--force-enable-items items)))
+                               (ignore-errors (context-navigator--gptel-defer-or-start (or forced '()) token))))))
+                         ;; MG ON + empty selection → clear gptel now
+                         (mg
+                          (ignore-errors (context-navigator-gptel-clear-all-now)))
+                         ;; MG OFF → apply current model (enabled-only semantics inside bridge)
+                         (t
+                          (let ((items (context-navigator-state-items st)))
+                            (ignore-errors (context-navigator-gptel-apply (or items '())))))))))))))))
           context-navigator--event-tokens)
-    ;; Trigger initial project switch so UI/header reflect actual project
-    (when context-navigator--auto-project-switch
-      (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
-        (context-navigator-events-publish :project-switch root)))))
+    ;; Reload the currently active group from disk (no clearing). If no active group,
+    ;; fallback to the previous behavior (pick a reasonable project root).
+    (let* ((st (ignore-errors (context-navigator--state-get)))
+           (root (and st (context-navigator-state-last-project-root st)))
+           (slug (and st (context-navigator-state-current-group-slug st))))
+      (if (and (stringp slug) (not (string-empty-p slug)))
+          (ignore-errors (context-navigator--load-group-for-root root slug))
+        (when context-navigator--auto-project-switch
+          (let ((r (ignore-errors (context-navigator--pick-root-for-autoproject))))
+            (context-navigator-events-publish :project-switch r))))))
 
 ;;;###autoload
 (defun context-navigator-restart ()
@@ -1391,12 +1424,18 @@ Also triggers an immediate project switch so header shows actual project."
          (sidebar (ignore-errors (context-navigator--sidebar-visible-p)))
          (buffer  (ignore-errors (context-navigator--buffer-mode-visible-p)))
          (disp    (and (boundp 'context-navigator-display-mode) context-navigator-display-mode)))
+    ;; Suppress empty saves across the whole restart window.
+    (setq context-navigator-persist-suppress-empty-save t)
     ;; Best-effort autosave of current group before restart
+    ;; Skip when a load is in progress to avoid saving a transient nil items.
     (let* ((st (ignore-errors (context-navigator--state-get)))
            (root (and st (context-navigator-state-last-project-root st)))
            (slug (and st (context-navigator-state-current-group-slug st)))
-           (items (and st (context-navigator-state-items st))))
-      (when (and (stringp slug) (not (string-empty-p slug)))
+           (items (and st (context-navigator-state-items st)))
+           (loading (and st (context-navigator-state-loading-p st))))
+      (when (and (stringp slug) (not (string-empty-p slug))
+                 (not loading)
+                 (listp items))
         (ignore-errors (context-navigator-persist-save items root slug))))
     ;; Close UI
     (ignore-errors (context-navigator-view-close))
@@ -1442,6 +1481,9 @@ Also triggers an immediate project switch so header shows actual project."
       (when root
         (context-navigator-events-publish :project-switch root)
         (ignore-errors (context-navigator-groups-open))))
+    ;; Allow saves again after restart has finished wiring; loading-phase handlers
+    ;; will clear the suppression flag once items are loaded.
+    (setq context-navigator-persist-suppress-empty-save nil)
     (context-navigator-ui-info :restarted)))
 
 ;; --- Item open/selection-by-name ------------------------------------------------

@@ -39,6 +39,10 @@
   :type '(choice (const auto) (const icons) (const text) (const off))
   :group 'context-navigator-render)
 
+(defvar context-navigator-render-suppress-disabled-dimming nil
+  "When non-nil, do not dim item names for disabled items during rendering.
+Intended for Multi-group (MG) mode to keep all items visually active in selected groups.")
+
 (defcustom context-navigator-render-path-prefix-mode 'short
   "Prefix mode before item names:
 - off      : do not show path prefix
@@ -180,7 +184,7 @@ Disabled items are rendered with a subdued face (only the name). Indicator refle
                           (propertize prefix 'face context-navigator-render-prefix-dim-face)
                         ""))
          ;; Dim only the name for disabled items; do not touch indicator/icon or prefix.
-         (name-prop (if enabled
+         (name-prop (if (or enabled context-navigator-render-suppress-disabled-dimming)
                         name
                       (propertize name 'face 'context-navigator-disabled-face)))
          (visible-name (concat prefix-prop name-prop))

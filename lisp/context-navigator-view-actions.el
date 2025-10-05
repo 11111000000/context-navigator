@@ -98,6 +98,16 @@ updated set to gptel immediately. The new state is persisted via autosave."
   (when-let* ((item (context-navigator-view--at-item)))
     (let* ((key (context-navigator-model-item-key item))
            (name (or (context-navigator-item-name item) key)))
+      ;; In MG mode, disable per-item toggling entirely (requirements)
+      (let* ((st   (ignore-errors (context-navigator--state-get)))
+             (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+             (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+             (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi))))
+        (when mg
+          (context-navigator-ui-info :mg-toggle-locked)
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (context-navigator-view--render-if-visible))
+          (cl-return-from context-navigator-view-toggle-enabled)))
       ;; Stick to current item and scroll to avoid cursor jumps on soft re-render
       (setq-local context-navigator-view--sticky-item-key key)
       (let ((w (selected-window)))

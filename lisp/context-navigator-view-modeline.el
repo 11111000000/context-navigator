@@ -19,6 +19,7 @@
 (require 'context-navigator-core)
 (require 'context-navigator-groups)
 (require 'context-navigator-persist)
+(require 'context-navigator-view-controls)
 
 (declare-function context-navigator-view--status-text-at-point "context-navigator-view-items" ())
 (declare-function context-navigator--groups-candidates "context-navigator-groups" (&optional root))
@@ -35,6 +36,44 @@
 (defcustom context-navigator-view-modeline-face 'shadow
   "Face to render the status text in the Navigator modeline."
   :type 'face :group 'context-navigator-modeline)
+
+;; Face-remap cookies to make modeline background equal to header-line and remove border.
+(defvar-local context-navigator--modeline-face-cookie nil)
+(defvar-local context-navigator--modeline-inactive-face-cookie nil)
+(defvar-local context-navigator--modeline-active-face-cookie nil)
+
+(defun context-navigator-modeline--ensure-face ()
+  "Ensure Navigator modeline uses header-line-like background with no border."
+  (when (eq major-mode 'context-navigator-view-mode)
+    ;; Reset previous remaps to keep the operation idempotent.
+    (when context-navigator--modeline-face-cookie
+      (ignore-errors (face-remap-remove-relative context-navigator--modeline-face-cookie))
+      (setq context-navigator--modeline-face-cookie nil))
+    (when context-navigator--modeline-inactive-face-cookie
+      (ignore-errors (face-remap-remove-relative context-navigator--modeline-inactive-face-cookie))
+      (setq context-navigator--modeline-inactive-face-cookie nil))
+    (when context-navigator--modeline-active-face-cookie
+      (ignore-errors (face-remap-remove-relative context-navigator--modeline-active-face-cookie))
+      (setq context-navigator--modeline-active-face-cookie nil))
+    ;; Inherit header-line, but explicitly drop :box to remove thick border.
+    (setq context-navigator--modeline-face-cookie
+          (face-remap-add-relative 'mode-line 'context-navigator-headerline '(:box nil)))
+    (setq context-navigator--modeline-inactive-face-cookie
+          (face-remap-add-relative 'mode-line-inactive 'context-navigator-headerline '(:box nil)))
+    (setq context-navigator--modeline-active-face-cookie
+          (face-remap-add-relative 'mode-line-active 'context-navigator-headerline '(:box nil)))))
+
+(defun context-navigator-modeline--remove-face ()
+  "Remove modeline face remaps previously applied by Navigator."
+  (when context-navigator--modeline-face-cookie
+    (ignore-errors (face-remap-remove-relative context-navigator--modeline-face-cookie))
+    (setq context-navigator--modeline-face-cookie nil))
+  (when context-navigator--modeline-inactive-face-cookie
+    (ignore-errors (face-remap-remove-relative context-navigator--modeline-inactive-face-cookie))
+    (setq context-navigator--modeline-inactive-face-cookie nil))
+  (when context-navigator--modeline-active-face-cookie
+    (ignore-errors (face-remap-remove-relative context-navigator--modeline-active-face-cookie))
+    (setq context-navigator--modeline-active-face-cookie nil)))
 
 (defvar-local context-navigator-modeline--desc-cache nil
   "Cache for group descriptions per root.
@@ -110,36 +149,31 @@ If the item is outside the current project root, show an abbreviated absolute pa
         ""))))
 
 (defun context-navigator-modeline-string ()
-  "Return minimal modeline string for Context Navigator buffers."
-  (let* ((txt (context-navigator-modeline--text)))
-    (propertize (concat " " (or txt "")) 'face context-navigator-view-modeline-face)))
+  "Return controls line as modeline for Context Navigator buffers.
+Do not override faces of individual segments; only dim the leading padding."
+  (let* ((segs (and (fboundp 'context-navigator-view-controls-segments)
+                    (context-navigator-view-controls-segments)))
+         (txt (mapconcat (lambda (s) (or s "")) (or segs '()) ""))
+         ;; Apply modeline face only to the left padding so segment faces remain visible.
+         (pad (propertize " " 'face context-navigator-view-modeline-face)))
+    (concat pad txt)))
 
 (defun context-navigator-modeline--apply (buffer)
   "Apply or remove modeline in BUFFER based on the feature flag.
-If the global default `mode-line-format' is nil (user disabled global modeline),
-install the status string into `header-line-format' so the Navigator still shows it.
+Ensure the Navigator modeline has no border and uses the header-line background.
 
 Additionally, enforce the modeline via window parameter `mode-line-format' on
 all windows showing BUFFER to out-prioritize global modeline providers."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (eq major-mode 'context-navigator-view-mode)
-        (let ((fmt (and context-navigator-view-modeline-enable
-                        '((:eval (context-navigator-modeline-string)))))
-              (global-mode-line (default-value 'mode-line-format)))
-          ;; Prefer buffer-local mode-line when the global/default mode-line exists.
-          ;; If the user has globally disabled the mode-line (default nil), use
-          ;; header-line only when Navigator header-line controls are disabled,
-          ;; to avoid collisions.
-          (if global-mode-line
-              (progn
-                (setq mode-line-format fmt
-                      header-line-format nil))
-            (progn
-              (setq mode-line-format nil)
-              (unless (and (boundp 'context-navigator-view-headerline-enable)
-                           context-navigator-view-headerline-enable)
-                (setq header-line-format fmt)))))
+        (let* ((enabled context-navigator-view-modeline-enable)
+               (fmt (and enabled '((:eval (context-navigator-modeline-string))))))
+          (setq mode-line-format fmt)
+          ;; Apply/clear local face remaps so the modeline background matches header-line and has no :box.
+          (if enabled
+              (context-navigator-modeline--ensure-face)
+            (context-navigator-modeline--remove-face)))
         ;; Also set window-parameter 'mode-line-format so external modelines cannot override.
         (dolist (w (get-buffer-window-list (current-buffer) nil t))
           (when (window-live-p w)

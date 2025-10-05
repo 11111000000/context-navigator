@@ -26,10 +26,9 @@
   :type 'boolean :group 'context-navigator)
 
 ;;;###autoload
-(defun context-navigator-view-items-header-lines (total-width)
-  "Return header toggle lines for items view wrapped to TOTAL-WIDTH."
-  (when (fboundp 'context-navigator-view-controls-lines)
-    (context-navigator-view-controls-lines total-width)))
+(defun context-navigator-view-items-header-lines (_total-width)
+  "No inline controls: controls are rendered in the modeline."
+  '())
 
 ;; --- Items helpers (pure-ish) ------------------------------------------------
 
@@ -240,10 +239,30 @@ Also maintains relpath cache per generation/root."
 
 (defun context-navigator-view--items--item-lines (sorted-items left-width)
   "Build propertized item lines from SORTED-ITEMS aligned to LEFT-WIDTH."
-  (let ((context-navigator-render--gptel-keys context-navigator-view--gptel-keys))
-    (context-navigator-render-build-item-lines sorted-items
-                                               #'context-navigator-icons-for-item
-                                               left-width)))
+  (let* ((st   (ignore-errors (context-navigator--state-get)))
+         (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
+         (slug (and st (ignore-errors (context-navigator-state-current-group-slug st))))
+         (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
+         (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
+         (sel  (and mg (plist-member ps :selected) (plist-get ps :selected)))
+         (in-selected (and mg (stringp slug) (listp sel) (member slug sel)))
+         (context-navigator-render--gptel-keys context-navigator-view--gptel-keys)
+         ;; Hide indicator lamps completely in MG; otherwise keep configured style.
+         (context-navigator-render-indicator-style
+          (if mg 'off context-navigator-render-indicator-style))
+         ;; In MG for selected groups: suppress per-item disabled dimming (all items look "active")
+         (context-navigator-render-suppress-disabled-dimming (and mg in-selected t))
+         (lines (context-navigator-render-build-item-lines sorted-items
+                                                           #'context-navigator-icons-for-item
+                                                           left-width)))
+    ;; In MG for non-selected groups: dim entire line (inactive look)
+    (if (and mg (not in-selected))
+        (mapcar (lambda (s)
+                  (when (stringp s)
+                    (add-face-text-property 0 (length s) 'context-navigator-disabled-face nil s))
+                  s)
+                lines)
+      lines)))
 
 ;;;###autoload
 (defun context-navigator-view--items-base-lines (state header total-width)
@@ -314,14 +333,9 @@ REST is a list of item lines."
       (list hl "")
     (list (propertize " " 'context-navigator-reserved-line t))))
 
-(defun context-navigator-view--items--build-lines (ctrl up rest footer)
-  "Assemble final list of lines: controls (top), then \"..\", items and footer.
-CTRL is a list of control lines to render at the top."
-  (let* ((head (if (and (listp ctrl) (> (length ctrl) 0))
-                   (append ctrl (list ""))
-                 (list (propertize " " 'context-navigator-reserved-line t))))
-         (body (append head (list up) rest footer)))
-    body))
+(defun context-navigator-view--items--build-lines (_ctrl up rest footer)
+  "Assemble final list of lines without top spacer/controls: \"..\", items and footer."
+  (append (list up) rest footer))
 
 (defun context-navigator-view--items--apply-lines (lines header)
   "Apply LINES to current buffer and record bookkeeping; emit debug trace."

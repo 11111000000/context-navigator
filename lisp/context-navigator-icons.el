@@ -41,7 +41,7 @@
        (fboundp 'all-the-icons-icon-for-file)))
 
 (defun context-navigator-icons-for-item (item)
-  "Return an icon string for ITEM or nil."
+  "Return an icon string for ITEM or nil (slightly reduced size to keep rows compact)."
   (when (and (context-navigator-icons--ensure)
              (not (and context-navigator-icons-disable-on-remote
                        (context-navigator-icons--remote-p item))))
@@ -51,7 +51,7 @@
            (cached (gethash key context-navigator-icons--cache)))
       (or cached
           (let* ((type (context-navigator-item-type item))
-                 (icon
+                 (raw
                   (pcase type
                     ('file (when-let* ((p (context-navigator-item-path item))
                                        (ext (file-name-extension p)))
@@ -59,9 +59,21 @@
                     ('buffer (ignore-errors (all-the-icons-octicon "file-text")))
                     ('selection (ignore-errors (all-the-icons-material "content_copy")))
                     (_ nil))))
-            (when (stringp icon)
-              (puthash key icon context-navigator-icons--cache)
-              icon))))))
+            (when (stringp raw)
+              ;; Shrink icon a bit and lower slightly to visually center with the filename
+              (let* ((face-prop (get-text-property 0 'face raw))
+                     (new-face (cond
+                                ((null face-prop) '(:height 0.9))
+                                ((symbolp face-prop) (list face-prop '(:height 0.9)))
+                                ((and (listp face-prop) (keywordp (car face-prop)))
+                                 (list (append face-prop '(:height 0.9))))
+                                ((listp face-prop) (append face-prop (list '(:height 0.9))))
+                                (t '(:height 0.9))))
+                     (icon (propertize raw
+                                       'face new-face
+                                       'display '(raise -0.12))))
+                (puthash key icon context-navigator-icons--cache)
+                icon)))))))
 
 (defun context-navigator-icons-for-indicator (state)
   "Return a small icon string for indicator STATE or nil.
@@ -92,7 +104,7 @@ with surrounding item text and appear visually centered."
       (propertize icon
                   'face (list :foreground color :height 0.5)
                   ;; Small raise to visually center the icon relative to item text.
-                  'display '(raise 0.12)))))
+                  'display '(raise 0.3)))))
 
 ;; Unified UI indicator (present/absent) --------------------------------------
 

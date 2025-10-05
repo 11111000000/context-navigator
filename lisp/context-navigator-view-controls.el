@@ -19,7 +19,8 @@
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'context-navigator-view-segments)
+;; Keymap builder is provided by context-navigator-view (to avoid extra module).
+(declare-function context-navigator-view-ui-make-keymap "context-navigator-view" (command &optional parent))
 (require 'context-navigator-i18n)
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-view-controls-icons)
@@ -60,7 +61,7 @@ Used as the header-line background in the Navigator buffer."
   :group 'context-navigator-view-controls)
 
 (defface context-navigator-view-controls-disabled-face
-  '((t :foreground "gray25"))
+  '((t :foreground "gray27"))
   "Face for disabled header-line controls.
 Only changes foreground (no height/weight), so icon/text size stays stable."
   :group 'context-navigator-view-controls)
@@ -127,15 +128,26 @@ Only changes foreground (no height/weight), so icon/text size stays stable."
         (when (integerp en)
           (setq sum (+ sum en)))))))
 
+(defun context-navigator-view-controls--sum-total-for-slugs (root slugs)
+  "Return sum of TOTAL items across SLUGS (reads per-group v3 files)."
+  (let ((sum 0))
+    (dolist (slug slugs sum)
+      (let* ((file (ignore-errors (context-navigator-persist-context-file root slug)))
+             (en.t (and (stringp file)
+                        (ignore-errors (context-navigator-persist-group-enabled-count file))))
+             (tot (and (consp en.t) (cdr en.t))))
+        (when (integerp tot)
+          (setq sum (+ sum tot)))))))
+
 (defun context-navigator-view-controls--push-allowed-p ()
   "Return non-nil when push/auto should be enabled in groups mode.
-Rule: selection non-empty AND aggregated enabled items > 0."
+Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (root (and st (context-navigator-state-last-project-root st)))
          (sel (context-navigator-view-controls--selected-slugs)))
     (and (stringp root)
          (listp sel) (> (length sel) 0)
-         (> (context-navigator-view-controls--sum-enabled-for-slugs root sel) 0))))
+         (> (context-navigator-view-controls--sum-total-for-slugs root sel) 0))))
 
 (defun context-navigator-view-controls--items-enabled-p ()
   "Return non-nil when current group (items mode) has at least one enabled item."
@@ -157,8 +169,8 @@ Rule: selection non-empty AND aggregated enabled items > 0."
           (cond
            ((or (null (listp sel)) (= (length sel) 0))
             (context-navigator-i18n :no-group-selected))
-           ((<= (context-navigator-view-controls--sum-enabled-for-slugs root sel) 0)
-            (context-navigator-i18n :no-enabled-in-selection))
+           ((<= (context-navigator-view-controls--sum-total-for-slugs root sel) 0)
+            (context-navigator-i18n :no-items-in-selection))
            (t nil)))
       ;; items mode
       (unless (context-navigator-view-controls--items-enabled-p)

@@ -285,8 +285,14 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                           (ps   (and root (ignore-errors (context-navigator-persist-state-load root))))
                           (mg   (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
                           (sel  (ignore-errors (context-navigator--selected-group-slugs-for-root root))))
-                     (when (and mg (listp sel) (> (length sel) 0))
-                       (ignore-errors (context-navigator-apply-groups-now root sel)))))
+                     (cond
+                      ((and mg (listp sel) (> (length sel) 0))
+                       (ignore-errors (context-navigator-apply-groups-now root sel)))
+                      (mg
+                       (ignore-errors (context-navigator-gptel-clear-all-now))))))
+                 ;; Invalidate render caches so selection lamps update immediately
+                 (when (fboundp 'context-navigator-view--invalidate-render-caches)
+                   (context-navigator-view--invalidate-render-caches t))
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
