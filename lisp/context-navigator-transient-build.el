@@ -161,10 +161,10 @@ Groups: Navigate / Groups / Session / Tools."
   '((:section panel
      ("n" :tr-toggle-sidebar context-navigator-toggle)
      ("S" :tr-display-mode context-navigator-display-mode-toggle)
-     ("P" :tr-switch-project context-navigator-switch-to-current-buffer-project))
+     ("p" :tr-switch-project context-navigator-switch-to-current-buffer-project))
     (:section context
      ("g" :tr-groups-list context-navigator-view-show-groups)
-     ("x" :clear-group context-navigator-context-clear-current-group)
+     ("D" :clear-group context-navigator-context-clear-current-group)
      ("u" :tr-unload context-navigator-context-unload))
     (:section actions
      ("a" :tr-add-universal context-navigator-add-universal)
@@ -174,13 +174,13 @@ Groups: Navigate / Groups / Session / Tools."
      ("o" :tr-open-buffers context-navigator-view-open-all-buffers)
      ("m" :tr-multifile context-navigator-multifile-open))
     (:section control
-     ("G" :toggle-multi-group context-navigator-view-toggle-multi-group)
+     ("M" :toggle-multi-group context-navigator-view-toggle-multi-group)
      ("V" :tr-toggle-push context-navigator-toggle-push-to-gptel)
      ("A" :tr-toggle-auto context-navigator-toggle-auto-project-switch)
-     ("M" :enable-all-gptel context-navigator-view-enable-all-gptel)
-     ("U" :disable-all-gptel context-navigator-view-disable-all-gptel)
+     ;; ("M" :enable-all-gptel context-navigator-view-enable-all-gptel)
+     ;; ("U" :disable-all-gptel context-navigator-view-disable-all-gptel)
      ("T" :toggle-all-gptel context-navigator-view-toggle-all-gptel)
-     ("p" :tr-push-now context-navigator-push-to-gptel-now)
+     ("P" :tr-push-now context-navigator-push-to-gptel-now)
      ("X" :clear-gptel context-navigator-clear-gptel-now)
      ("R" :tr-razor context-navigator-razor-run :if (lambda () (derived-mode-p 'org-mode))))
     (:section logs
