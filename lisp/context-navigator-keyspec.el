@@ -82,7 +82,7 @@
     (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
          :keys ("A") :contexts (items groups) :section session :desc-key :help-toggle-auto)
     (:id push-now :cmd context-navigator-view-push-now
-         :keys ("p") :contexts (items groups) :section session :desc-key :help-push-now)
+         :keys ("P") :contexts (items groups) :section session :desc-key :help-push-now)
     (:id unload :cmd context-navigator-context-unload
          :keys ("u") :contexts (items groups) :section session :desc-key :tr-unload)
 
