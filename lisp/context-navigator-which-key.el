@@ -70,14 +70,17 @@
   "Apply which-key replacements for Navigator maps from keyspec (idempotent, safe)."
   (interactive)
   (when (featurep 'which-key)
-    ;; Sidebar (items/groups/global live in the same mode-map)
+    ;; Sidebar (only global/items for the main view map; groups live in split)
     (ignore-errors
       (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'global)
-      (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'items)
-      (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'groups))
+      (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'items))
     ;; Multifile
     (ignore-errors
-      (context-navigator-which-key--apply-to-map 'context-navigator-multifile-mode-map 'multifile))))
+      (context-navigator-which-key--apply-to-map 'context-navigator-multifile-mode-map 'multifile))
+    ;; Groups split bottom panel
+    (ignore-errors
+      (context-navigator-which-key--apply-to-map 'context-navigator-groups-split-mode-map 'global)
+      (context-navigator-which-key--apply-to-map 'context-navigator-groups-split-mode-map 'groups-split))))
 
 ;; Auto-apply on load when which-key is present
 (when (featurep 'which-key)

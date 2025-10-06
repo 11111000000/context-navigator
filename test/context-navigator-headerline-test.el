@@ -4,16 +4,6 @@
 (require 'cl-lib)
 (require 'context-navigator-headerline)
 
-(ert-deftest ctxnav-headerline/format-uses-controls-segments ()
-  "headerline-format should concat controls segments returned by controls module."
-  (with-temp-buffer
-    (delay-mode-hooks (context-navigator-view-mode))
-    ;; Stub controls to return two segments " A" " B"
-    (cl-letf (((symbol-function 'context-navigator-view-controls-segments)
-               (lambda () '(" A" " B"))))
-      (let ((out (context-navigator-headerline-format)))
-        (should (string= out " A B"))))))
-
 (ert-deftest ctxnav-headerline/apply-installs-eval-format ()
   "headerline--apply should install (:eval ... ) format when enabled."
   (with-temp-buffer

@@ -15,6 +15,8 @@
 (defcustom context-navigator-title-enable nil
   "Deprecated: no-op. Title is shown in the header-line by default."
   :type 'boolean :group 'context-navigator-title)
+(put 'context-navigator-title-enable 'obsolete-variable
+     "Title is shown in the header-line by default.")
 
 (defface context-navigator-title-face
   '((t :inherit mode-line-emphasis))

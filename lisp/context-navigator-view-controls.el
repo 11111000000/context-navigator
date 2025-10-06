@@ -203,7 +203,7 @@ Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
 
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
-  '(push auto-project multi-group :gap stats multifile :gap undo redo :gap toggle-all-gptel :gap razor push-now :gap open-buffers close-buffers :gap clear-group)
+  '(push auto-project multi-group :gap groups-split stats multifile :gap undo redo :gap toggle-all-gptel :gap razor push-now :gap open-buffers close-buffers :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
@@ -317,13 +317,32 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                     (if (and (fboundp 'context-navigator-stats-split-visible-p)
                              (context-navigator-stats-split-visible-p))
                         'on 'off))
-       :label-fn ,(lambda (style state)
+       :label-fn ,(lambda (style _state)
                     (pcase style
                       ((or 'icons 'auto) " [Σ]")
                       (_ (format " [%s]" (context-navigator-i18n :stats)))))
        :face-fn ,(lambda (_style state)
                    (if (eq state 'on)
                        (list :foreground "MediumPurple1")
+                     'shadow)))
+      (groups-split
+       :type toggle
+       :icon-key groups-split
+       :command context-navigator-groups-split-toggle
+       :help ,(lambda () (funcall tr :toggle-groups-split))
+       :enabled-p ,(lambda () t)
+       :visible-p ,(lambda () t)
+       :state-fn ,(lambda ()
+                    (if (and (fboundp 'context-navigator-groups-split-visible-p)
+                             (context-navigator-groups-split-visible-p))
+                        'on 'off))
+       :label-fn ,(lambda (style _state)
+                    (pcase style
+                      ((or 'icons 'auto) " [G]")
+                      (_ (format " [%s]" (context-navigator-i18n :groups)))))
+       :face-fn ,(lambda (_style state)
+                   (if (eq state 'on)
+                       (list :foreground "MediumOrchid3")
                      'shadow)))
       (multi-group
        :type toggle

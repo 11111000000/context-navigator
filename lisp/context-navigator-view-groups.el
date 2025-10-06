@@ -77,8 +77,7 @@ the display name and the items count."
 ;;;###autoload
 (defun context-navigator-view--groups-help-lines (_total-width)
   "Return minimal footer hint for groups view (transient provides full help)."
-  (let* ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
-    (list "" hint)))
+  '())
 
 ;;;###autoload
 (defun context-navigator-view-render-groups (state header total-width)

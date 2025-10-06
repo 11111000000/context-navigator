@@ -50,8 +50,7 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
        ((get-text-property (point) 'context-navigator-item)
         (let ((it (get-text-property (point) 'context-navigator-item)))
           (setq key (and it (context-navigator-model-item-key it)))))
-       ((get-text-property (point) 'context-navigator-groups-up)
-        (setq key ".."))
+       ;; Up-line removed
        (t
         ;; find nearest itemish (prev/next) and prefer the closest by line distance
         (let* ((here (line-number-at-pos))
@@ -90,8 +89,7 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
          ((get-text-property (point) 'context-navigator-item)
           (let ((it (get-text-property (point) 'context-navigator-item)))
             (setq key (and it (context-navigator-model-item-key it)))))
-         ((get-text-property (point) 'context-navigator-groups-up)
-          (setq key ".."))
+         ;; Up-line removed
          (t
           (let* ((pp (context-navigator-view--find-prev-itemish-pos (point)))
                  (np (context-navigator-view--find-next-itemish-pos (point)))
@@ -105,7 +103,8 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                     (setq key (and it (context-navigator-model-item-key it)))))
                  ((get-text-property (point) 'context-navigator-groups-up)
                   (setq key "..")))))))))
-      (setq key (or key ".."))
+      ;; Up-line removed: if no key, leave nil to avoid jumping to a non-existent anchor
+      (setq key (or key ""))
       (let* ((st (ignore-errors (context-navigator--state-get)))
              (root (and st (ignore-errors (context-navigator-state-last-project-root st))))
              (slug (and st (ignore-errors (context-navigator-state-current-group-slug st)))))
@@ -181,7 +180,7 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
         (ignore-errors (context-navigator-view--spinner-stop))
         (context-navigator-view--schedule-render)))))
 
-(defun context-navigator-view--on-gptel-change (subtype &rest args)
+(defun context-navigator-view--on-gptel-change-events (subtype &rest args)
   "Handler: gptel batch lifecycle events."
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
@@ -231,7 +230,7 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
         context-navigator-view--subs)
   ;; GPTel batch lifecycle
   (push (context-navigator-events-subscribe
-         :gptel-change #'context-navigator-view--on-gptel-change)
+         :gptel-change #'context-navigator-view--on-gptel-change-events)
         context-navigator-view--subs))
 
 (defun context-navigator-view--subscribe-groups-events ()

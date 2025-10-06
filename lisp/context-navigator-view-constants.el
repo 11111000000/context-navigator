@@ -1,4 +1,4 @@
-;;; context-navigator-view-const.el --- Constants for Navigator view -*- lexical-binding: t; -*-
+;;; context-navigator-view-constants.el --- Constants for Navigator view -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
 
@@ -16,6 +16,5 @@
   "Default parameters for the sidebar window.")
 
 
-;;; context-navigator-view-const.el ends here
-
 (provide 'context-navigator-view-constants)
+;;; context-navigator-view-constants.el ends here

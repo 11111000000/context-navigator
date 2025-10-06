@@ -226,16 +226,8 @@ Also maintains relpath cache per generation/root."
   "")
 
 (defun context-navigator-view--items--up-line ()
-  "\"..\" line that navigates up to groups."
-  (let ((s (copy-sequence "..")))
-    (add-text-properties 0 (length s)
-                         (list 'context-navigator-groups-up t
-                               'context-navigator-interactive t
-                               'mouse-face 'highlight
-                               'help-echo (context-navigator-i18n :status-up-to-groups)
-                               'face 'shadow)
-                         s)
-    s))
+  "Deprecated: up-line removed."
+  "")
 
 (defun context-navigator-view--items--item-lines (sorted-items left-width)
   "Build propertized item lines from SORTED-ITEMS aligned to LEFT-WIDTH."
@@ -266,21 +258,15 @@ Also maintains relpath cache per generation/root."
 
 ;;;###autoload
 (defun context-navigator-view--items-base-lines (state header total-width)
-  "Return a list: (hl sep up rest...) for items view base lines.
-
-HL is deprecated (title now lives in header-line); it is returned as an empty string.
-SEP is currently empty (no extra separator in the buffer).
-UP is the \"..\" line.
-REST is a list of item lines."
+  "Return a list: (hl sep rest...) for items view base lines (no up-line)."
   (let* ((items (context-navigator-state-items state))
          (sorted-items (context-navigator-view--items--sorted state items))
          (left-width (context-navigator-view--items--left-width total-width))
          (item-lines (context-navigator-view--items--item-lines sorted-items left-width))
          (hl "")
          (sep "")
-         (rest item-lines)
-         (up (context-navigator-view--items--up-line)))
-    (list hl sep up rest)))
+         (rest item-lines))
+    (list hl sep rest)))
 
 ;;;###autoload
 (defun context-navigator-view--status-text-at-point ()
@@ -309,9 +295,7 @@ REST is a list of item lines."
               (abbreviate-file-name p))
           (error (abbreviate-file-name p))))
        (t (or (context-navigator-item-name it) "")))))
-   ;; On up line
-   ((get-text-property (point) 'context-navigator-groups-up)
-    (context-navigator-i18n :status-up-to-groups))
+   ;; Up line removed
    ;; On footer action or header toggle: show help-echo
    ((or (get-text-property (point) 'context-navigator-action)
         (get-text-property (point) 'context-navigator-toggle))
@@ -322,8 +306,7 @@ REST is a list of item lines."
 (defun context-navigator-view-items-footer-lines (total-width)
   "Return footer lines for items view (no inline Stats; Stats shown in separate split)."
   (ignore total-width)
-  (let ((hint (propertize (context-navigator-i18n :menu-hint) 'face 'shadow)))
-    (list "" hint)))
+  '())
 
 
 
@@ -333,9 +316,9 @@ REST is a list of item lines."
       (list hl "")
     (list (propertize " " 'context-navigator-reserved-line t))))
 
-(defun context-navigator-view--items--build-lines (_ctrl up rest footer)
-  "Assemble final list of lines without top spacer/controls: \"..\", items and footer."
-  (append (list up) rest footer))
+(defun context-navigator-view--items--build-lines (_ctrl rest footer)
+  "Assemble final list of lines without top spacer/controls (no up-line)."
+  (append rest footer))
 
 (defun context-navigator-view--items--apply-lines (lines header)
   "Apply LINES to current buffer and record bookkeeping; emit debug trace."
@@ -388,7 +371,7 @@ REST is a list of item lines."
 
 (defun context-navigator-view--items--persist-restore ()
   "Restore saved cursor (item key or \"..\") once after the first full items render.
-Does not adjust window-start; Emacs will ensure point visibility."
+Also restore window-start using saved screen offset when available."
   (when (and (boundp 'context-navigator-view--restore-once)
              context-navigator-view--restore-once)
     (setq context-navigator-view--restore-once nil)
@@ -398,6 +381,7 @@ Does not adjust window-start; Emacs will ensure point visibility."
            (pos (and (stringp slug)
                      (ignore-errors (context-navigator-persist-state-get-last-pos root slug))))
            (key (and (listp pos) (plist-get pos :key)))
+           (offset (and (listp pos) (plist-get pos :offset)))
            (target nil))
       (setq key (if (and (stringp key) (not (string-empty-p key))) key ".."))
       (cond
@@ -420,7 +404,16 @@ Does not adjust window-start; Emacs will ensure point visibility."
                                             'context-navigator-groups-up nil)))
       (when target
         (goto-char target)
-        (beginning-of-line))
+        (beginning-of-line)
+        ;; Restore scroll so TARGET is OFFSET screen lines below window-start (when possible).
+        (when (and (integerp offset) (>= offset 0))
+          (let ((win (get-buffer-window (current-buffer) t)))
+            (when (window-live-p win)
+              (save-excursion
+                (goto-char target)
+                (beginning-of-line)
+                (forward-line (- offset))
+                (set-window-start win (point) t))))))
       (when (and (stringp key) (not (string-empty-p key)))
         (setq-local context-navigator-view--last-cursor-key key)))))
 
@@ -428,12 +421,12 @@ Does not adjust window-start; Emacs will ensure point visibility."
 (defun context-navigator-view-render-items (state header total-width)
   "Render items view using STATE and TOTAL-WIDTH.
 Title is shown in the header-line; controls are rendered at the top of the buffer."
-  (cl-destructuring-bind (_hl _sep up rest)
+  (cl-destructuring-bind (_hl _sep rest)
       (context-navigator-view--items-base-lines state header total-width)
     (let* ((ctrl (and (fboundp 'context-navigator-view-items-header-lines)
                       (context-navigator-view-items-header-lines total-width)))
            (footer (context-navigator-view-items-footer-lines total-width))
-           (lines (context-navigator-view--items--build-lines ctrl up rest footer)))
+           (lines (context-navigator-view--items--build-lines ctrl rest footer)))
       (context-navigator-view--items--apply-lines lines header)
       (context-navigator-view--items--sticky-restore)
       (context-navigator-view--items--persist-restore)

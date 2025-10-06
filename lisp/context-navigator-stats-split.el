@@ -92,13 +92,24 @@ the cached aggregate without re-reading group files."
     (floor (/ (float bytes) k))))
 
 (defun context-navigator-stats-split--nav-window ()
-  "Return a Navigator sidebar window on the current frame, or nil."
+  "Return a Navigator window (sidebar or buffer-mode) on the current frame, or nil."
   (catch 'hit
     (dolist (w (window-list nil 'no-mini))
       (when (and (window-live-p w)
-                 (eq (window-parameter w 'context-navigator-view) 'sidebar))
+                 (let ((buf (window-buffer w)))
+                   (or (memq (window-parameter w 'context-navigator-view) '(sidebar buffer))
+                       (and (buffer-live-p buf)
+                            (equal (buffer-name buf) "*context-navigator*")))))
         (throw 'hit w)))
     nil))
+
+(defun context-navigator-stats-split--fit-window (win navw)
+  "Fit WIN height to content, constrained by NAVW half-height and user preference."
+  (when (and (window-live-p win) (window-live-p navw))
+    (let* ((max-pref (max 1 (or context-navigator-stats-split-height 5)))
+           (half     (max 1 (floor (/ (window-total-height navw) 2))))
+           (limit    (min max-pref half)))
+      (fit-window-to-buffer win limit))))
 
 (defun context-navigator-stats-split--ensure-buffer ()
   "Create or return the Stats buffer initialized to special-mode."
@@ -266,16 +277,14 @@ the cached aggregate without re-reading group files."
 
 (defun context-navigator-stats-split--items-lines (total-width)
   "Return exactly 5 lines for items view.
-When MG is ON and selection non-empty, show aggregated unified stats; otherwise reuse items footer."
+When MG is ON and selection non-empty, show aggregated unified stats; otherwise use shared compute."
   (let* ((tw (max 30 (or total-width 80)))
-         ;; Detect MG and selection for current root
          (root (context-navigator-stats-split--current-root))
          (ps (and (stringp root) (ignore-errors (context-navigator-persist-state-load root))))
          (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi)))
          (sel (and (listp ps) (plist-member ps :selected) (plist-get ps :selected)))
          (nsel (and (listp sel) (length sel))))
     (if (and mg (numberp nsel) (> nsel 0))
-        ;; Aggregated unified stats (kick async if needed, then render from cache)
         (progn
           (context-navigator-stats-split--kick-aggregate root sel)
           (let* ((en   context-navigator-stats-split--agg-enabled)
@@ -321,19 +330,55 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                                (context-navigator-i18n :enabled) (max 0 (or ten 0))
                                (context-navigator-i18n :total)    (max 0 (or t-all 0)))))
             (list hdr row1 row2 row3 "")))
-      ;; Default: reuse existing Stats footer (expanded)
-      (let* ((context-navigator-stats--expanded-p t)
-             (raw (or (ignore-errors (context-navigator-stats-footer-lines tw))
-                      (list (propertize (context-navigator-i18n :stats) 'face 'shadow))))
-             (lines (append raw nil)))
-        (cond
-         ((< (length lines) 5) (append lines (make-list (- 5 (length lines)) "")))
-         ((> (length lines) 5) (cl-subseq lines 0 5))
-         (t lines))))))
+      ;; Single-group: compute via shared stats
+      (let* ((pl (ignore-errors (context-navigator-stats--compute-now)))
+             (en    (or (plist-get pl :items-en) 0))
+             (ben   (or (plist-get pl :bytes-en) 0))
+             (ten   (or (plist-get pl :tokens-en) 0))
+             (b-all (or (plist-get pl :bytes) 0))
+             (t-all (or (plist-get pl :tokens) 0))
+             (f-all (or (plist-get pl :files) 0))
+             (bufs-all (or (plist-get pl :buffers) 0))
+             (sels-all (or (plist-get pl :selections) 0))
+             (f-en  (or (plist-get pl :files-en) 0))
+             (b-en  (or (plist-get pl :buffers-en) 0))
+             (s-en  (or (plist-get pl :selections-en) 0))
+             (hdr-ico (or (context-navigator-stats--icon :header) ""))
+             (cnt-ico (or (context-navigator-stats--icon :counts) ""))
+             (siz-ico (or (context-navigator-stats--icon :size) ""))
+             (tok-ico (or (context-navigator-stats--icon :tokens) ""))
+             (ico-file (or (context-navigator-stats--icon :file) ""))
+             (ico-buf  (or (context-navigator-stats--icon :buffer) ""))
+             (ico-sel  (or (context-navigator-stats--icon :selection) ""))
+             (arrow "▾")
+             (lbl (context-navigator-i18n :stats))
+             (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
+                          arrow hdr-ico lbl
+                          (max 0 en)
+                          (context-navigator-human-size (max 0 ben))
+                          (max 0 ten)
+                          (context-navigator-i18n :stats-tokens)))
+             (row1 (format "   %s %s: %s %d (%d), %s %d (%d), %s %d (%d)"
+                           cnt-ico
+                           (context-navigator-i18n :stats-counts)
+                           ico-file (max 0 f-all) (max 0 f-en)
+                           ico-buf  (max 0 bufs-all) (max 0 b-en)
+                           ico-sel  (max 0 sels-all) (max 0 s-en)))
+             (row2 (format "   %s %s: %s ~%s  /  %s ~%s"
+                           siz-ico
+                           (context-navigator-i18n :stats-size)
+                           (context-navigator-i18n :enabled) (context-navigator-human-size (max 0 ben))
+                           (context-navigator-i18n :total)    (context-navigator-human-size (max 0 b-all))))
+             (row3 (format "   %s %s: %s %d  /  %s %d"
+                           tok-ico
+                           (context-navigator-i18n :stats-tokens)
+                           (context-navigator-i18n :enabled) (max 0 ten)
+                           (context-navigator-i18n :total)    (max 0 t-all))))
+        (list hdr row1 row2 row3 "")))))
 
 (defun context-navigator-stats-split--render-lines (total-width)
   "Return exactly 5 lines of Stats content for TOTAL-WIDTH columns.
-- In items view: reuse existing Stats footer (expanded)
+- In items view: compute from current items (shared stats)
 - In groups view: show aggregate summary for selected groups (dedup-enabled)"
   (pcase (context-navigator-stats-split--view-mode)
     ('groups (context-navigator-stats-split--groups-lines total-width))
@@ -400,22 +445,41 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
 
 ;;;###autoload
 (defun context-navigator-stats-split-open ()
-  "Open the 5-line Stats split below the Navigator sidebar."
+  "Open the 5-line Stats split below the Navigator (sidebar or buffer-mode)."
   (interactive)
   (let ((navw (context-navigator-stats-split--nav-window)))
     (when (window-live-p navw)
       (let* ((buf (context-navigator-stats-split--ensure-buffer))
              (existing (context-navigator-stats-split--visible-window))
+             (target-height (max 1 (or context-navigator-stats-split-height 5)))
+             (kind (window-parameter navw 'context-navigator-view))
              (win (or existing
-                      (let* ((side (or (window-parameter navw 'window-side) 'left))
-                             (target-height (max 1 (or context-navigator-stats-split-height 5)))
-                             (params (list (cons 'side side)
-                                           (cons 'slot 1)
-                                           (cons 'window-height target-height))))
-                        (display-buffer-in-side-window buf params)))))
+                      (if (eq kind 'sidebar)
+                          ;; Sidebar: place Stats below Groups by giving it a lower priority (bigger slot)
+                          (let* ((side (or (window-parameter navw 'window-side) 'left))
+                                 (params (list (cons 'side side)
+                                               (cons 'slot 3)
+                                               (cons 'window-height target-height))))
+                            (display-buffer-in-side-window buf params))
+                        ;; Buffer-mode: split below Groups window when present; otherwise below Navigator
+                        (let* ((base (catch 'hit
+                                       (dolist (w (window-list nil 'no-mini))
+                                         (when (and (window-live-p w)
+                                                    (window-parameter w 'context-navigator-groups))
+                                           (throw 'hit w)))
+                                       nil))
+                               (base (or base navw)))
+                          (or (condition-case _err
+                                  (split-window base (- target-height) 'below)
+                                (error nil))
+                              (with-selected-window base
+                                (display-buffer-in-side-window
+                                 buf `((side . bottom)
+                                       (slot . 0)
+                                       (window-height . ,target-height))))))))))
         (when (window-live-p win)
           (set-window-buffer win buf)
-          ;; Make this a child window of the sidebar and keep it dedicated
+          ;; Mark and dedicate stats window
           (set-window-parameter win 'context-navigator-stats t)
           (set-window-dedicated-p win t)
           ;; Install subscriptions and auto-close watcher
@@ -425,6 +489,8 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                       #'context-navigator-stats-split--maybe-autoclose)
             (setq context-navigator-stats-split--wcch-on t))
           (context-navigator-stats-split--render)
+          (when-let ((navw (context-navigator-stats-split--nav-window)))
+            (context-navigator-stats-split--fit-window win navw))
           (context-navigator-stats-split--notify-changed)
           win)))))
 

@@ -26,6 +26,7 @@
 (require 'context-navigator-headerline)
 (require 'context-navigator-stats)
 (require 'context-navigator-stats-split)
+(ignore-errors (require 'context-navigator-groups-split nil t))
 (require 'context-navigator-view-actions)
 (require 'context-navigator-view-buffer)
 (require 'context-navigator-view-constants)
@@ -40,7 +41,7 @@
 (require 'context-navigator-view-navigation)
 (require 'context-navigator-view-spinner)
 ;; moved: UI keymap helpers now live here (no separate segments module)
-(require 'context-navigator-view-windows)
+
 (require 'context-navigator-view-title)
 (require 'context-navigator-keyspec)
 
@@ -495,6 +496,10 @@ Keyboard bindings are inherited from `context-navigator-view-mode-map'.")
     ;; Keep only essential remaps here; all other bindings come from keyspec.
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
     (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
+    ;; Safe defaults so core actions work even if keyspec hasn't been applied yet.
+    ;; Keys from keyspec (when applied) will override these.
+    (define-key m (kbd "t") #'context-navigator-view-toggle-enabled)
+    (define-key m (kbd "s") #'context-navigator-view-stats-toggle)
     m)
   "Keymap for =context-navigator-view-mode'.
 Only minimal remaps are defined here; all other bindings are applied from `context-navigator-keyspec'.")
@@ -511,8 +516,7 @@ Only minimal remaps are defined here; all other bindings are applied from `conte
 ;; Apply centralized keyspec bindings (middle path)
 (when (fboundp 'context-navigator-keys-apply-to)
   (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
-  (context-navigator-keys-apply-to context-navigator-view-mode-map 'items)
-  (context-navigator-keys-apply-to context-navigator-view-mode-map 'groups))
+  (context-navigator-keys-apply-to context-navigator-view-mode-map 'items))
 
 (defun context-navigator-view--hl-line-range ()
   "Return region to highlight for the current line.
@@ -524,8 +528,7 @@ Highlight:
 
 Do not highlight purely decorative separators."
   (when (or (get-text-property (point) 'context-navigator-item)
-            (get-text-property (point) 'context-navigator-group-slug)
-            (get-text-property (point) 'context-navigator-groups-up))
+            (get-text-property (point) 'context-navigator-group-slug))
     (cons (line-beginning-position)
           (min (point-max) (1+ (line-end-position))))))
 
@@ -561,6 +564,11 @@ Do not highlight purely decorative separators."
                                                           (or (and (boundp 'context-navigator-view-width)
                                                                    (symbol-value 'context-navigator-view-width))
                                                               33)))))))
+    ;; Mark sidebar window(s) immediately so splits can anchor correctly.
+    (when (window-live-p win)
+      (dolist (w (get-buffer-window-list buf nil t))
+        (when (window-live-p w)
+          (set-window-parameter w 'context-navigator-view 'sidebar))))
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (context-navigator-view-mode)
@@ -581,18 +589,8 @@ Do not highlight purely decorative separators."
                    context-navigator-stats-split-default-visible
                    (fboundp 'context-navigator-stats-split-visible-p)
                    (not (context-navigator-stats-split-visible-p)))
-          (ignore-errors (context-navigator-stats-split-open)))
-        ))
+          (ignore-errors (context-navigator-stats-split-open)))))
     (when (window-live-p win)
-      ;; Mark this window as our sidebar so visit logic can detect and avoid replacing it.
-      ;; If the buffer is shown in multiple windows (rare), mark them all.
-      (dolist (w (get-buffer-window-list buf nil t))
-        (when (window-live-p w)
-          (set-window-parameter w 'context-navigator-view 'sidebar)))
-      ;; Ensure window-balance protections are active when Navigator is in use.
-      (ignore-errors
-        (when (fboundp 'context-navigator-view-windows-setup)
-          (context-navigator-view-windows-setup)))
       (select-window win))
     win))
 
@@ -620,7 +618,10 @@ Do not highlight purely decorative separators."
       (ignore-errors
         (when (fboundp 'context-navigator-title-disable)
           (context-navigator-title-disable)))
-      ;; Close Stats split (if open) before deleting sidebar windows
+      ;; Close Groups/Stats splits (if open) before deleting sidebar windows
+      (ignore-errors
+        (when (fboundp 'context-navigator-groups-split-close)
+          (context-navigator-groups-split-close)))
       (ignore-errors
         (when (fboundp 'context-navigator-stats-split-close)
           (context-navigator-stats-split-close)))
@@ -629,10 +630,7 @@ Do not highlight purely decorative separators."
         (when (and (window-live-p w)
                    (eq (window-parameter w 'context-navigator-view) 'sidebar))
           (delete-window w)))
-      ;; If no Navigator windows remain, remove window-balance protections.
-      (ignore-errors
-        (when (fboundp 'context-navigator-view-windows-teardown)
-          (context-navigator-view-windows-teardown)))))
+      ))
   t)
 
 ;;;###autoload
@@ -659,6 +657,8 @@ Do not highlight purely decorative separators."
               (slug (car cell)))
     (ignore-errors (context-navigator-group-switch slug))
     (setq context-navigator-view--mode 'items)
+    ;; Ensure one-shot restore of saved cursor/scroll on the upcoming items render.
+    (setq context-navigator-view--restore-once t)
     (context-navigator-view--schedule-render)
     t))
 
@@ -680,24 +680,24 @@ Do not highlight purely decorative separators."
     (call-interactively 'context-navigator-view-toggle-enabled)))
 
 ;;;###autoload
+(defun context-navigator-view-toggle-multi-group-shim ()
+  "Compatibility shim for transient: toggle current group selection in groups view."
+  (interactive)
+  (call-interactively 'context-navigator-view-group-toggle-select))
+
+;;;###autoload
 (defun context-navigator-view-show-groups ()
-  "Open sidebar (if needed) and show the groups list for current project/global."
+  "Open sidebar (if needed) and show the Groups split for current project/global."
   (interactive)
   (let ((buf (get-buffer context-navigator-view--buffer-name)))
     ;; Ensure sidebar is open
     (unless (and buf (get-buffer-window buf t))
       (ignore-errors (context-navigator-view-open))
       (setq buf (get-buffer context-navigator-view--buffer-name)))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (ignore-errors (context-navigator-view--save-items-cursor-state))
-        (setq context-navigator-view--mode 'groups)
-        ;; Force focus logic on next render: clear last-active so render will focus active group.
-        (setq context-navigator-view--last-active-group nil))
-      (ignore-errors (context-navigator-groups-open))
-      (when-let ((win (get-buffer-window buf t)))
-        (select-window win))
-      (context-navigator-view--schedule-render))))
+    ;; Open/focus Groups split (Sidebar stays in items mode)
+    (ignore-errors (context-navigator-groups-split-open))
+    (when-let ((win (get-buffer-window buf t)))
+      (select-window win))))
 
 (require 'context-navigator-view-help)
 

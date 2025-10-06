@@ -23,8 +23,7 @@
 ;; Declarations from the main view/windows (avoid cycles)
 (declare-function context-navigator-view-mode "context-navigator-view" ())
 (declare-function context-navigator-view--render "context-navigator-view" ())
-(declare-function context-navigator-view-windows-setup "context-navigator-view-windows" ())
-(declare-function context-navigator-view-windows-teardown "context-navigator-view-windows" ())
+
 
 
 
@@ -80,10 +79,7 @@ SIZE is interpreted as:
       (set-window-buffer win buf)
       (when (window-live-p win)
         (set-window-parameter win 'context-navigator-view 'buffer))
-      ;; Ensure window-balance protections are active in buffer mode as well.
-      (ignore-errors
-        (when (fboundp 'context-navigator-view-windows-setup)
-          (context-navigator-view-windows-setup)))
+
       (with-current-buffer buf
         ;; Ensure major mode keymap exists even if view wasn't fully loaded yet
         (unless (and (boundp 'context-navigator-view-mode-map)
@@ -108,10 +104,7 @@ SIZE is interpreted as:
         (when (and (window-live-p w)
                    (eq (window-buffer w) buf))
           (delete-window w)))
-      ;; Remove window-balance protections if no Navigator windows remain.
-      (ignore-errors
-        (when (fboundp 'context-navigator-view-windows-teardown)
-          (context-navigator-view-windows-teardown))))))
+      )))
 
 ;;;###autoload
 (defun context-navigator-buffer-toggle ()

@@ -75,7 +75,7 @@
             (funcall print-section title pairs))))
       ;; Small summaries
       (when (eq ctx 'items)
-        (princ (context-navigator-i18n :items-help-view-groups)) (princ (context-navigator-i18n :items-help-help)) (princ "\n"))
+        (princ (context-navigator-i18n :items-help-help)) (princ "\n"))
       (when (eq ctx 'groups)
         (princ (context-navigator-i18n :help-groups-summary)) (princ "\n")))))
 

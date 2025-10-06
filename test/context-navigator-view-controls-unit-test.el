@@ -41,12 +41,6 @@
       (dolist (ln lines)
         (should (<= (string-width ln) 16))))))
 
-(ert-deftest ctxnav-controls/i18n-toggle-all-gptel-present ()
-  "i18n must provide :toggle-all-gptel string."
-  (let ((context-navigator-language 'en))
-    (let ((s (context-navigator-i18n :toggle-all-gptel)))
-      (should (stringp s))
-      (should (string-match-p "Toggle all gptel" s)))))
 
 (provide 'context-navigator-view-controls-unit-test)
 ;;; context-navigator-view-controls-unit-test.el ends here

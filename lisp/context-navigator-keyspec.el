@@ -34,26 +34,40 @@
 
     ;; Navigate (items/groups)
     (:id next :cmd context-navigator-view-next-item
-         :keys ("j" "n" "<down>") :contexts (items groups) :section navigate :desc-key :help-next-item)
+         :keys ("j" "n" "<down>") :contexts (items groups-split) :section navigate :desc-key :help-next-item)
     (:id prev :cmd context-navigator-view-previous-item
-         :keys ("k" "p" "<up>") :contexts (items groups) :section navigate :desc-key :help-previous-item)
+         :keys ("k" "p" "<up>") :contexts (items groups-split) :section navigate :desc-key :help-previous-item)
     (:id activate :cmd context-navigator-view-activate
          :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (items groups) :section navigate :desc-key :help-activate)
     (:id preview :cmd context-navigator-view-preview
          :keys ("v") :contexts (items) :section navigate :desc-key :help-preview)
     (:id tab-next :cmd context-navigator-view-tab-next
-         :keys ("TAB" "<tab>" "C-i") :contexts (items groups) :section navigate :desc-key :help-activate)
+         :keys ("TAB" "<tab>" "C-i") :contexts (items groups) :section navigate :desc-key :help-next-item)
     (:id tab-prev :cmd context-navigator-view-tab-previous
-         :keys ("<backtab>" "S-<tab>") :contexts (items groups) :section navigate :desc-key :help-activate)
-    (:id go-up :cmd context-navigator-view-go-up
-         :keys ("h") :contexts (items groups) :section navigate :desc-key :help-go-up)
+         :keys ("<backtab>" "S-<tab>") :contexts (items groups) :section navigate :desc-key :help-previous-item)
+    (:id groups-split :cmd context-navigator-groups-split-toggle
+         :keys ("G" "h") :contexts (items groups-split) :section navigate :desc-key :toggle-groups-split)
+
+    ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar    
+    (:id gs-close :cmd context-navigator-groups-split-close
+         :keys ("q") :contexts (groups-split) :section navigate :desc-key :help-quit)
+    (:id gs-next :cmd next-line
+         :keys ("j" "n" "<down>") :contexts (groups-split) :section navigate :desc-key :help-next-item)
+    (:id gs-prev :cmd previous-line
+         :keys ("k" "p" "<up>") :contexts (groups-split) :section navigate :desc-key :help-previous-item)
+    (:id gs-activate :cmd context-navigator-groups-split-select
+         :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (groups-split) :section navigate :desc-key :help-activate)
+    (:id gs-refresh :cmd context-navigator-groups-open
+         :keys ("g") :contexts (groups-split) :section act :desc-key :help-refresh)
+    (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
+         :keys ("M") :contexts (groups-split) :section groups :desc-key :toggle-multi-group)
 
     ;; Items actions
     ;; Items: toggle enabled (SPC/t)
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
     ;; Groups: toggle selection (SPC/t)
-    (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
+    (:id toggle-dispatch-groups :cmd context-navigator-view-toggle-dispatch
          :keys ("SPC" "t") :contexts (groups) :section act :desc-key :toggle-multi-group)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items) :section act :desc-key :toggle-all-gptel)
@@ -74,7 +88,7 @@
     (:id clear-gptel :cmd context-navigator-view-clear-gptel
          :keys ("X") :contexts (items) :section act :desc-key :help-clear-gptel)
     (:id stats :cmd context-navigator-view-stats-toggle
-         :keys ("s") :contexts (items) :section act :desc-key :stats)
+         :keys ("S") :contexts (items groups groups-split) :section act :desc-key :stats)
 
     ;; Session (items/groups)
     (:id push-toggle :cmd context-navigator-view-toggle-push
@@ -100,7 +114,7 @@
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
          :keys () :contexts (groups) :section groups :desc-key :toggle-multi-group)
     (:id multigroup-toggle :cmd context-navigator-view-toggle-multi-group
-         :keys ("G") :contexts (groups) :section groups :desc-key :toggle-multi-group)
+         :keys ("M") :contexts (groups) :section groups :desc-key :toggle-multi-group)
 
     ;; Multifile
     (:id mf-visit :cmd context-navigator-multifile-activate
@@ -116,7 +130,7 @@
     (:id mf-delete :cmd context-navigator-multifile-delete
          :keys ("d") :contexts (multifile) :section act :desc-key :mf-action-delete)
     (:id mf-push :cmd context-navigator-multifile-push
-         :keys ("p") :contexts (multifile) :section act :desc-key :mf-action-push)
+         :keys ("P") :contexts (multifile) :section act :desc-key :mf-action-push)
     (:id mf-filter :cmd context-navigator-multifile-toggle-filter
          :keys ("f") :contexts (multifile) :section tools :desc-key :mf-filter-hint)
     (:id mf-edit-all :cmd context-navigator-multifile-edit-all
@@ -242,20 +256,26 @@ Falls back to broader contexts when exact CONTEXT not found:
 ;;;###autoload
 (defun context-navigator-keys-apply-known-keymaps ()
   "Apply keyspec to known mode maps (idempotent, safe).
-- context-navigator-view-mode-map      ← items + groups + global
-- context-navigator-multifile-mode-map ← multifile + global"
+- context-navigator-view-mode-map         ← items + global
+- context-navigator-multifile-mode-map    ← multifile + global
+- context-navigator-groups-split-mode-map ← groups-split + global"
   (interactive)
-  ;; View (items/groups/global live in the same major-mode map)
+  ;; View (only global/items; 'groups now lives in the split)
   (when (and (boundp 'context-navigator-view-mode-map)
              (keymapp context-navigator-view-mode-map))
     (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
-    (context-navigator-keys-apply-to context-navigator-view-mode-map 'items)
-    (context-navigator-keys-apply-to context-navigator-view-mode-map 'groups))
+    (context-navigator-keys-apply-to context-navigator-view-mode-map 'items))
   ;; Multifile
   (when (and (boundp 'context-navigator-multifile-mode-map)
              (keymapp context-navigator-multifile-mode-map))
     (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'multifile)
     (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'global))
+  ;; Groups split (bottom panel)
+  (when (and (boundp 'context-navigator-groups-split-mode-map)
+             (keymapp context-navigator-groups-split-mode-map))
+    ;; Apply global first so local context can override collisions
+    (context-navigator-keys-apply-to context-navigator-groups-split-mode-map 'global)
+    (context-navigator-keys-apply-to context-navigator-groups-split-mode-map 'groups-split))
   t)
 
 ;; Auto-reapply on spec changes (when available)
@@ -281,7 +301,7 @@ Profile may add/remove alias keys per action/context without changing the base s
      ;; Ensure vim-like aliases present (most already in base spec).
      (:id next     :contexts (items groups) :add ("j"))
      (:id prev     :contexts (items groups) :add ("k"))
-     (:id go-up    :contexts (items groups) :add ("h"))
+     (:id groups-split  :contexts (items groups) :add ("h"))
      (:id activate :contexts (items groups) :add ("l"))))
   "Overlay edits per profile: a list keyed by profile symbol of plist edits:
 (:id ID :contexts (ctx...) :add (keys...) [:remove (keys...)])"

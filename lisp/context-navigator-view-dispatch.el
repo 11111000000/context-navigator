@@ -26,6 +26,7 @@
 (declare-function context-navigator-view--render-if-visible "context-navigator-view" ())
 (declare-function context-navigator-view--schedule-render "context-navigator-view" ())
 (declare-function context-navigator-view-refresh "context-navigator-view-events" ())
+(declare-function context-navigator-view--save-items-cursor-state "context-navigator-view-events" ())
 
 ;; Actions (moved to view-actions)
 (declare-function context-navigator-view-push-now "context-navigator-view-actions" ())
@@ -109,9 +110,7 @@
       (or (context-navigator-view--open-group-at-point)
           (context-navigator-ui-info :no-group-at-point)))
      (t
-      (if (get-text-property (point) 'context-navigator-groups-up)
-          (context-navigator-view-go-up)
-        (context-navigator-view-visit))))))
+      (context-navigator-view-visit)))))
 
 ;;;###autoload
 (defun context-navigator-view-refresh-dispatch ()
@@ -137,29 +136,15 @@
 
 ;;;###autoload
 (defun context-navigator-view-go-up ()
-  "Switch from items to groups view; in groups view do nothing.
-
-- From items -> switch to groups and fetch list
-- From groups -> no-op"
+  "Open/focus Groups split below Navigator; sidebar remains in items mode."
   (interactive)
-  (when (not (eq context-navigator-view--mode 'groups))
-    (setq context-navigator-view--mode 'groups)
-    ;; Remember the current active group explicitly for a single-shot focus.
-    (let* ((st   (ignore-errors (context-navigator--state-get)))
-           (slug (and st (context-navigator-state-current-group-slug st)))
-           ;; Fetch groups synchronously (also returns the list).
-           (lst  (ignore-errors (context-navigator-groups-open))))
-      ;; Install the fresh groups list into the Navigator buffer immediately
-      ;; so the first render doesn't show a placeholder and then jump.
-      (let ((buf (get-buffer "*context-navigator*")))
-        (when (buffer-live-p buf)
-          (with-current-buffer buf
-            (setq-local context-navigator-view--groups (and (listp lst) lst))
-            ;; Single-shot request to focus the group we came from.
-            (setq-local context-navigator-view--focus-group-once
-                        (or (and (stringp slug) (not (string-empty-p slug)) slug) t))))))
-    ;; Render immediately for responsive UX (avoid waiting for debounce)
-    (context-navigator-view--render-if-visible)))
+  ;; Save current cursor position for this group (for later restore)
+  (ignore-errors (context-navigator-view--save-items-cursor-state))
+  ;; Open/focus groups split instead of switching sidebar mode
+  (when (fboundp 'context-navigator-groups-split-open)
+    (context-navigator-groups-split-open))
+  ;; Keep sidebar in items mode; just refresh if visible
+  (context-navigator-view--render-if-visible))
 
 ;;;###autoload
 (defun context-navigator-view-group-create ()

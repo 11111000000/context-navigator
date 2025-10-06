@@ -133,20 +133,9 @@ Creates <root>/.context/default.el (or ~/.context/default.el in global mode)."
 (defconst context-navigator-persist-version 3
   "Persist format version used by Context Navigator (v3).")
 
-(defcustom context-navigator-protect-sidebar-windows t
-  "When non-nil, prevent global window-balancing operations from affecting the Context Navigator sidebar.
 
-When enabled the package will short-circuit common balancing commands (e.g. `balance-windows'
-and `balance-windows-area') when the sidebar is present so the sidebar window is not resized
-or removed. Implemented by the `context-navigator-view-windows' module via lightweight advices
-installed while the Navigator is visible. This is enabled by default."
-  :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-protect-buffer-windows nil
-  "When non-nil, protect Navigator buffer windows (magit-like mode) from balance operations.
-Implemented by the `context-navigator-view-windows' module via lightweight advices installed
-while the Navigator buffer is visible. Disabled by default."
-  :type 'boolean :group 'context-navigator)
+
 
 (defcustom context-navigator-display-mode 'sidebar
   "How to display Navigator: 'buffer (magit-like) or 'sidebar."
@@ -501,7 +490,7 @@ Default is \"C-c n\"."
       (when (keymapp context-navigator-mode-map)
         (ignore-errors (define-key context-navigator-mode-map (kbd old) nil))))
     ;; Install new binding in global-map and in mode-map
-(when new
+    (when new
       (ignore-errors (define-key global-map (kbd new) #'context-navigator-view-open-menu))
       (when (keymapp context-navigator-mode-map)
         (ignore-errors (define-key context-navigator-mode-map (kbd new) #'context-navigator-view-open-menu))))

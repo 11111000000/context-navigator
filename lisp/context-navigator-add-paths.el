@@ -1,4 +1,4 @@
-;;; context-navigator-path-add.el --- Add files by names/paths from text/minibuffer -*- lexical-binding: t; -*-
+;;; context-navigator-add-paths.el --- Add files by names/paths from text/minibuffer -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
 
@@ -1085,6 +1085,5 @@ Respects case sensitivity and dotfiles rule."
        nil))))
 
 
-;;; context-navigator-path-add.el ends here
-
 (provide 'context-navigator-add-paths)
+;;; context-navigator-add-paths.el ends here

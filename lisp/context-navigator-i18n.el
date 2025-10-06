@@ -1367,6 +1367,9 @@
      (be . "Паказаць гэтую даведку")
      (zh . "显示此帮助")
      (ja . "このヘルプを表示"))
+    (:toggle-groups-split
+     (en . "Toggle groups list")
+     (ru . "Переключить список групп"))
 
     (:activate-not-available
      (en . "[Context Navigator] Activate command not available yet.")

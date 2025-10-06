@@ -65,6 +65,16 @@
 ;;;###autoload
 (autoload 'context-navigator-view-show-groups "context-navigator-view" "Open the sidebar and show groups list." t)
 
+;;; Groups split (autoloads)
+;;;###autoload
+(autoload 'context-navigator-groups-split-open "context-navigator-groups-split" "Open Groups split below Navigator." t)
+;;;###autoload
+(autoload 'context-navigator-groups-split-close "context-navigator-groups-split" "Close Groups split." t)
+;;;###autoload
+(autoload 'context-navigator-groups-split-toggle "context-navigator-groups-split" "Toggle Groups split." t)
+;;;###autoload
+(autoload 'context-navigator-groups-split-visible-p "context-navigator-groups-split" "Return non-nil if Groups split is visible." nil)
+
 ;;; NOTE:
 ;;; The view functionality is split across multiple files (dispatch/actions/navigation/items/groups/etc).
 ;;; To make the sidebar usable when loaded lazily, expose common view entry points here via autoload.

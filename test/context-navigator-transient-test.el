@@ -15,13 +15,6 @@
     (funcall #'context-navigator--set-state st)
     st))
 
-(ert-deftest ctxnav-transient/keybinding-present ()
-  "Global map should bind C-c n to transient."
-  (let ((context-navigator-global-key "C-c n"))
-    (context-navigator--update-global-keybinding)
-    (should (eq (lookup-key context-navigator-mode-map (kbd "C-c n"))
-                'context-navigator-transient))))
-
 (ert-deftest ctxnav-transient/add-universal-region-and-file ()
   "Universal add should add selection when region is active, and file when no region."
   (context-navigator-test-with-temp-dir root

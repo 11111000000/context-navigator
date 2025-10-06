@@ -1,14 +1,13 @@
-;;; context-navigator-stats.el --- Stats for current context (footer block) -*- lexical-binding: t; -*-
+;;; context-navigator-stats.el --- Stats for current context (split-only) -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;; Collapsible "Stats" block for the items view:
-;; - Counts per type (files/buffers/selections), total and enabled
-;; - Size/cost: bytes and rough tokens for enabled and total
-;; - Lazy remote mode by default (do not stat TRAMP)
-;; - Small TTL cache; buffer-local expand state for the Navigator buffer
-;; - Optional icons via all-the-icons (auto-detect)
+;; Split-only Stats:
+;; - Compact 5-line summary in a dedicated split below the Navigator
+;; - Items and Multi-group (aggregate) supported
+;; - Inline footer removed; this module only provides compute + icons
+;; - Lazy remote mode by default (do not stat TRAMP) and small TTL cache
 
 ;;; Code:
 
@@ -28,9 +27,7 @@
   "Statistics footer for Context Navigator."
   :group 'context-navigator)
 
-(defcustom context-navigator-stats-enable t
-  "When non-nil, show a collapsible Stats block under items."
-  :type 'boolean :group 'context-navigator-stats)
+
 
 (defcustom context-navigator-stats-bytes-per-token 4.0
   "Approximate bytes-per-token ratio for rough token cost estimation."
@@ -59,8 +56,7 @@
   "Relative height for icons in the Stats footer."
   :type 'number :group 'context-navigator-stats)
 
-(defvar-local context-navigator-stats--expanded-p nil
-  "When non-nil, Stats block is expanded in the Navigator buffer.")
+
 
 (defvar-local context-navigator-stats--cache nil
   "Cached stats: plist (:stamp float :data PLIST).
@@ -322,130 +318,27 @@ return the previous cache (or a fallback based on current group's items)."
   (when (fboundp 'context-navigator-view--schedule-render)
     (context-navigator-view--schedule-render)))
 
-(defun context-navigator-stats-toggle ()
-  "Toggle expand/collapse of the Stats block under items."
-  (interactive)
-  (setq context-navigator-stats--expanded-p (not context-navigator-stats--expanded-p))
-  (when (fboundp 'context-navigator-view--schedule-render)
-    (context-navigator-view--schedule-render)))
+
+
+
+
+
+
+;; Compatibility: inline Stats footer is removed; keep no-op stubs/redirects.
 
 (defun context-navigator-stats-footer-lines (_total-width)
-  "Return Stats footer lines for items view or nil."
-  (when context-navigator-stats-enable
-    (let* ((pl (context-navigator-stats--get))
-           (en (plist-get pl :items-en))
-           (b-en (plist-get pl :bytes-en))
-           (t-en (plist-get pl :tokens-en))
-           (b-all (plist-get pl :bytes))
-           (t-all (plist-get pl :tokens))
-           (files (plist-get pl :files))
-           (buffers (plist-get pl :buffers))
-           (sels (plist-get pl :selections))
-           (files-en (plist-get pl :files-en))
-           (buffers-en (plist-get pl :buffers-en))
-           (sels-en (plist-get pl :selections-en))
-           (arrow (if context-navigator-stats--expanded-p "▾" "▸"))
-           (hdr-ico (or (context-navigator-stats--icon :header) ""))
-           (lbl-base (context-navigator-i18n :stats))
-           (mg-flag (plist-get pl :mg))
-           (groups-n (plist-get pl :groups))
-           (lbl (if mg-flag
-                    (format "%s (MG, %d)" lbl-base (or groups-n 0))
-                  lbl-base))
-           (hdr (format "%s %s %s: %d  ~%s  (~%d %s)"
-                        arrow
-                        hdr-ico
-                        lbl
-                        (or en 0)
-                        (context-navigator-human-size b-en)
-                        (or t-en 0)
-                        (context-navigator-i18n :stats-tokens)))
-           (s (copy-sequence hdr))
-           (km (let ((m (make-sparse-keymap)))
-                 (define-key m [mouse-1] #'context-navigator-stats-toggle)
-                 ;; Make TAB on the stats header toggle expand/collapse (like the items title)
-                 (define-key m (kbd "TAB")       #'context-navigator-stats-toggle)
-                 (define-key m (kbd "<tab>")     #'context-navigator-stats-toggle)
-                 (define-key m [tab]             #'context-navigator-stats-toggle)
-                 (define-key m (kbd "C-i")       #'context-navigator-stats-toggle)
-                 ;; Also support RET directly on the header segment
-                 (define-key m (kbd "RET")       #'context-navigator-stats-toggle)
-                 (define-key m (kbd "C-m")       #'context-navigator-stats-toggle)
-                 (define-key m [return]          #'context-navigator-stats-toggle)
-                 (define-key m (kbd "<return>")  #'context-navigator-stats-toggle)
-                 m)))
-      ;; Make header clickable
-      (add-text-properties 0 (length s)
-                           (list 'mouse-face 'highlight
-                                 'help-echo (context-navigator-i18n :stats-toggle-hint)
-                                 'keymap km 'local-map km
-                                 'context-navigator-stats-toggle t
-                                 'face 'mode-line-emphasis)
-                           s)
-      (if (not context-navigator-stats--expanded-p)
-          (list s)
-        (let* ((cnt-ico (or (context-navigator-stats--icon :counts) ""))
-               (siz-ico (or (context-navigator-stats--icon :size) ""))
-               (tok-ico (or (context-navigator-stats--icon :tokens) ""))
-               (ico-file (or (context-navigator-stats--icon :file) ""))
-               (ico-buf (or (context-navigator-stats--icon :buffer) ""))
-               (ico-sel (or (context-navigator-stats--icon :selection) ""))
-               (row1 (format "   %s %s: %s %d (%d), %s %d (%d), %s %d (%d)"
-                             cnt-ico
-                             (context-navigator-i18n :stats-counts)
-                             ico-file files files-en
-                             ico-buf buffers buffers-en
-                             ico-sel sels sels-en))
-               (row2 (format "   %s %s: %s ~%s  /  %s ~%s"
-                             siz-ico
-                             (context-navigator-i18n :stats-size)
-                             (context-navigator-i18n :enabled) (context-navigator-human-size b-en)
-                             (context-navigator-i18n :total) (context-navigator-human-size b-all)))
-               (row3 (format "   %s %s: %s %d  /  %s %d"
-                             tok-ico
-                             (context-navigator-i18n :stats-tokens)
-                             (context-navigator-i18n :enabled) (or t-en 0)
-                             (context-navigator-i18n :total) (or t-all 0))))
-          (list s row1 row2 row3))))))
+  "Inline Stats footer removed; return empty list."
+  '())
 
-(defun context-navigator-stats-interactive-lines (total-width &optional parent-map)
-  "Return Stats block lines wrapped with interactive props/keymaps.
-This is a thin wrapper around `context-navigator-stats-footer-lines' that:
-- marks the header as interactive with a unified keymap (mouse/TAB/RET),
-- marks content lines with 'context-navigator-stats-line,
-- inherits key bindings from PARENT-MAP when provided.
+(defun context-navigator-stats-interactive-lines (_total-width &optional _parent-map)
+  "Inline Stats footer removed; return empty list."
+  '())
 
-TOTAL-WIDTH is forwarded to `context-navigator-stats-footer-lines'."
-  (let ((raw (condition-case nil
-                 (context-navigator-stats-footer-lines total-width)
-               (error nil))))
-    (when (and (listp raw) raw)
-      (let ((first t))
-        (mapcar
-         (lambda (s)
-           (let ((str (copy-sequence s)))
-             (when first
-               (setq first nil)
-               (let ((km (ignore-errors
-                           (context-navigator-view-ui-make-keymap
-                            #'context-navigator-stats-toggle parent-map))))
-                 (when (keymapp km)
-                   (add-text-properties
-                    0 (length str)
-                    (list
-                     'mouse-face 'highlight
-                     'help-echo (context-navigator-i18n :stats-toggle-hint)
-                     'context-navigator-stats-toggle t
-                     'context-navigator-header t
-                     'context-navigator-interactive t
-                     'keymap km
-                     'local-map km)
-                    str))))
-             (add-text-properties 0 (length str)
-                                  (list 'context-navigator-stats-line t)
-                                  str)
-             str))
-         raw)))))
+(defun context-navigator-stats-toggle ()
+  "Open/close the 5-line Stats split below the Navigator."
+  (interactive)
+  (when (fboundp 'context-navigator-stats-split-toggle)
+    (context-navigator-stats-split-toggle)))
 
 (provide 'context-navigator-stats)
 ;;; context-navigator-stats.el ends here
