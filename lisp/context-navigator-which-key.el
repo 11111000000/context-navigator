@@ -38,15 +38,15 @@
      (t (symbol-name (or (plist-get pl :id) (plist-get pl :cmd)))))))
 
 (defun context-navigator-which-key--replacements-for (context)
-  "Build (key . label) pairs for CONTEXT from keyspec."
+  "Build (key . label) pairs for CONTEXT from keyspec (effective keys with profile overlays)."
   (let ((entries (cl-remove-if-not
                   (lambda (pl) (memq context (plist-get pl :contexts)))
                   context-navigator-keyspec))
         (acc '()))
     (dolist (pl entries (nreverse acc))
       (let* ((label (context-navigator-which-key--desc pl))
-             (keys  (or (plist-get pl :keys) '())))
-        (dolist (k keys)
+             (keys  (ignore-errors (context-navigator-keys--effective-keys pl context))))
+        (dolist (k (or keys '()))
           (push (cons (context-navigator-which-key--normalize-key k) label) acc))))))
 
 (defun context-navigator-which-key--apply-to-map (map-symbol context)

@@ -672,6 +672,13 @@ Do not highlight purely decorative separators."
 
 ;;; Dispatchers and commands
 
+(defun context-navigator-view-toggle-dispatch ()
+  "Toggle item or group selection depending on current View mode."
+  (interactive)
+  (if (eq context-navigator-view--mode 'groups)
+      (call-interactively 'context-navigator-view-group-toggle-select)
+    (call-interactively 'context-navigator-view-toggle-enabled)))
+
 ;;;###autoload
 (defun context-navigator-view-show-groups ()
   "Open sidebar (if needed) and show the groups list for current project/global."

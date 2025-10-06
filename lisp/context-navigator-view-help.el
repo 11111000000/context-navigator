@@ -81,41 +81,41 @@
 
 ;;;###autoload
 (defun context-navigator-view-open-menu ()
-  "Open Navigator menu (transient) or fallback to Help when unavailable."
+  "Open Navigator menu.
+When the sidebar (Navigator view) is visible or active, open the View transient.
+Otherwise open the Global transient. Fallback to Help if transients are unavailable."
   (interactive)
   ;; Make sure transient is available if installed
   (unless (featurep 'transient)
     (require 'transient nil t))
-  ;; Best-effort load of our transient menu
-  (unless (fboundp 'context-navigator-view-transient)
+  ;; Best-effort load of our transient menus
+  (unless (and (fboundp 'context-navigator-view-transient)
+               (fboundp 'context-navigator-transient))
     (ignore-errors (require 'context-navigator-transient)))
-  (if (fboundp 'context-navigator-view-transient)
-      (call-interactively 'context-navigator-view-transient)
-    (call-interactively 'context-navigator-view-help)))
+  (let* ((nav-buf (and (boundp 'context-navigator-view--buffer-name)
+                       (get-buffer context-navigator-view--buffer-name)))
+         (sidebar-win (and nav-buf (get-buffer-window nav-buf t)))
+         (focused-in-sidebar (and sidebar-win (eq (selected-window) sidebar-win)))
+         (in-view (or focused-in-sidebar (eq major-mode 'context-navigator-view-mode))))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :info :ui
+                                 "open-menu: in-view=%s sidebar=%s focused=%s"
+                                 (and in-view t) (and sidebar-win t) (and focused-in-sidebar t))))
+    (cond
+     ;; Sidebar is visible/active → View transient
+     (in-view
+      (if (fboundp 'context-navigator-view-transient)
+          (call-interactively 'context-navigator-view-transient)
+        (call-interactively 'context-navigator-view-help)))
+     ;; Else → Global transient (panel/project/actions/control/logs)
+     ((fboundp 'context-navigator-transient)
+      (call-interactively 'context-navigator-transient))
+     ;; Fallback to Help
+     (t
+      (call-interactively 'context-navigator-view-help)))))
 
-;; --- Audit keepalive (dynamic help keys) -------------------------------------
-;; This block never runs at runtime, but helps audit scanner account for keys
-;; that are passed dynamically via (cdr cell) in this file.
-(when nil
-  (context-navigator-i18n :help-next-item)
-  (context-navigator-i18n :help-previous-item)
-  (context-navigator-i18n :help-activate)
-  (context-navigator-i18n :help-preview)
-  (context-navigator-i18n :help-toggle-gptel)
-  (context-navigator-i18n :help-delete)
-  (context-navigator-i18n :help-refresh)
-  (context-navigator-i18n :help-go-up)
-  (context-navigator-i18n :help-group-create)
-  (context-navigator-i18n :help-group-rename)
-  (context-navigator-i18n :help-group-duplicate)
-  (context-navigator-i18n :help-toggle-push)
-  (context-navigator-i18n :help-toggle-auto)
-  (context-navigator-i18n :help-open-all)
-  (context-navigator-i18n :help-push-now)
-  (context-navigator-i18n :help-clear-group)
-  (context-navigator-i18n :help-clear-gptel)
-  (context-navigator-i18n :help-quit)
-  (context-navigator-i18n :help-help))
+;; (removed) Obsolete audit-keepalive block; help now derives keys from keyspec.
 
 (provide 'context-navigator-view-help)
 ;;; context-navigator-view-help.el ends here

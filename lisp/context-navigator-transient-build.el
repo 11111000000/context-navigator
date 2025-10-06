@@ -24,6 +24,14 @@
   "Transient builders from keyspec for Context Navigator."
   :group 'context-navigator)
 
+(defun context-navigator-transient-build--log (fmt &rest args)
+  "Log transient build diagnostics with info level and echo."
+  (ignore-errors
+    (when (fboundp 'context-navigator-debug)
+      (apply #'context-navigator-debug :info :transient fmt args)))
+  (ignore-errors
+    (apply #'message (concat "[context-navigator] " fmt) args)))
+
 (defun context-navigator-transient-build--title (sec-symbol)
   "Return localized section title for SEC-SYMBOL."
   (pcase sec-symbol
@@ -72,8 +80,9 @@ Only the first key from :keys is used per keyspec entry."
 (defun context-navigator-transient-build--group (context sections &optional predicate)
   "Build a single transient group spec for CONTEXT over SECTIONS.
 When PREDICATE is non-nil, add it as a :if guard for group visibility.
-Returns either nil (when empty) or a vector like:
-  [:description (lambda () \"Title\") :if PRED (\"k\" (lambda () \"Label\") CMD) ...]"
+Returns either nil (when empty) or a raw group vector:
+  [\"Title\" :if PRED (\"k\" \"Label\" CMD) ...]
+This is suitable input for `transient-parse-suffixes'."
   (let* ((entries (context-navigator-transient-build--entries context sections)))
     (when entries
       (let* ((title (context-navigator-transient-build--title (car sections)))
@@ -82,18 +91,18 @@ Returns either nil (when empty) or a vector like:
                         (let ((k (nth 0 cell))
                               (lbl (nth 1 cell))
                               (cmd (nth 2 cell)))
-                          ;; transient expects (key description command)
-                          (list k (lambda () lbl) cmd)))
+                          (list k lbl cmd)))
                       entries))
-             (props (list :description (lambda () title))))
-        (when predicate
-          (setq props (append props (list :if predicate))))
-        (vconcat (append props heads))))))
+             (elems (append (list title)
+                            (and predicate (list :if predicate))
+                            heads)))
+        (apply #'vector elems)))))
 
 (defun context-navigator-transient-build--group-excluding (context sections exclude-ids &optional predicate)
   "Build a transient group for CONTEXT limited to SECTIONS, excluding EXCLUDE-IDS.
 EXCLUDE-IDS is a list of keyspec :id symbols to omit.
-When PREDICATE is non-nil, add it as a :if guard for group visibility."
+When PREDICATE is non-nil, add it as a :if guard for group visibility.
+Returns a raw group vector suitable for `transient-parse-suffixes'."
   (let* ((entries
           (cl-remove-if-not
            (lambda (pl)
@@ -114,31 +123,115 @@ When PREDICATE is non-nil, add it as a :if guard for group visibility."
                                       (symbol-name (or id cmd))))
                        when (and (symbolp cmd) (fboundp cmd)
                                  (listp keys) (> (length keys) 0))
-                       collect (list (car keys) (lambda () lbl) cmd)))
-             (props (list :description (lambda () title))))
-        (when predicate
-          (setq props (append props (list :if predicate))))
-        (vconcat (append props heads))))))
+                       collect (list (car keys) lbl cmd)))
+             (elems (append (list title)
+                            (and predicate (list :if predicate))
+                            heads)))
+        (apply #'vector elems)))))
 
 (defun context-navigator-transient-build-view-items ()
-  "Return a vector of transient groups for the View (items mode).
+  "Return a list of raw group vectors for the View (items mode).
 Groups: Navigate / Actions / Session / Tools."
   (let* ((g1 (context-navigator-transient-build--group 'items   '(navigate)))
          (g2 (context-navigator-transient-build--group 'items   '(act)))
          (g3 (context-navigator-transient-build--group 'items   '(session)))
          (g4 (context-navigator-transient-build--group 'items   '(tools)))
          (lst (delq nil (list g1 g2 g3 g4))))
-    (apply #'vector lst)))
+    (context-navigator-transient-build--log
+     "build-view-items: groups=%s (navigate=%s act=%s session=%s tools=%s)"
+     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
+    lst))
 
 (defun context-navigator-transient-build-view-groups ()
-  "Return a vector of transient groups for the View (groups mode).
+  "Return a list of raw group vectors for the View (groups mode).
 Groups: Navigate / Groups / Session / Tools."
   (let* ((g1 (context-navigator-transient-build--group 'groups  '(navigate)))
          (g2 (context-navigator-transient-build--group 'groups  '(groups)))
          (g3 (context-navigator-transient-build--group 'groups  '(session)))
          (g4 (context-navigator-transient-build--group 'groups  '(tools)))
          (lst (delq nil (list g1 g2 g3 g4))))
-    (apply #'vector lst)))
+    (context-navigator-transient-build--log
+     "build-view-groups: groups=%s (navigate=%s groups=%s session=%s tools=%s)"
+     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
+    lst))
+
+;; -------- Global transient (Panel/Project, Context/Groups, Actions, Control, Logs)
+
+(defcustom context-navigator-transient-global-spec
+  '((:section panel
+     ("n" :tr-toggle-sidebar context-navigator-toggle)
+     ("S" :tr-display-mode context-navigator-display-mode-toggle)
+     ("P" :tr-switch-project context-navigator-switch-to-current-buffer-project))
+    (:section context
+     ("g" :tr-groups-list context-navigator-view-show-groups)
+     ("x" :clear-group context-navigator-context-clear-current-group)
+     ("u" :tr-unload context-navigator-context-unload))
+    (:section actions
+     ("a" :tr-add-universal context-navigator-add-universal)
+     ("f" :add-from-minibuf context-navigator-add-from-minibuffer)
+     ("t" :add-from-text context-navigator-add-from-text)
+     ("b" :select-by-name context-navigator-select-by-name)
+     ("o" :tr-open-buffers context-navigator-view-open-all-buffers)
+     ("m" :tr-multifile context-navigator-multifile-open))
+    (:section control
+     ("G" :toggle-multi-group context-navigator-view-toggle-multi-group)
+     ("V" :tr-toggle-push context-navigator-toggle-push-to-gptel)
+     ("A" :tr-toggle-auto context-navigator-toggle-auto-project-switch)
+     ("M" :enable-all-gptel context-navigator-view-enable-all-gptel)
+     ("U" :disable-all-gptel context-navigator-view-disable-all-gptel)
+     ("T" :toggle-all-gptel context-navigator-view-toggle-all-gptel)
+     ("p" :tr-push-now context-navigator-push-to-gptel-now)
+     ("X" :clear-gptel context-navigator-clear-gptel-now)
+     ("R" :tr-razor context-navigator-razor-run :if (lambda () (derived-mode-p 'org-mode))))
+    (:section logs
+     ("D" :tr-logs-toggle context-navigator-log-toggle)
+     ("L" :tr-logs-open context-navigator-log-open)
+     ("K" :tr-logs-clear context-navigator-log-clear)
+     ("=" :tr-logs-set-level context-navigator-log-set-level)
+     ("F" :tr-logs-toggle-file context-navigator-log-toggle-file-persistence)))
+  "Global transient spec: sections with (key i18n-key command [:if PRED])."
+  :type 'sexp
+  :group 'context-navigator-transient-build)
+
+(defun context-navigator-transient-build--title-global (sec)
+  "Localized title for global transient section SEC."
+  (pcase sec
+    ('panel   (context-navigator-i18n :tr-panel))
+    ('context (context-navigator-i18n :tr-context))
+    ('actions (context-navigator-i18n :tr-actions))
+    ('control (context-navigator-i18n :tr-control))
+    ('logs    (context-navigator-i18n :tr-logs))
+    (_        (symbol-name sec))))
+
+(defun context-navigator-transient-build-global ()
+  "Build global transient raw groups from `context-navigator-transient-global-spec'.
+Return a list of group vectors suitable for `transient-parse-suffixes'."
+  (let (groups)
+    (dolist (sec context-navigator-transient-global-spec)
+      (let* ((sec-name (plist-get sec :section))
+             (title (context-navigator-transient-build--title-global sec-name))
+             (heads '()))
+        (dolist (cell sec)
+          (when (and (listp cell) (stringp (car cell)))
+            (let* ((key (nth 0 cell))
+                   (i18n-key (nth 1 cell))
+                   (cmd (nth 2 cell))
+                   (rest (cdddr cell))
+                   (pred (and (listp rest) (plist-member rest :if)
+                              (plist-get rest :if)))
+                   (lbl (if (and (keywordp i18n-key) (fboundp 'context-navigator-i18n))
+                            (context-navigator-i18n i18n-key)
+                          (format "%s" i18n-key)))
+                   (head (list key lbl cmd)))
+              (when pred
+                (setq head (append head (list :if pred))))
+              (push head heads))))
+        (when heads
+          (let ((group (apply #'vector title (nreverse heads))))
+            (push group groups)))))
+    (context-navigator-transient-build--log
+     "build-global: groups=%s" (length groups))
+    (nreverse groups)))
 
 (provide 'context-navigator-transient-build)
 ;;; context-navigator-transient-build.el ends here

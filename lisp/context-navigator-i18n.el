@@ -74,6 +74,10 @@
      (be . "Дзеянні")
      (zh . "操作")
      (ja . "アクション"))
+     (:tr-control
+     (en . "Control")
+     (ru . "Управление")
+     (fr . "Control"))    
     (:tr-gptel
      (en . "GPTel")
      (ru . "GPTel")

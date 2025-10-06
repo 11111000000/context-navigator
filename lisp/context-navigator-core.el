@@ -501,10 +501,10 @@ Default is \"C-c n\"."
       (when (keymapp context-navigator-mode-map)
         (ignore-errors (define-key context-navigator-mode-map (kbd old) nil))))
     ;; Install new binding in global-map and in mode-map
-    (when new
-      (ignore-errors (define-key global-map (kbd new) #'context-navigator-transient))
+(when new
+      (ignore-errors (define-key global-map (kbd new) #'context-navigator-view-open-menu))
       (when (keymapp context-navigator-mode-map)
-        (ignore-errors (define-key context-navigator-mode-map (kbd new) #'context-navigator-transient))))
+        (ignore-errors (define-key context-navigator-mode-map (kbd new) #'context-navigator-view-open-menu))))
     (setq context-navigator--current-global-key new)))
 
 (defvar context-navigator-mode-map

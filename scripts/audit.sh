@@ -69,7 +69,7 @@ else
   done < <(find "${LISP_DIR}" -type f -name '*.el' -print0) | sort -n
 fi
 
-# Duplicate defun names (across repo)
+# Duplicate defun/macro names (across repo)
 sec "Duplicate function definitions (same name, multiple definitions)"
 TMPD="$(mktemp -d)"
 trap 'rm -rf "${TMPD}"' EXIT
@@ -80,8 +80,14 @@ NAMES_FILE="${TMPD}/defuns.txt"
 while IFS= read -r -d '' f; do
   awk -v F="${f}" '
     /^[[:space:]]*\((cl-)?defun[[:space:]]+[A-Za-z0-9_-]+/ {
-      match($0, /^[[:space:]]*\((cl-)?defun[[:space:]]+([A-Za-z0-9_-]+)/, m);
-      if (m[2] != "") print m[2] "|" $0 "|" F;
+      if (match($0, /^[[:space:]]*\((cl-)?defun[[:space:]]+([A-Za-z0-9_-]+)/, m)) {
+        if (m[2] != "") print m[2] "|" $0 "|" F;
+      }
+    }
+    /^[[:space:]]*\((cl-)?defmacro[[:space:]]+[A-Za-z0-9_-]+/ {
+      if (match($0, /^[[:space:]]*\((cl-)?defmacro[[:space:]]+([A-Za-z0-9_-]+)/, m)) {
+        if (m[2] != "") print m[2] "|" $0 "|" F;
+      }
     }' "${f}" >> "${NAMES_FILE}"
 done < <(find "${LISP_DIR}" -type f -name '*.el' -print0)
 
@@ -90,16 +96,20 @@ cut -d'|' -f1 "${NAMES_FILE}" \
   | sort | uniq -c | sort -nr \
   | awk '$1>1{printf("%4d  %s\n",$1,$2)}'
 
-# List locations for the top few duplicates
-printf '\nTop duplicate definitions (locations):\n'
+# List a brief sample of locations for top duplicates, force newline after block to prevent output lock
+TOP_DUPES=0
+printf '\nTop duplicate definitions (locations, max 2):\n'
 cut -d'|' -f1 "${NAMES_FILE}" \
-  | sort | uniq -c | sort -nr | awk '$1>1{print $2}' | head -n 12 \
+  | sort | uniq -c | sort -nr | awk '$1>1{print $2}' | head -n 2 \
   | while read -r name; do
       printf "\n%s\n" "  - ${name}"
       grep -F "^${name}|" "${NAMES_FILE}" \
-        | sed 's#^\([^|]*\)|\([^|]*\)|\(.*\)$#      \3 : \2#' \
+        | head -n 3 | sed 's#^\([^|]*\)|\([^|]*\)|\(.*\)$#      \3 : \2#' \
         | sed 's#^\./##'
+      TOP_DUPES=1
     done
+echo ""
+# Always flush output after, to guarantee next section will print regardless of duplicate block volume
 
 # Provide/Require map
 sec "Provide/Require map"
@@ -357,18 +367,20 @@ ELISP
   if [[ -s "${TMPD}/emacs_i18n_err.log" || ! -s "${REF_KEYS_FILE}.raw" ]]; then
     echo "Warning: Emacs i18n scanner failed or produced no output; falling back to rg-only extraction." >&2
   fi
-  # Подстраховка rg для редких форм
+  # Подстраховка rg для редких форм и на случай пустого Emacs-скана
   if [[ -n "${RG}" ]]; then
-    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
+    # Прямые вызовы i18n: (context-navigator-i18n :key) и короткое '_' алиас
+    ${RG} --no-filename -U --pcre2 '\((?:context-navigator-i18n|_)\b(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
+    # (tr :key) и (funcall tr :key)
     ${RG} --no-filename -U --pcre2 '\([[:space:]]*tr\b(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
     ${RG} --no-filename -U --pcre2 '\(funcall[[:space:]]+tr(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
+    # Вызовы-обёртки: (message|format|yes-or-no-p (i18n|tr|_ :key) ...)
     ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
-    ${RG} --no-filename -U --pcre2 '\((?:format|message|yes-or-no-p)[[:space:]]+\((?:context-navigator-i18n|tr|_)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
-      --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
+    # UI-обёртки: (context-navigator-ui-ask/info/warn/error :key ...)
     ${RG} --no-filename -U --pcre2 '\(context-navigator-ui-(?:ask|info|warn|error)(?s:.)*?:([A-Za-z0-9-]+)\b' "${LISP_DIR}" \
       --replace '$1' >> "${REF_KEYS_FILE}.raw" || true
   fi
@@ -495,6 +507,115 @@ else
 fi
 
 # GPTel integration audit (centralization)
+sec "Keys (Dao) — keyspec sanity and transient alignment"
+TMP_KEYS_SPEC="${TMPD}/keys_spec.tsv"
+TMP_KEYS_TRANS="${TMPD}/keys_transient.tsv"
+TMP_KEYS_DESC_USED="${TMPD}/keys_desc_used.txt"
+
+# Extract keyspec: context<TAB>key<TAB>cmd<TAB>id<TAB>desc<TAB>cmdok
+if have emacs; then
+  cat > "${TMPD}/scan-keys.el" <<'ELISP'
+(require 'cl-lib)
+(require 'subr-x)
+(require 'context-navigator-keyspec)
+(let ((spec (bound-and-true-p context-navigator-keyspec)))
+  (dolist (pl spec)
+    (let ((contexts (plist-get pl :contexts))
+          (keys (plist-get pl :keys))
+          (id   (or (plist-get pl :id) 'nil))
+          (cmd  (or (plist-get pl :cmd) 'nil))
+          (desc (or (plist-get pl :desc-key) nil))
+          (cmdok (if (and (symbolp cmd) (fboundp cmd)) "ok" "missing")))
+      (dolist (cx contexts)
+        (dolist (k keys)
+          (when (and (symbolp cx) (stringp k))
+            (princ (format "%s\t%s\t%s\t%s\t%s\t%s\n"
+                           (symbol-name cx) k (symbol-name cmd) (symbol-name id)
+                           (cond
+                            ((keywordp desc) (substring (symbol-name desc) 1))
+                            ((symbolp desc)  (symbol-name desc))
+                            (t ""))
+                           cmdok))))))))
+ELISP
+  emacs --batch -Q -L "${LISP_DIR}" -l "${TMPD}/scan-keys.el" > "${TMP_KEYS_SPEC}" 2>/dev/null || true
+else
+  : > "${TMP_KEYS_SPEC}"
+fi
+
+# Extract transient pairs: key<TAB>cmd
+if have emacs; then
+  cat > "${TMPD}/scan-transient.el" <<'ELISP'
+(require 'cl-lib)
+(defun cn--fun-sym (x)
+  (cond ((symbolp x) x)
+        ((and (consp x) (eq (car x) 'function) (symbolp (cadr x))) (cadr x))
+        ((and (consp x) (eq (car x) 'quote) (symbolp (cadr x))) (cadr x))
+        (t nil)))
+(defun cn--collect-keys (form)
+  (let (acc)
+    (cl-labels ((walk (f)
+                  (cond
+                   ((vectorp f) (dotimes (i (length f)) (walk (aref f i))))
+                   ((consp f)
+                    (let ((a (car f)) (b (cdr f)))
+                      (when (consp a) (walk a))
+                      ;; ("k" <desc or lambda> <cmd> ...)
+                      (when (and (stringp a) (consp b) (>= (length b) 2))
+                        (let* ((third (car (cdr b)))
+                               (cmd (cn--fun-sym third)))
+                          (when (symbolp cmd) (push (list a cmd) acc))))
+                      (when (listp b) (dolist (x b) (walk x)))))
+                   (t nil))))
+      (walk form))
+    (nreverse acc)))
+(let ((file (expand-file-name "lisp/context-navigator-transient.el")))
+  (when (file-readable-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (condition-case _err
+          (while t
+            (let ((form (read (current-buffer))))
+              (dolist (cell (cn--collect-keys form))
+                (princ (format "%s\t%s\n" (car cell) (symbol-name (cadr cell)))))))
+        (end-of-file nil)
+        (error nil)))))
+ELISP
+  emacs --batch -Q -L "${LISP_DIR}" -l "${TMPD}/scan-transient.el" > "${TMP_KEYS_TRANS}" 2>/dev/null || true
+else
+  : > "${TMP_KEYS_TRANS}"
+fi
+
+# Collisions inside keyspec: same context+key assigned to different cmds
+echo "Keyspec collisions (context+key → cmds):"
+awk -F'\t' '{k=$1"\t"$2; v=$3; if(k!=""&&v!="") { if(a[k]=="") a[k]=v; else if(a[k] !~ ("(^|,)" v "($|,)")) a[k]=a[k]","v }} END{for(k in a){n=split(a[k],arr,","); if(n>1) print "  " k " -> " a[k]}}' "${TMP_KEYS_SPEC}" || true
+
+# Missing commands in keyspec
+echo
+echo "Keyspec entries with missing commands:"
+awk -F'\t' '$6!="ok"{print "  " $1 "\t" $2 "\t" $3}' "${TMP_KEYS_SPEC}" || true
+
+# Desc keys used in keyspec but missing in i18n dict
+cut -f5 "${TMP_KEYS_SPEC}" | awk 'NF' | LC_ALL=C sort -u > "${TMP_KEYS_DESC_USED}"
+echo
+echo "Keyspec desc-keys missing in i18n:"
+if [[ -s "${TMP_KEYS_DESC_USED}" && -s "${DEF_KEYS_FILE}" ]]; then
+  LC_ALL=C comm -23 "${TMP_KEYS_DESC_USED}" "${DEF_KEYS_FILE}" | sed 's/^/  :/' || true
+else
+  echo "  (skip) no desc-keys or i18n dict unavailable"
+fi
+
+# Transient vs keyspec alignment
+echo
+echo "Transient keys not found in keyspec (key,cmd):"
+LC_ALL=C sort -u "${TMP_KEYS_TRANS}" > "${TMPD}/keys_trans_sorted.tsv"
+LC_ALL=C sort -u <(awk -F'\t' '{print $2"\t"$3}' "${TMP_KEYS_SPEC}") > "${TMPD}/keys_spec_pairs.tsv"
+LC_ALL=C comm -23 "${TMPD}/keys_trans_sorted.tsv" "${TMPD}/keys_spec_pairs.tsv" | sed 's/^/  /' || true
+
+echo
+echo "Keyspec interactive pairs possibly not exposed in transient (key,cmd) — informative:"
+LC_ALL=C comm -23 "${TMPD}/keys_spec_pairs.tsv" "${TMPD}/keys_trans_sorted.tsv" | sed 's/^/  /' | head -n 40 || true
+
 sec "GPTel integration audit (bridge-centric)"
 if [[ -n "${RG}" ]]; then
   echo "[bridge on-change register/unregister]"
@@ -748,185 +869,21 @@ else
 fi
 
 # Summary KV metrics (compact)
-kv "duplicates (defuns)"                          "${DUP_TOTAL}"
-kv "controls: order∖registry"                     "${CTRL_ORDER_MINUS_REG}"
-kv "controls: registry∖order"                     "${CTRL_REG_MINUS_ORDER}"
-kv "controls: registry missing icons"             "${CTRL_REG_MISSING_ICONS}"
-kv "controls: icons unused (excl. mf-*)"          "${CTRL_ICONS_UNUSED}"
-kv "i18n: missing keys"                           "${I18N_MISSING}"
-kv "i18n: unused keys"                            "${I18N_UNUSED}"
-kv "requires w/o provide (symbol only)"           "${REQMISS_COUNT}"
-kv "legacy orphans"                               "${ORPHANS_COUNT}"
-kv "legacy dead defs"                             "${DEAD_COUNT}"
-kv "TODO/FIXME markers"                           "${TODO_COUNT}"
-kv "gptel direct calls outside bridge"            "${GP_DIRECT_COUNT}"
-
-# Details: print short actionable lists for non-zero items
-echo
-echo "Details:"
-echo
-
-if [[ "${DUP_TOTAL}" -gt 0 ]]; then
-  echo "Duplicate function definitions (top entries):"
-  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{printf("  %4d  %s\n",$1,$2)}' | head -n 20
-  echo "Locations (sample):"
-  cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | sort -nr | awk '$1>1{print $2}' | head -n 8 \
-    | while read -r name; do
-        echo "  ${name}:"
-        grep -F "^${name}|" "${NAMES_FILE}" \
-          | sed 's#^\([^|]*\)|\([^|]*\)|\(.*\)$#      \3 : \2#' \
-          | sed 's#^\./##' | head -n 6
-      done
-  echo
-fi
-
-if [[ "${CTRL_ORDER_MINUS_REG}" -gt 0 ]]; then
-  echo "Controls: in order but missing in registry:"
-  LC_ALL=C comm -23 "${TMP_ORDER}" "${TMP_REG}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${CTRL_REG_MINUS_ORDER}" -gt 0 ]]; then
-  echo "Controls: in registry but not listed in order (won't render):"
-  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ORDER}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${CTRL_REG_MISSING_ICONS}" -gt 0 ]]; then
-  echo "Controls registry keys missing icon definitions:"
-  LC_ALL=C comm -23 "${TMP_REG}" "${TMP_ICONS}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${CTRL_ICONS_UNUSED}" -gt 0 ]]; then
-  echo "Icon keys unused by registry (excl. mf-*):"
-  LC_ALL=C comm -23 "${TMP_ICONS}" "${TMP_REG}" | grep -v '^mf-' | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${I18N_MISSING}" -gt 0 ]]; then
-  echo "i18n: Missing keys (referenced but not defined):"
-  LC_ALL=C comm -23 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${I18N_UNUSED}" -gt 0 ]]; then
-  echo "i18n: Unused keys (defined but not referenced) — review for pruning:"
-  LC_ALL=C comm -13 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${REQMISS_COUNT}" -gt 0 ]]; then
-  echo "Provide/Require: project-internal symbols missing provide:"
-  grep -F -x -v -f "${TMPD}/externals.txt" "${TMPD}/req_missing.txt" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${ORPHANS_COUNT}" -gt 0 ]]; then
-  echo "Legacy wrappers: Orphan references (referenced, not defined):"
-  printf "%b\n" "${ORPHANS}" | sed 's/^/  /' || true
-  echo
-fi
-
-if [[ "${DEAD_COUNT}" -gt 0 ]]; then
-  echo "Legacy wrappers: Dead definitions (defined, not referenced):"
-  printf "%b\n" "${DEAD}" | sed 's/^/  /' || true
-  echo
-fi
-
-# Suggestions (print only when non-zero)
-sec "Suggested actions"
-suggested=0
-if [[ "${DUP_TOTAL}" -gt 0 ]]; then
-  echo "- Remove/merge duplicate defuns (see 'Duplicate function definitions' above)"; suggested=1; fi
-if [[ "${CTRL_ORDER_MINUS_REG}" -gt 0 || "${CTRL_REG_MINUS_ORDER}" -gt 0 || "${CTRL_REG_MISSING_ICONS}" -gt 0 ]]; then
-  echo "- Controls: sync order/registry/icon-map (see 'Controls (order/registry/icons) consistency')"; suggested=1; fi
-if [[ "${I18N_MISSING}" -gt 0 ]]; then
-  echo "- i18n: add missing keys or correct call sites"; suggested=1; fi
-if [[ "${I18N_UNUSED}" -gt 0 ]]; then
-  echo "- i18n: consider pruning unused keys (verify first)"; suggested=1; fi
-if [[ "${REQMISS_COUNT}" -gt 0 ]]; then
-  echo "- Provide/Require: add missing provide or mark as external dependency"; suggested=1; fi
-if [[ "${ORPHANS_COUNT}" -gt 0 || "${DEAD_COUNT}" -gt 0 ]]; then
-  echo "- Legacy wrappers: remove dead defs, or update references"; suggested=1; fi
-if [[ "${TODO_COUNT}" -gt 0 ]]; then
-  echo "- Review TODO/FIXME list"; suggested=1; fi
-if [[ "${GP_DIRECT_COUNT}" -gt 0 ]]; then
-  echo "- Route direct gptel-context* calls via the bridge"; suggested=1; fi
-if [[ "${suggested}" -eq 0 ]]; then
-  echo "- No action items. Refactor status looks clean."
-fi
-
-# Final status line and optional strict exit
-FAIL_COUNT=0
-(( FAIL_COUNT += DUP_TOTAL ))
-(( FAIL_COUNT += CTRL_ORDER_MINUS_REG + CTRL_REG_MINUS_ORDER + CTRL_REG_MISSING_ICONS ))
-(( FAIL_COUNT += I18N_MISSING + REQMISS_COUNT + ORPHANS_COUNT + DEAD_COUNT ))
-# TODO/FIXME and direct gptel-calls считаем предупреждением, не фейлом
-
-if [[ "${FAIL_COUNT}" -gt 0 ]]; then
-  kv "STATUS" "ATTENTION (${FAIL_COUNT} issue(s) detected)"
-else
-  kv "STATUS" "OK"
-fi
-
-# If called with --strict, return non-zero on problems
-if [[ "${1:-}" == "--strict" && "${FAIL_COUNT}" -gt 0 ]]; then
-  printf '\nDone (strict: FAIL).\n'
-  exit 1
-fi
-
-printf '\nDone.\n'
-
-# Duplicates (defuns)
-DUP_TOTAL="$(cut -d'|' -f1 "${NAMES_FILE}" | sort | uniq -c | awk '$1>1' | wc -l | awk '{print $1}')"
-
-# Controls diffs/counts (guard against comm errors)
-CTRL_ORDER_MINUS_REG="$({ LC_ALL=C comm -23 "${TMP_ORDER}" "${TMP_REG}"   || true; } | wc -l | awk '{print $1}')"
-CTRL_REG_MINUS_ORDER="$({ LC_ALL=C comm -23 "${TMP_REG}"  "${TMP_ORDER}"  || true; } | wc -l | awk '{print $1}')"
-CTRL_REG_MISSING_ICONS="$({ LC_ALL=C comm -23 "${TMP_REG}"  "${TMP_ICONS}" || true; } | wc -l | awk '{print $1}')"
-# Safe count without grep (pipefail-safe), ignore local mf-* icons
-CTRL_ICONS_UNUSED="$({ LC_ALL=C comm -23 "${TMP_ICONS}" "${TMP_REG}" || true; } | awk 'BEGIN{c=0} !/^mf-/{c++} END{print c}')"
-
-# i18n diffs/counts
-if [[ "${REF_COUNT}" -eq 0 ]]; then
-  # When referenced list is empty, avoid misleading massive "unused" number in summary.
-  I18N_MISSING="0"
-  I18N_UNUSED="0"
-else
-  I18N_MISSING="$({ LC_ALL=C comm -23 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" || true; } | wc -l | awk '{print $1}')"
-  I18N_UNUSED="$({ LC_ALL=C comm -13 "${REF_KEYS_FILE}" "${DEF_KEYS_FILE}" || true; } | wc -l | awk '{print $1}')"
-fi
-
-# requires without matching provide
-REQMISS_COUNT="$(
-  if [[ -s "${TMPD}/req_missing.txt" ]]; then
-    grep -F -x -v -f "${TMPD}/externals.txt" "${TMPD}/req_missing.txt" | wc -l | awk '{print $1}'
-  else
-    echo 0
-  fi
+# Keys (Dao) metrics
+KEY_COLLISIONS_COUNT="$(
+  awk -F'\t' '{k=$1"\t"$2; v=$3; if(k!=""&&v!="") { if(a[k]=="") a[k]=v; else if(a[k] !~ ("(^|,)" v "($|,)")) a[k]=a[k]","v }} END{c=0; for(k in a){n=split(a[k],arr,","); if(n>1) c++} print c+0}' "${TMP_KEYS_SPEC}" 2>/dev/null || echo 0
 )"
-
-# Orphans/Dead counts (from strings above)
-ORPHANS_COUNT="0"
-DEAD_COUNT="0"
-if [[ -n "${ORPHANS}" ]]; then
-  ORPHANS_COUNT="$(printf '%b\n' "${ORPHANS}" | sed -n 's/^[[:space:]]*-[[:space:]].*/x/p' | wc -l | awk '{print $1}')"
-fi
-if [[ -n "${DEAD}" ]]; then
-  DEAD_COUNT="$(printf '%b\n' "${DEAD}" | sed -n 's/^[[:space:]]*-[[:space:]].*/x/p' | wc -l | awk '{print $1}')"
-fi
-
-# TODO/FIXME and GPTel direct calls (outside bridge)
-if [[ -n "${RG}" ]]; then
-  TODO_COUNT="$({ ${RG} -n 'TODO|FIXME' "${LISP_DIR}" || true; } | wc -l | awk '{print $1}')"
-  GP_DIRECT_COUNT="$({ ${RG} -n --pcre2 -g '!lisp/context-navigator-gptel-bridge.el' '\([[:space:]]*gptel-context\b' "${LISP_DIR}" | grep -v 'memq\|quote\|:[[:alnum:]-]*gptel' || true; } | wc -l | awk '{print $1}')"
-else
-  TODO_COUNT="$({ egrep -n 'TODO|FIXME' -R "${LISP_DIR}" || true; } | wc -l | awk '{print $1}')"
-  GP_DIRECT_COUNT="$({ egrep -n '\([[:space:]]*gptel-context\b' -R "${LISP_DIR}" | grep -v 'context-navigator-gptel-bridge.el' | grep -v 'memq\|quote\|:gptel-change' || true; } | wc -l | awk '{print $1}')"
-fi
-
-# Summary KV metrics (compact)
+KEY_CMDS_MISSING_COUNT="$(awk -F'\t' '$6!="ok"{c++} END{print c+0}' "${TMP_KEYS_SPEC}" 2>/dev/null || echo 0)"
+KEY_DESC_MISSING_COUNT="$(
+  if [[ -s "${TMP_KEYS_DESC_USED}" && -s "${DEF_KEYS_FILE}" ]]; then
+    LC_ALL=C comm -23 "${TMP_KEYS_DESC_USED}" "${DEF_KEYS_FILE}" | wc -l | awk '{print $1}'
+  else echo 0; fi
+)"
+KEY_TRANS_MINUS_SPEC_COUNT="$(
+  if [[ -s "${TMPD}/keys_trans_sorted.tsv" && -s "${TMPD}/keys_spec_pairs.tsv" ]]; then
+    LC_ALL=C comm -23 "${TMPD}/keys_trans_sorted.tsv" "${TMPD}/keys_spec_pairs.tsv" | wc -l | awk '{print $1}'
+  else echo 0; fi
+)"
 kv "duplicates (defuns)"                          "${DUP_TOTAL}"
 kv "controls: order∖registry"                     "${CTRL_ORDER_MINUS_REG}"
 kv "controls: registry∖order"                     "${CTRL_REG_MINUS_ORDER}"
@@ -938,6 +895,10 @@ kv "requires w/o provide (symbol only)"           "${REQMISS_COUNT}"
 kv "legacy orphans"                               "${ORPHANS_COUNT}"
 kv "legacy dead defs"                             "${DEAD_COUNT}"
 kv "TODO/FIXME markers"                           "${TODO_COUNT}"
+kv "keys: collisions (context+key→cmds)"       "${KEY_COLLISIONS_COUNT}"
+kv "keys: missing commands in spec"            "${KEY_CMDS_MISSING_COUNT}"
+kv "keys: desc-keys missing in i18n"           "${KEY_DESC_MISSING_COUNT}"
+kv "keys: transient pairs not in spec"         "${KEY_TRANS_MINUS_SPEC_COUNT}"
 kv "gptel direct calls outside bridge"            "${GP_DIRECT_COUNT}"
 
 # Details: print short actionable lists for non-zero items
@@ -1013,6 +974,24 @@ if [[ "${DEAD_COUNT}" -gt 0 ]]; then
   echo
 fi
 
+# Keys (Dao) details (only when non-zero)
+if [[ "${KEY_COLLISIONS_COUNT}" -gt 0 ]]; then
+  echo "Keyspec collisions (context+key): see section 'Keys (Dao) — keyspec sanity and transient alignment' above"
+  echo
+fi
+if [[ "${KEY_CMDS_MISSING_COUNT}" -gt 0 ]]; then
+  echo "Keyspec: commands missing (see 'Keys (Dao) — keyspec sanity and transient alignment')"
+  echo
+fi
+if [[ "${KEY_DESC_MISSING_COUNT}" -gt 0 ]]; then
+  echo "Keyspec: desc-keys missing in i18n (see 'Keys (Dao) — keyspec sanity and transient alignment')"
+  echo
+fi
+if [[ "${KEY_TRANS_MINUS_SPEC_COUNT}" -gt 0 ]]; then
+  echo "Transient uses key/command pairs not in keyspec (see 'Keys (Dao) — keyspec sanity and transient alignment')"
+  echo
+fi
+
 # Suggestions (print only when non-zero)
 sec "Suggested actions"
 suggested=0
@@ -1041,6 +1020,7 @@ FAIL_COUNT=0
 (( FAIL_COUNT += DUP_TOTAL ))
 (( FAIL_COUNT += CTRL_ORDER_MINUS_REG + CTRL_REG_MINUS_ORDER + CTRL_REG_MISSING_ICONS ))
 (( FAIL_COUNT += I18N_MISSING + REQMISS_COUNT + ORPHANS_COUNT + DEAD_COUNT ))
+(( FAIL_COUNT += KEY_COLLISIONS_COUNT + KEY_CMDS_MISSING_COUNT + KEY_DESC_MISSING_COUNT ))
 # TODO/FIXME and direct gptel-calls считаем предупреждением, не фейлом
 
 if [[ "${FAIL_COUNT}" -gt 0 ]]; then

@@ -49,8 +49,12 @@
          :keys ("h") :contexts (items groups) :section navigate :desc-key :help-go-up)
 
     ;; Items actions
-    (:id toggle-enabled :cmd context-navigator-view-toggle-enabled
+    ;; Items: toggle enabled (SPC/t)
+    (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
+    ;; Groups: toggle selection (SPC/t)
+    (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
+         :keys ("SPC" "t") :contexts (groups) :section act :desc-key :toggle-multi-group)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items) :section act :desc-key :toggle-all-gptel)
     (:id disable-all :cmd context-navigator-view-disable-all-gptel
@@ -80,7 +84,7 @@
     (:id push-now :cmd context-navigator-view-push-now
          :keys ("p") :contexts (items groups) :section session :desc-key :help-push-now)
     (:id unload :cmd context-navigator-context-unload
-         :keys ("U") :contexts (items groups) :section session :desc-key :tr-unload)
+         :keys ("u") :contexts (items groups) :section session :desc-key :tr-unload)
 
     ;; Groups CRUD / selection
     (:id group-create :cmd context-navigator-view-group-create
@@ -94,7 +98,7 @@
     (:id group-delete :cmd context-navigator-view-delete-dispatch
          :keys ("d") :contexts (groups) :section groups :desc-key :groups-help-delete)
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys ("SPC" "t") :contexts (groups) :section groups :desc-key :toggle-multi-group)
+         :keys () :contexts (groups) :section groups :desc-key :toggle-multi-group)
     (:id multigroup-toggle :cmd context-navigator-view-toggle-multi-group
          :keys ("G") :contexts (groups) :section groups :desc-key :toggle-multi-group)
 
@@ -139,9 +143,9 @@
   "Apply keys for CONTEXT from keyspec to keymap MAP."
   (when (keymapp map)
     (dolist (pl (context-navigator-keys--entries-for context))
-      (let ((cmd  (plist-get pl :cmd))
-            (keys (or (plist-get pl :keys) '())))
-        (when (and (symbolp cmd) (fboundp cmd))
+      (let* ((cmd  (plist-get pl :cmd))
+             (keys (ignore-errors (context-navigator-keys--effective-keys pl context))))
+        (when (and (symbolp cmd) (fboundp cmd) (listp keys))
           (dolist (k keys)
             (ignore-errors (define-key map (kbd k) cmd))))))))
 
@@ -160,8 +164,9 @@
          (by-section (make-hash-table :test 'eq)))
     (dolist (pl entries)
       (let* ((sec (or (plist-get pl :section) 'act))
-             (desc (context-navigator-keys--desc pl)))
-        (dolist (k (or (plist-get pl :keys) '()))
+             (desc (context-navigator-keys--desc pl))
+             (keys (ignore-errors (context-navigator-keys--effective-keys pl context))))
+        (dolist (k (or keys '()))
           (let* ((lst (gethash sec by-section)))
             (push (cons k desc) lst)
             (puthash sec lst by-section)))))
@@ -173,23 +178,23 @@
 
 ;;;###autoload
 (defun context-navigator-keys-keys-for (id context)
-  "Return list of key strings for action ID in CONTEXT.
+  "Return list of key strings for action ID in CONTEXT (effective, with profile overlays).
 Falls back to broader contexts when exact CONTEXT not found:
 - items<->groups share many actions; try each other when missing
 - global as last resort."
   (let* ((entries context-navigator-keyspec)
          (ctx-chain
           (cond
-           ((eq context 'items)    '(items groups global))
-           ((eq context 'groups)   '(groups items global))
+           ((eq context 'items)     '(items groups global))
+           ((eq context 'groups)    '(groups items global))
            ((eq context 'multifile) '(multifile global))
-           (t                      (list context 'global)))))
+           (t                       (list context 'global)))))
     (catch 'hit
       (dolist (ctx ctx-chain)
         (dolist (pl entries)
           (when (and (eq (plist-get pl :id) id)
                      (memq ctx (plist-get pl :contexts)))
-            (let ((ks (plist-get pl :keys)))
+            (let ((ks (ignore-errors (context-navigator-keys--effective-keys pl ctx))))
               (when (and ks (listp ks) (> (length ks) 0))
                 (throw 'hit (copy-sequence ks)))))))
       nil)))
@@ -259,6 +264,65 @@ Falls back to broader contexts when exact CONTEXT not found:
    'context-navigator-keyspec
    (lambda (_sym _val _op _where)
      (ignore-errors (context-navigator-keys-apply-known-keymaps)))))
+
+;; --- Profiles/overlays (middle path) ----------------------------------------
+
+(defcustom context-navigator-keys-profile 'classic
+  "Active key profile overlay: 'classic | 'vimish | 'custom.
+Profile may add/remove alias keys per action/context without changing the base spec."
+  :type '(choice (const classic) (const vimish) (const custom))
+  :group 'context-navigator-keys)
+
+(defcustom context-navigator-keys-profile-overlays
+  '((classic
+     ;; Classic already covered in base spec (n/p arrows); keep empty.
+     )
+    (vimish
+     ;; Ensure vim-like aliases present (most already in base spec).
+     (:id next     :contexts (items groups) :add ("j"))
+     (:id prev     :contexts (items groups) :add ("k"))
+     (:id go-up    :contexts (items groups) :add ("h"))
+     (:id activate :contexts (items groups) :add ("l"))))
+  "Overlay edits per profile: a list keyed by profile symbol of plist edits:
+(:id ID :contexts (ctx...) :add (keys...) [:remove (keys...)])"
+  :type '(alist :key-type symbol :value-type (repeat plist))
+  :group 'context-navigator-keys)
+
+(defun context-navigator-keys--overlay-edits (id context)
+  "Return overlay edits plist for action ID in CONTEXT for current profile."
+  (let* ((prof (or context-navigator-keys-profile 'classic))
+         (lst (cdr (assoc prof context-navigator-keys-profile-overlays))))
+    (cl-find-if
+     (lambda (pl)
+       (and (eq (plist-get pl :id) id)
+            (memq context (plist-get pl :contexts))))
+     lst)))
+
+(defun context-navigator-keys--effective-keys (pl context)
+  "Return effective keys for keyspec entry PL under CONTEXT with profile overlays."
+  (let* ((base (copy-sequence (or (plist-get pl :keys) '())))
+         (id   (plist-get pl :id))
+         (ed   (and id (context-navigator-keys--overlay-edits id context)))
+         (adds (and ed (plist-get ed :add)))
+         (rems (and ed (plist-get ed :remove)))
+         (cur  base))
+    ;; remove requested
+    (when (listp rems)
+      (setq cur (cl-remove-if (lambda (k) (member k rems)) cur)))
+    ;; add requested (preserve order, avoid duplicates)
+    (when (listp adds)
+      (dolist (k adds)
+        (unless (member k cur) (setq cur (append cur (list k))))))
+    cur))
+
+;; Re-apply keymaps and which-key when profile changes
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher
+   'context-navigator-keys-profile
+   (lambda (&rest _)
+     (ignore-errors (context-navigator-keys-apply-known-keymaps))
+     (when (fboundp 'context-navigator-which-key-apply!)
+       (ignore-errors (context-navigator-which-key-apply!))))))
 
 (provide 'context-navigator-keyspec)
 ;;; context-navigator-keyspec.el ends here

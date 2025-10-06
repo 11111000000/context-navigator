@@ -3,16 +3,7 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;; Global transient on C-c n:
-;;  n: toggle sidebar
-;;  p: switch to current buffer's project
-;;  a: add current file/region/buffer/dired selection (minimal)
-;;  g: groups list
-;;  x: clear current group
-;;  V: toggle push → gptel
-;;  A: toggle auto-project
-;;  p: push now
-;;  X: clear gptel
+;; Global transient
 
 ;;; Code:
 
@@ -54,102 +45,59 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
 - posframe : force posframe (requires the transient-posframe package)
 - window   : always use a small fixed-height window below the selected window"
   :type '(choice (const auto) (const posframe) (const window))
-  :group 'context-navigator-add)
+  :group 'context-navigator)
 
 ;;;###autoload
 (transient-define-prefix context-navigator-transient ()
   "Context Navigator"
-  [["Panel/Project"
-    ("n" (lambda () (context-navigator-i18n :tr-toggle-sidebar)) context-navigator-toggle)
-    ("S" (lambda () (context-navigator-i18n :tr-display-mode)) context-navigator-display-mode-toggle)
-    ("p" (lambda () (context-navigator-i18n :tr-switch-project)) context-navigator-switch-to-current-buffer-project)]
-   ["Context/Groups"
-    ("g" (lambda () (context-navigator-i18n :tr-groups-list)) context-navigator-view-show-groups)
-    ("x" (lambda () (context-navigator-i18n :clear-group)) context-navigator-context-clear-current-group)]
-   ["Actions"
-    ("a" (lambda () (context-navigator-i18n :tr-add-universal)) context-navigator-add-universal)
-    ("f" (lambda () (context-navigator-i18n :add-from-minibuf)) context-navigator-add-from-minibuffer)
-    ("t" (lambda () (context-navigator-i18n :add-from-text)) context-navigator-add-from-text)
-    ("b" (lambda () (or (ignore-errors (context-navigator-i18n :select-by-name)) "Select by name"))
-     context-navigator-select-by-name)
-    ("o" (lambda () (context-navigator-i18n :tr-open-buffers)) context-navigator-view-open-all-buffers)
-    ("m" (lambda () (context-navigator-i18n :tr-multifile)) context-navigator-multifile-open)]
-   ["Control"
-    ("G" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-toggle-multi-group)
-    ("V" (lambda () (context-navigator-i18n :tr-toggle-push)) context-navigator-toggle-push-to-gptel)
-    ("A" (lambda () (context-navigator-i18n :tr-toggle-auto)) context-navigator-toggle-auto-project-switch)
-    ("M" (lambda () (context-navigator-i18n :enable-all-gptel)) context-navigator-view-enable-all-gptel)
-    ("U" (lambda () (context-navigator-i18n :disable-all-gptel)) context-navigator-view-disable-all-gptel)
-    ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
-    ("p" (lambda () (context-navigator-i18n :tr-push-now)) context-navigator-push-to-gptel-now)
-    ("X" (lambda () (context-navigator-i18n :clear-gptel)) context-navigator-clear-gptel-now)
-    ("R" (lambda () (context-navigator-i18n :tr-razor)) context-navigator-razor-run
-     :if (lambda () (derived-mode-p 'org-mode)))]
-   [:description (lambda () (context-navigator-i18n :tr-logs))
-                 ("D" (lambda () (context-navigator-i18n :tr-logs-toggle)) context-navigator-log-toggle)
-                 ("L" (lambda () (context-navigator-i18n :tr-logs-open)) context-navigator-log-open)
-                 ("K" (lambda () (context-navigator-i18n :tr-logs-clear)) context-navigator-log-clear)
-                 ("V" (lambda () (context-navigator-i18n :tr-logs-set-level)) context-navigator-log-set-level)
-                 ("F" (lambda () (context-navigator-i18n :tr-logs-toggle-file)) context-navigator-log-toggle-file-persistence)]])
+  (interactive)
+  (let* ((raw-groups (context-navigator-transient-build-global))
+         (len        (and (listp raw-groups) (length raw-groups))))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :info :transient
+                                 "global-transient: raw-groups=%s len=%s"
+                                 (and raw-groups t) len)))
+    (when (or (null raw-groups) (= (or len 0) 0))
+      (message "[context-navigator] global transient spec is empty (len=%S)" len))
+    ;; Parse and install layout (columns), then setup without passing layout arg.
+    ;; Build a raw columns group implicitly by passing a vector of subgroup vectors.
+    (let* ((cols (apply #'vector raw-groups)))
+      (transient--set-layout
+       'context-navigator-transient
+       (transient-parse-suffixes 'context-navigator-transient (list cols))))
+    (transient-setup 'context-navigator-transient)))
 
 ;;;###autoload
 (transient-define-prefix context-navigator-view-transient ()
   "Navigator menu"
-  [ ["Navigate"
-     ("j" (lambda () (context-navigator-i18n :help-next-item)) context-navigator-view-next-item)
-     ("k" (lambda () (context-navigator-i18n :help-previous-item)) context-navigator-view-previous-item)
-     ("l" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-activate-safe)
-     ("h" (lambda () (context-navigator-i18n :help-go-up)) context-navigator-view-go-up)
-     ("TAB" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-tab-next)
-     ("S-<tab>" (lambda () (context-navigator-i18n :help-activate)) context-navigator-view-tab-previous)
-     ("v" (lambda () (context-navigator-i18n :help-preview)) context-navigator-view-preview)]
-    ;; Items-only actions
-    [:description (lambda () (context-navigator-i18n :tr-items))
-                  :if (lambda () (eq context-navigator-view--mode 'items))
-                  ("o" (lambda ()
-                         (cl-destructuring-bind (n . plus) (context-navigator-view--openable-count-get)
-                           (format "%s (%d%s)" (context-navigator-i18n :open-buffers) n (if plus "+" ""))))
-                   context-navigator-view-open-all-buffers)
-                  ("c" (lambda ()
-                         (let ((n (length (context-navigator-view--collect-closable-buffers))))
-                           (format "%s (%d)" (context-navigator-i18n :close-buffers) n)))
-                   context-navigator-view-close-all-buffers)
-                  ("t" (lambda () (context-navigator-i18n :help-toggle-gptel)) context-navigator-view-toggle-enabled)
-                  ("T" (lambda () (context-navigator-i18n :toggle-all-gptel)) context-navigator-view-toggle-all-gptel)
-                  ("U" (lambda () (context-navigator-i18n :disable-all-gptel)) context-navigator-view-disable-all-gptel)
-                  ("M" (lambda () (context-navigator-i18n :enable-all-gptel)) context-navigator-view-enable-all-gptel)
-                  ("d" (lambda () (context-navigator-i18n :help-delete)) context-navigator-view-delete-dispatch)
-                  ("g" (lambda () (context-navigator-i18n :help-refresh)) context-navigator-view-refresh-dispatch)
-                  ("x" (lambda () (context-navigator-i18n :help-clear-group)) context-navigator-view-clear-group)
-                  ("X" (lambda () (context-navigator-i18n :help-clear-gptel)) context-navigator-view-clear-gptel)
-                  ("s" (lambda () (context-navigator-i18n :stats)) context-navigator-view-stats-toggle)
-                  ("R" (lambda () (context-navigator-i18n :tr-razor))
-                   context-navigator-view-razor-run
-                   :if (lambda ()
-                         (cl-some (lambda (b)
-                                    (with-current-buffer b
-                                      (derived-mode-p 'org-mode)))
-                                  (buffer-list)))) ]
-    ;; Groups-only actions
-    [:description (lambda () (context-navigator-i18n :tr-groups))
-                  :if (lambda () (eq context-navigator-view--mode 'groups))
-                  ("a" (lambda () (context-navigator-i18n :help-group-create)) context-navigator-view-group-create)
-                  ("r" (lambda () (context-navigator-i18n :help-group-rename)) context-navigator-view-group-rename)
-                  ("e" (lambda () (context-navigator-i18n :groups-help-edit-description)) context-navigator-view-group-edit-description)
-                  ("y" (lambda () (context-navigator-i18n :help-group-duplicate)) context-navigator-view-group-duplicate)
-                  ("d" (lambda () (context-navigator-i18n :groups-help-delete)) context-navigator-view-delete-dispatch)
-                  ("SPC" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-group-toggle-select)
-                  ("G" (lambda () (context-navigator-i18n :toggle-multi-group)) context-navigator-view-toggle-multi-group)]
-    ;; Session
-    ["Session"
-     ("V" (lambda () (context-navigator-i18n :help-toggle-push)) context-navigator-view-toggle-push)
-     ("A" (lambda () (context-navigator-i18n :help-toggle-auto)) context-navigator-view-toggle-auto-project)
-     ("p" (lambda () (context-navigator-i18n :help-push-now)) context-navigator-view-push-now)
-     ("U" (lambda () (context-navigator-i18n :tr-unload)) context-navigator-context-unload)]
-    ;; Help/Exit
-    ["Help/Exit"
-     ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
-     ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)] ])
+  (interactive)
+  (let* ((core (if (and (boundp 'context-navigator-view--mode)
+                        (eq context-navigator-view--mode 'groups))
+                   (context-navigator-transient-build-view-groups)
+                 (context-navigator-transient-build-view-items)))
+         ;; Help/Exit as a regular group vector
+         (help ["Help/Exit"
+                ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
+                ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)])
+         (raw-groups (append core (list help)))
+         (core-len   (and (listp core) (length core))))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :info :transient
+                                 "view-transient: mode=%s core-len(list)=%s"
+                                 (and (boundp 'context-navigator-view--mode) context-navigator-view--mode)
+                                 core-len)))
+    (when (or (null core) (= (or core-len 0) 0))
+      (message "[context-navigator] view transient core is empty (mode=%S len=%S)"
+               (and (boundp 'context-navigator-view--mode) context-navigator-view--mode) core-len))
+    ;; Parse and install layout (columns), then setup without passing layout arg.
+    ;; Build a raw columns group implicitly by passing a vector of subgroup vectors.
+    (let* ((cols (apply #'vector raw-groups)))
+      (transient--set-layout
+       'context-navigator-view-transient
+       (transient-parse-suffixes 'context-navigator-view-transient (list cols))))
+    (transient-setup 'context-navigator-view-transient)))
 
 ;; Add logic moved to context-navigator-add.el
 
