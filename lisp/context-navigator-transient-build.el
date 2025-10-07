@@ -160,7 +160,7 @@ Groups: Navigate / Groups / Session / Tools."
 (defcustom context-navigator-transient-global-spec
   '((:section panel
      ("n" :tr-toggle-sidebar context-navigator-toggle)
-     ("S" :tr-display-mode context-navigator-display-mode-toggle)
+     ("O" :tr-display-mode context-navigator-display-mode-toggle)
      ("p" :tr-switch-project context-navigator-switch-to-current-buffer-project))
     (:section context
      ("g" :tr-groups-list context-navigator-view-show-groups)
@@ -203,33 +203,15 @@ Groups: Navigate / Groups / Session / Tools."
     (_        (symbol-name sec))))
 
 (defun context-navigator-transient-build-global ()
-  "Build global transient raw groups from `context-navigator-transient-global-spec'.
+  "Build global transient raw groups from keyspec (:contexts contains 'global).
 Return a list of group vectors suitable for `transient-parse-suffixes'."
-  (let (groups)
-    (dolist (sec context-navigator-transient-global-spec)
-      (let* ((sec-name (plist-get sec :section))
-             (title (context-navigator-transient-build--title-global sec-name))
-             (heads '()))
-        (dolist (cell sec)
-          (when (and (listp cell) (stringp (car cell)))
-            (let* ((key (nth 0 cell))
-                   (i18n-key (nth 1 cell))
-                   (cmd (nth 2 cell))
-                   (rest (cdddr cell))
-                   (pred (and (listp rest) (plist-member rest :if)
-                              (plist-get rest :if)))
-                   (lbl (if (and (keywordp i18n-key) (fboundp 'context-navigator-i18n))
-                            (context-navigator-i18n i18n-key)
-                          (format "%s" i18n-key)))
-                   (head (list key lbl cmd)))
-              (when pred
-                (setq head (append head (list :if pred))))
-              (push head heads))))
-        (when heads
-          (let ((group (apply #'vector title (nreverse heads))))
-            (push group groups)))))
+  (let* ((sections '(navigate act session tools))
+         (groups '()))
+    (dolist (sec sections)
+      (let ((g (context-navigator-transient-build--group 'global (list sec))))
+        (when g (push g groups))))
     (context-navigator-transient-build--log
-     "build-global: groups=%s" (length groups))
+     "build-global(from keyspec): groups=%s" (length groups))
     (nreverse groups)))
 
 (provide 'context-navigator-transient-build)

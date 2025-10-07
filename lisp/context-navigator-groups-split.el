@@ -110,9 +110,13 @@ not through the Navigator sidebar maps."
 
 (defun context-navigator-groups-split--ensure-buffer ()
   "Create or return the Groups split buffer and enable its mode."
-  (let ((buf (or (and (buffer-live-p context-navigator-groups-split--buffer)
-                      context-navigator-groups-split--buffer)
-                 (get-buffer-create context-navigator-groups-split-buffer-name))))
+  (let* ((name (if (and (boundp 'context-navigator-groups-split-buffer-name)
+                        (stringp context-navigator-groups-split-buffer-name))
+                   context-navigator-groups-split-buffer-name
+                 "*Context Navigator Groups*"))
+         (buf (or (and (buffer-live-p context-navigator-groups-split--buffer)
+                       context-navigator-groups-split--buffer)
+                  (get-buffer-create name))))
     (setq context-navigator-groups-split--buffer buf)
     (with-current-buffer buf
       (context-navigator-groups-split-mode)
