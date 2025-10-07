@@ -196,65 +196,70 @@
 
 ;;;###autoload
 (defun context-navigator-view-group-toggle-select ()
-  "Toggle selection of the group at point (groups mode).
+  "Toggle selection of the group at point.
+
+Works in both the Navigator groups view and in the Groups split buffer.
 Selected groups are stored per project in state.el under :selected.
 When push→gptel is ON, auto-apply aggregated selection if under threshold."
   (interactive)
-  (if (not (eq context-navigator-view--mode 'groups))
-      (context-navigator-ui-info :press-h-open-groups-first)
-    (let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
-      (if (not (and (stringp slug) (not (string-empty-p slug))))
-          (context-navigator-ui-info :no-group-at-point)
-        (let* ((st   (ignore-errors (context-navigator--state-get)))
-               (root (and st (context-navigator-state-last-project-root st)))
-               (ps   (or (ignore-errors (context-navigator-persist-state-load root)) '()))
-               (mg   (and (plist-member ps :multi) (plist-get ps :multi))))
-          ;; MG OFF → no-op (не меняем selection)
-          (when (not mg)
-            (context-navigator-ui-info :toggle-multi-group)
-            (cl-return-from context-navigator-view-group-toggle-select))
-          ;; MG ON → меняем selection в pstate и применяем побочные эффекты
-          (let* ((pstate (if (plist-member ps :version) (copy-sequence ps)
-                           (plist-put (copy-sequence ps) :version 1)))
-                 (sel0 (and (plist-member pstate :selected) (plist-get pstate :selected)))
-                 (sel  (if (listp sel0) sel0 '()))
-                 (sel1 (if (member slug sel)
-                           (cl-remove slug sel :test #'equal)
-                         (append sel (list slug)))))
-            (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
-            (ignore-errors (context-navigator-persist-state-save root pstate))
-            ;; Оповестить слушателей (Stats и т.п.)
-            (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
-            ;; Автопуш агрегата при включенном push→gptel
-            (when (and (boundp 'context-navigator--push-to-gptel)
-                       context-navigator--push-to-gptel
-                       (listp sel1) (> (length sel1) 0)
-                       (stringp root))
-              (context-navigator-collect-items-for-groups-async
-               root sel1
-               (lambda (items)
-                 (let* ((n (length (or items '())))
-                        (thr (or (and (boundp 'context-navigator-multigroup-autopush-threshold)
-                                      context-navigator-multigroup-autopush-threshold)
-                                 100)))
-                   (cond
-                    ((= n 0)
-                     (ignore-errors (context-navigator-gptel-clear-all-now)))
-                    ((> n thr)
-                     (setq context-navigator--push-to-gptel nil)
-                     (context-navigator-ui-info :push-state (context-navigator-i18n :off))
-                     (context-navigator-ui-info :autopush-disabled-threshold n thr)
-                     (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
-                    (t
-                     (ignore-errors (context-navigator-gptel-clear-all-now))
-                     (let* ((st (ignore-errors (context-navigator--state-get)))
-                            (token (and st (context-navigator-state-load-token st)))
-                            (forced (context-navigator--force-enable-items items)))
-                       (ignore-errors (context-navigator--gptel-defer-or-start forced token)))))))))
-            ;; Перерисуем список групп вместо ручной подмены строки (чтобы обновилась лампочка)
-            (setq-local context-navigator-render--last-hash nil)
-            (setq-local context-navigator-view--last-render-key nil)
-            (context-navigator-view--schedule-render)))))))
+  (let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
+    (if (not (and (stringp slug) (not (string-empty-p slug))))
+        (context-navigator-ui-info :no-group-at-point)
+      (let* ((st   (ignore-errors (context-navigator--state-get)))
+             (root (and st (context-navigator-state-last-project-root st)))
+             (ps   (or (ignore-errors (context-navigator-persist-state-load root)) '()))
+             (mg   (and (plist-member ps :multi) (plist-get ps :multi))))
+        ;; MG OFF → no-op (не меняем selection)
+        (when (not mg)
+          (context-navigator-ui-info :toggle-multi-group)
+          (cl-return-from context-navigator-view-group-toggle-select))
+        ;; MG ON → меняем selection в pstate и применяем побочные эффекты
+        (let* ((pstate (if (plist-member ps :version) (copy-sequence ps)
+                         (plist-put (copy-sequence ps) :version 1)))
+               (sel0 (and (plist-member pstate :selected) (plist-get pstate :selected)))
+               (sel  (if (listp sel0) sel0 '()))
+               (sel1 (if (member slug sel)
+                         (cl-remove slug sel :test #'equal)
+                       (append sel (list slug)))))
+          (setq pstate (plist-put (copy-sequence pstate) :selected sel1))
+          (ignore-errors (context-navigator-persist-state-save root pstate))
+          ;; Оповестить слушателей (Stats и т.п.)
+          (ignore-errors (context-navigator-events-publish :group-selection-changed root sel1))
+          ;; Автопуш агрегата при включенном push→gptel
+          (when (and (boundp 'context-navigator--push-to-gptel)
+                     context-navigator--push-to-gptel
+                     (listp sel1) (> (length sel1) 0)
+                     (stringp root))
+            (context-navigator-collect-items-for-groups-async
+             root sel1
+             (lambda (items)
+               (let* ((n (length (or items '())))
+                      (thr (or (and (boundp 'context-navigator-multigroup-autopush-threshold)
+                                    context-navigator-multigroup-autopush-threshold)
+                               100)))
+                 (cond
+                  ((= n 0)
+                   (ignore-errors (context-navigator-gptel-clear-all-now)))
+                  ((> n thr)
+                   (setq context-navigator--push-to-gptel nil)
+                   (context-navigator-ui-info :push-state (context-navigator-i18n :off))
+                   (context-navigator-debug :info :core "auto-push disabled (selection size=%s > %s)" n thr))
+                  (t
+                   (ignore-errors (context-navigator-gptel-clear-all-now))
+                   (let* ((st (ignore-errors (context-navigator--state-get)))
+                          (token (and st (context-navigator-state-load-token st)))
+                          (forced (context-navigator--force-enable-items items)))
+                     (ignore-errors (context-navigator--gptel-defer-or-start forced token)))))))))
+          ;; Сохранить фокус на переключённой группе в сплите (если он открыт)
+          (when (boundp 'context-navigator-groups-split--buffer)
+            (let ((gb context-navigator-groups-split--buffer))
+              (when (buffer-live-p gb)
+                (with-current-buffer gb
+                  (setq-local context-navigator-groups-split--focus-once slug)))))
+          ;; Перерисуем список групп вместо ручной подмены строки (чтобы обновилась лампочка)
+          (setq-local context-navigator-render--last-hash nil)
+          (setq-local context-navigator-view--last-render-key nil)
+          (context-navigator-view--schedule-render))))))
 ;;;###autoload
 (defun context-navigator-view-toggle-multi-group ()
   "Toggle per-project multi-group mode (:multi in state.el)."
@@ -280,6 +285,10 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
     (ignore-errors (context-navigator-events-publish :group-selection-changed root
                                                      (and (plist-member pstate :selected)
                                                           (plist-get pstate :selected))))
+    ;; If turning MG ON, ensure the Groups split is open for selection UI.
+    (when new
+      (when (fboundp 'context-navigator-groups-split-open)
+        (ignore-errors (context-navigator-groups-split-open))))
     ;; If push→gptel is ON — apply immediately per new mode, without touching model enabled flags
     (when (and (boundp 'context-navigator--push-to-gptel)
                context-navigator--push-to-gptel)

@@ -48,6 +48,9 @@ The split auto-fits to content and will not exceed half of the Navigator window.
 (defvar context-navigator-groups-split--wcch-on nil
   "When non-nil, auto-close watcher is installed.")
 
+(defvar-local context-navigator-groups-split--focus-once nil
+  "When non-nil, focus this group slug exactly once after the next render.")
+
 ;; Dedicated keymap for group lines in the Groups split buffer.
 ;; Parent is the split mode map so keyboard bindings resolve to the split context.
 (defvar context-navigator-groups-split--line-keymap
@@ -347,27 +350,29 @@ Always return focus to the items list in the Navigator."
             (dolist (ln all) (insert (or ln "") "\n"))
             ;; Replace per-line keymaps so keys are resolved in the split context
             (context-navigator-groups-split--adopt-line-keymaps))
-          ;; Move point to current group (robust scan by property)
-          (when (stringp slug)
-            (save-excursion
+          ;; Preserve point: prefer one-shot focus; else keep current line's slug; else current group.
+          (let* ((keep (save-excursion
+                         (let ((p (point)))
+                           (get-text-property p 'context-navigator-group-slug))))
+                 (want (or context-navigator-groups-split--focus-once keep slug)))
+            (setq context-navigator-groups-split--focus-once nil)
+            (when (stringp want)
               (goto-char (point-min))
               (let (pos)
                 (while (and (not pos) (< (point) (point-max)))
                   (let* ((p (point))
                          (s (get-text-property p 'context-navigator-group-slug)))
-                    (when (and (stringp s) (string= s slug))
+                    (when (and (stringp s) (string= s want))
                       (setq pos p)))
                   (goto-char (or (next-single-char-property-change (point) 'context-navigator-group-slug nil (point-max))
                                  (point-max))))
                 (when pos
                   (goto-char pos)
                   (beginning-of-line)
-                  (set-window-point win (point)))))))
+                  (set-window-point win (point))))))
       ;; Fit height after rendering
       (when-let ((navw (context-navigator-groups-split--nav-window)))
-        (context-navigator-groups-split--fit-window win navw))))))
-
-
+        (context-navigator-groups-split--fit-window win navw)))))))
 
 (provide 'context-navigator-groups-split)
 ;;; context-navigator-groups-split.el ends here

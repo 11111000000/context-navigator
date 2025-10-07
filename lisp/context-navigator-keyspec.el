@@ -36,7 +36,8 @@
     (:id groups-split :cmd context-navigator-groups-split-toggle
          :keys ("G") :contexts (global) :section navigate :desc-key :toggle-groups-split)
     (:id stats :cmd context-navigator-view-stats-toggle
-         :keys ("S") :contexts (global) :section act :desc-key :stats)    
+         :keys ("S") :contexts (global) :section act :desc-key :stats)
+    
     ;; Session (items/groups)
     (:id push-toggle :cmd context-navigator-view-toggle-push
          :keys ("V") :contexts (global) :section session :desc-key :help-toggle-push)
@@ -44,6 +45,7 @@
          :keys ("A") :contexts (global) :section session :desc-key :help-toggle-auto)
     (:id push-now :cmd context-navigator-view-push-now
          :keys ("P") :contexts (global) :section session :desc-key :help-push-now)
+    
     ;; Navigate (items/groups)
     (:id next :cmd context-navigator-view-next-item
          :keys ("j" "n" "<down>") :contexts (items groups-split) :section navigate :desc-key :help-next-item)
@@ -74,13 +76,12 @@
     (:id group-edit-desc :cmd context-navigator-view-group-edit-description
          :keys ("E") :contexts (groups-split) :section act :desc-key :groups-help-edit-description)
     (:id group-duplicate :cmd context-navigator-view-group-duplicate
-         :keys ("C") :contexts (groups-split) :section groups :desc-key :help-group-duplicate)
+         :keys ("C") :contexts (groups-split) :section act :desc-key :help-group-duplicate)
     (:id group-delete :cmd context-navigator-view-delete-dispatch
-         :keys ("D") :contexts (groups) :section groups :desc-key :groups-help-delete)
+         :keys ("D") :contexts (groups) :section act :desc-key :groups-help-delete)
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys ("t") :contexts (groups-split) :section groups :desc-key :toggle-multi-group)
+         :keys ("t") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
     
-
     ;; Items actions
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
@@ -103,9 +104,6 @@
     (:id clear-gptel :cmd context-navigator-view-clear-gptel
          :keys ("X") :contexts (items) :section act :desc-key :help-clear-gptel)
     
-
-    
-
     ;; Multifile
     (:id mf-visit :cmd context-navigator-multifile-activate
          :keys ("RET" "<return>") :contexts (multifile) :section navigate :desc-key :mf-action-visit)
@@ -130,8 +128,8 @@
     (:id mf-help :cmd context-navigator-multifile-help
          :keys ("?") :contexts (multifile) :section tools :desc-key :help-help)
     (:id mf-close :cmd context-navigator-multifile-close
-         :keys ("q") :contexts (multifile) :section tools :desc-key :help-quit)
-    )
+         :keys ("q") :contexts (multifile) :section tools :desc-key :help-quit))
+  
   "Centralized keyspec for Context Navigator (middle path)."
   :type '(repeat plist)
   :group 'context-navigator-keys)
