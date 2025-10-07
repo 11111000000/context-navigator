@@ -43,7 +43,7 @@
 
 
 
-(defcustom context-navigator-view-toggle-advance-next nil
+(defcustom context-navigator-view-toggle-advance-next t
   "When non-nil, move point to the next item after toggling with t/SPC.
 Defaults to nil to avoid cursor jumps and keep interaction smooth."
   :type 'boolean :group 'context-navigator)

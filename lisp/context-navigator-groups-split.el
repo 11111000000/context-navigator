@@ -22,6 +22,10 @@
 (require 'context-navigator-keyspec)     ;; ensure keyspec is loaded so bindings apply
 (require 'context-navigator-view-groups) ;; reuse body-lines rendering/keymap where possible
 
+;; Optional cross-module helpers (guard with fboundp at callsites)
+(declare-function context-navigator-stats-split--visible-window "context-navigator-stats-split" ())
+(declare-function context-navigator-stats-split--fit-window "context-navigator-stats-split" (win navw))
+
 ;; View helpers used to refresh and focus items when closing the split
 (declare-function context-navigator-view--schedule-render "context-navigator-view" (&optional also-invalidate))
 (declare-function context-navigator-view--render-if-visible "context-navigator-view" ())
@@ -151,6 +155,18 @@ not through the Navigator sidebar maps."
         (setq-local context-navigator-headerline--cache-str nil)
         (force-mode-line-update t)))))
 
+(defun context-navigator-groups-split--refit-all ()
+  "Refit all Navigator splits (Groups and Stats) to content with half-window cap."
+  (let ((navw (context-navigator-groups-split--nav-window)))
+    (when (window-live-p navw)
+      (when-let ((gw (context-navigator-groups-split--visible-window)))
+        (context-navigator-groups-split--fit-window gw navw))
+      (when (and (fboundp 'context-navigator-stats-split--visible-window)
+                 (fboundp 'context-navigator-stats-split--fit-window))
+        (let ((sw (ignore-errors (context-navigator-stats-split--visible-window))))
+          (when (window-live-p sw)
+            (ignore-errors (context-navigator-stats-split--fit-window sw navw))))))))
+
 (defun context-navigator-groups-split--target-height (nav-win)
   "Compute preferred groups split height under NAV-WIN."
   (let* ((max-pref (max 1 (or context-navigator-groups-split-height 10)))
@@ -158,12 +174,25 @@ not through the Navigator sidebar maps."
          (desired (min max-pref half)))
     desired))
 
+(defvar context-navigator-groups-split--refit-pending nil)
+
+(defun context-navigator-groups-split--schedule-refit ()
+  "Debounce refit of all Navigator splits after window layout changes."
+  (unless context-navigator-groups-split--refit-pending
+    (setq context-navigator-groups-split--refit-pending t)
+    (run-at-time 0.02 nil
+                 (lambda ()
+                   (setq context-navigator-groups-split--refit-pending nil)
+                   (ignore-errors (context-navigator-groups-split--refit-all))))))
+
 (defun context-navigator-groups-split--maybe-autoclose ()
-  "Auto-close groups split when Navigator window disappears."
+  "Auto-close groups split when Navigator window disappears.
+Also schedule a refit of all splits to their content after any window layout change."
   (let ((gw (context-navigator-groups-split--visible-window))
         (nw (context-navigator-groups-split--nav-window)))
     (when (and (window-live-p gw) (not (window-live-p nw)))
-      (ignore-errors (context-navigator-groups-split-close)))))
+      (ignore-errors (context-navigator-groups-split-close))))
+  (context-navigator-groups-split--schedule-refit))
 
 (defun context-navigator-groups-split--install-subs ()
   "Install event subscriptions while groups split is visible."
@@ -209,7 +238,9 @@ not through the Navigator sidebar maps."
   (interactive)
   (let ((navw (context-navigator-groups-split--nav-window)))
     (when (window-live-p navw)
-      (let* ((buf (context-navigator-groups-split--ensure-buffer))
+      (let* ((inhibit-redisplay t)
+             (window-combination-resize t)
+             (buf (context-navigator-groups-split--ensure-buffer))
              (existing (context-navigator-groups-split--visible-window))
              (target-height (context-navigator-groups-split--target-height navw))
              (kind (window-parameter navw 'context-navigator-view))
@@ -242,6 +273,9 @@ not through the Navigator sidebar maps."
           (context-navigator-groups-split--render)
           ;; Fit height after rendering so it reflects actual content.
           (context-navigator-groups-split--fit-window win navw)
+          (ignore-errors (context-navigator-groups-split--refit-all))
+          ;; Refit once more on next tick to allow the side-window layout to settle.
+          (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
           (context-navigator-groups-split--notify-changed)
           (select-window win)
           win)))))
@@ -260,6 +294,9 @@ Always return focus to the items list in the Navigator."
                  #'context-navigator-groups-split--maybe-autoclose)
     (setq context-navigator-groups-split--wcch-on nil))
   (context-navigator-groups-split--notify-changed)
+  (ignore-errors (context-navigator-groups-split--refit-all))
+  ;; Also refit after layout settles.
+  (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
   ;; Ensure Navigator is in items mode and focused with point on an item line
   (let ((navb (get-buffer "*context-navigator*"))
         (navw (context-navigator-groups-split--nav-window)))
@@ -326,12 +363,24 @@ Always return focus to the items list in the Navigator."
     nil))
 
 (defun context-navigator-groups-split--fit-window (win navw)
-  "Fit WIN to buffer with constraints relative to NAVW."
+  "Fit WIN to buffer with constraints relative to NAVW.
+Temporarily unlock window height to allow shrinking, then lock it, so opening
+another split won't inflate this one."
   (when (and (window-live-p win) (window-live-p navw))
     (let* ((max-pref (max 1 (or context-navigator-groups-split-height 10)))
            (half     (max 1 (floor (/ (window-total-height navw) 2))))
-           (limit    (min max-pref half)))
-      (fit-window-to-buffer win limit))))
+           ;; Реальная высота контента буфера (в строках)
+           (content  (with-current-buffer (window-buffer win)
+                       (max 1 (count-lines (point-min) (point-max)))))
+           (desired  (min content (min max-pref half)))
+           (window-combination-resize t))
+      (set-window-parameter win 'window-size-fixed nil)
+      (set-window-parameter win 'window-preserved-size nil)
+      ;; Минимум 1 строка, максимум — desired
+      (fit-window-to-buffer win desired 1)
+      ;; Сохранить итоговую высоту и зафиксировать, чтобы ребалансировка не раздувала
+      (set-window-parameter win 'window-preserved-size (cons t (window-total-height win)))
+      (set-window-parameter win 'window-size-fixed 'height))))
 
 (defun context-navigator-groups-split--render ()
   "Render groups list lines into the split buffer, focus current group, and fit height."

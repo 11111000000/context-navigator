@@ -19,6 +19,10 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-util)
 
+;; Cross-module helpers (optional; guard with fboundp at callsites)
+(declare-function context-navigator-groups-split--visible-window "context-navigator-groups-split" ())
+(declare-function context-navigator-groups-split--fit-window "context-navigator-groups-split" (win navw))
+
 (defgroup context-navigator-stats-split nil
   "Split buffer for compact Stats view (5 lines)."
   :group 'context-navigator)
@@ -68,13 +72,26 @@ the cached aggregate without re-reading group files."
 ;; Auto-close hook for Stats split when Navigator sidebar window disappears
 (defvar context-navigator-stats-split--wcch-on nil)
 
+(defvar context-navigator-stats-split--refit-pending nil)
+
+(defun context-navigator-stats-split--schedule-refit ()
+  "Debounce refit of all Navigator splits after window layout changes."
+  (unless context-navigator-stats-split--refit-pending
+    (setq context-navigator-stats-split--refit-pending t)
+    (run-at-time 0.02 nil
+                 (lambda ()
+                   (setq context-navigator-stats-split--refit-pending nil)
+                   (ignore-errors (context-navigator-stats-split--refit-all))))))
+
 (defun context-navigator-stats-split--maybe-autoclose ()
-  "Close Stats split when Navigator sidebar window is no longer present."
+  "Close Stats split when Navigator sidebar window is no longer present.
+Also schedule a refit of all splits to their content after any window layout change."
   (let ((stats-win (context-navigator-stats-split--visible-window))
         (nav-win (context-navigator-stats-split--nav-window)))
     (when (and (window-live-p stats-win)
                (not (window-live-p nav-win)))
-      (context-navigator-stats-split-close))))
+      (context-navigator-stats-split-close)))
+  (context-navigator-stats-split--schedule-refit))
 
 (defun context-navigator-stats-split--sum-bytes (items)
   "Return cons (BYTES-ALL . BYTES-ENABLED) for ITEMS."
@@ -104,12 +121,25 @@ the cached aggregate without re-reading group files."
     nil))
 
 (defun context-navigator-stats-split--fit-window (win navw)
-  "Fit WIN height to content, constrained by NAVW half-height and user preference."
+  "Fit WIN height to content, constrained by NAVW half-height and user preference.
+Temporarily unlock window height to allow shrinking, then lock height so later
+window rebalancing (e.g., when opening another split) won't inflate it."
   (when (and (window-live-p win) (window-live-p navw))
     (let* ((max-pref (max 1 (or context-navigator-stats-split-height 5)))
            (half     (max 1 (floor (/ (window-total-height navw) 2))))
-           (limit    (min max-pref half)))
-      (fit-window-to-buffer win limit))))
+           ;; Реальная высота контента буфера (в строках)
+           (content  (with-current-buffer (window-buffer win)
+                       (max 1 (count-lines (point-min) (point-max)))))
+           (desired  (min content (min max-pref half)))
+           (window-combination-resize t))
+      ;; Allow resizing first, then fix height so other operations don't enlarge it.
+      (set-window-parameter win 'window-size-fixed nil)
+      (set-window-parameter win 'window-preserved-size nil)
+      ;; Минимум 1 строка, максимум — desired
+      (fit-window-to-buffer win desired 1)
+      ;; Preserve final height and fix it to avoid later inflation.
+      (set-window-parameter win 'window-preserved-size (cons t (window-total-height win)))
+      (set-window-parameter win 'window-size-fixed 'height))))
 
 (defun context-navigator-stats-split--ensure-buffer ()
   "Create or return the Stats buffer initialized to special-mode."
@@ -443,13 +473,27 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
         (when (fboundp 'context-navigator-view--render-if-visible)
           (context-navigator-view--render-if-visible))))))
 
+(defun context-navigator-stats-split--refit-all ()
+  "Refit all Navigator splits (Stats and Groups) to content with half-window cap."
+  (let ((navw (context-navigator-stats-split--nav-window)))
+    (when (window-live-p navw)
+      (when-let ((sw (context-navigator-stats-split--visible-window)))
+        (context-navigator-stats-split--fit-window sw navw))
+      (when (and (fboundp 'context-navigator-groups-split--visible-window)
+                 (fboundp 'context-navigator-groups-split--fit-window))
+        (let ((gw (ignore-errors (context-navigator-groups-split--visible-window))))
+          (when (window-live-p gw)
+            (ignore-errors (context-navigator-groups-split--fit-window gw navw))))))))
+
 ;;;###autoload
 (defun context-navigator-stats-split-open ()
   "Open the 5-line Stats split below the Navigator (sidebar or buffer-mode)."
   (interactive)
   (let ((navw (context-navigator-stats-split--nav-window)))
     (when (window-live-p navw)
-      (let* ((buf (context-navigator-stats-split--ensure-buffer))
+      (let* ((inhibit-redisplay t)
+             (window-combination-resize t)
+             (buf (context-navigator-stats-split--ensure-buffer))
              (existing (context-navigator-stats-split--visible-window))
              (target-height (max 1 (or context-navigator-stats-split-height 5)))
              (kind (window-parameter navw 'context-navigator-view))
@@ -491,6 +535,9 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
           (context-navigator-stats-split--render)
           (when-let ((navw (context-navigator-stats-split--nav-window)))
             (context-navigator-stats-split--fit-window win navw))
+          (ignore-errors (context-navigator-stats-split--refit-all))
+          ;; Refit once more on the next tick to let window layout settle.
+          (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-stats-split--refit-all))))
           (context-navigator-stats-split--notify-changed)
           win)))))
 
@@ -507,6 +554,9 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                  #'context-navigator-stats-split--maybe-autoclose)
     (setq context-navigator-stats-split--wcch-on nil))
   (context-navigator-stats-split--notify-changed)
+  (ignore-errors (context-navigator-stats-split--refit-all))
+  ;; Also refit after layout settles.
+  (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-stats-split--refit-all))))
   t)
 
 ;;;###autoload
