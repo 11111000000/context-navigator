@@ -31,7 +31,19 @@
          :keys ("?") :contexts (global) :section tools :desc-key :help-help)
     (:id quit :cmd context-navigator-view-quit
          :keys ("q") :contexts (global) :section tools :desc-key :help-quit)
-
+    (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
+         :keys ("M") :contexts (global) :section navigate :desc-key :toggle-multi-group)
+    (:id groups-split :cmd context-navigator-groups-split-toggle
+         :keys ("G") :contexts (global) :section navigate :desc-key :toggle-groups-split)
+    (:id stats :cmd context-navigator-view-stats-toggle
+         :keys ("S") :contexts (global) :section act :desc-key :stats)    
+    ;; Session (items/groups)
+    (:id push-toggle :cmd context-navigator-view-toggle-push
+         :keys ("V") :contexts (global) :section session :desc-key :help-toggle-push)
+    (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
+         :keys ("A") :contexts (global) :section session :desc-key :help-toggle-auto)
+    (:id push-now :cmd context-navigator-view-push-now
+         :keys ("P") :contexts (global) :section session :desc-key :help-push-now)
     ;; Navigate (items/groups)
     (:id next :cmd context-navigator-view-next-item
          :keys ("j" "n" "<down>") :contexts (items groups-split) :section navigate :desc-key :help-next-item)
@@ -45,8 +57,6 @@
          :keys ("TAB" "<tab>" "C-i") :contexts (items groups) :section navigate :desc-key :help-next-item)
     (:id tab-prev :cmd context-navigator-view-tab-previous
          :keys ("<backtab>" "S-<tab>") :contexts (items groups) :section navigate :desc-key :help-previous-item)
-    (:id groups-split :cmd context-navigator-groups-split-toggle
-         :keys ("G" "h") :contexts (items groups-split) :section navigate :desc-key :toggle-groups-split)
 
     ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar    
     (:id gs-close :cmd context-navigator-groups-split-close
@@ -57,24 +67,29 @@
          :keys ("k" "p" "<up>") :contexts (groups-split) :section navigate :desc-key :help-previous-item)
     (:id gs-activate :cmd context-navigator-groups-split-select
          :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (groups-split) :section navigate :desc-key :help-activate)
-    (:id gs-refresh :cmd context-navigator-groups-open
-         :keys ("g") :contexts (groups-split) :section act :desc-key :help-refresh)
-    (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
-         :keys ("M") :contexts (groups-split) :section groups :desc-key :toggle-multi-group)
+    (:id group-create :cmd context-navigator-view-group-create
+         :keys ("a" "+") :contexts (groups-split) :section act :desc-key :help-group-create)
+    (:id group-rename :cmd context-navigator-view-group-rename
+         :keys ("R") :contexts (groups-split) :section act :desc-key :help-group-rename)
+    (:id group-edit-desc :cmd context-navigator-view-group-edit-description
+         :keys ("E") :contexts (groups-split) :section act :desc-key :groups-help-edit-description)
+    (:id group-duplicate :cmd context-navigator-view-group-duplicate
+         :keys ("C") :contexts (groups-split) :section groups :desc-key :help-group-duplicate)
+    (:id group-delete :cmd context-navigator-view-delete-dispatch
+         :keys ("D") :contexts (groups) :section groups :desc-key :groups-help-delete)
+    (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
+         :keys ("t") :contexts (groups-split) :section groups :desc-key :toggle-multi-group)
+    
 
     ;; Items actions
-    ;; Items: toggle enabled (SPC/t)
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
-    ;; Groups: toggle selection (SPC/t)
-    (:id toggle-dispatch-groups :cmd context-navigator-view-toggle-dispatch
-         :keys ("SPC" "t") :contexts (groups) :section act :desc-key :toggle-multi-group)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items) :section act :desc-key :toggle-all-gptel)
     (:id disable-all :cmd context-navigator-view-disable-all-gptel
          :keys ("U") :contexts (items) :section act :desc-key :disable-all-gptel)
-    (:id enable-all :cmd context-navigator-view-enable-all-gptel
-         :keys ("M") :contexts (items) :section act :desc-key :enable-all-gptel)
+    ;; (:id enable-all :cmd context-navigator-view-enable-all-gptel
+    ;;      :keys ("A") :contexts (items) :section act :desc-key :enable-all-gptel)
     (:id delete :cmd context-navigator-view-delete-dispatch
          :keys ("d") :contexts (items) :section act :desc-key :help-delete)
     (:id refresh :cmd context-navigator-view-refresh-dispatch
@@ -87,34 +102,9 @@
          :keys ("x") :contexts (items) :section act :desc-key :help-clear-group)
     (:id clear-gptel :cmd context-navigator-view-clear-gptel
          :keys ("X") :contexts (items) :section act :desc-key :help-clear-gptel)
-    (:id stats :cmd context-navigator-view-stats-toggle
-         :keys ("S") :contexts (items groups groups-split) :section act :desc-key :stats)
+    
 
-    ;; Session (items/groups)
-    (:id push-toggle :cmd context-navigator-view-toggle-push
-         :keys ("V") :contexts (items groups) :section session :desc-key :help-toggle-push)
-    (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
-         :keys ("A") :contexts (items groups) :section session :desc-key :help-toggle-auto)
-    (:id push-now :cmd context-navigator-view-push-now
-         :keys ("P") :contexts (items groups) :section session :desc-key :help-push-now)
-    (:id unload :cmd context-navigator-context-unload
-         :keys ("u") :contexts (items groups) :section session :desc-key :tr-unload)
-
-    ;; Groups CRUD / selection
-    (:id group-create :cmd context-navigator-view-group-create
-         :keys ("a" "+") :contexts (groups) :section groups :desc-key :help-group-create)
-    (:id group-rename :cmd context-navigator-view-group-rename
-         :keys ("r") :contexts (groups) :section groups :desc-key :help-group-rename)
-    (:id group-edit-desc :cmd context-navigator-view-group-edit-description
-         :keys ("e") :contexts (groups) :section groups :desc-key :groups-help-edit-description)
-    (:id group-duplicate :cmd context-navigator-view-group-duplicate
-         :keys ("y") :contexts (groups) :section groups :desc-key :help-group-duplicate)
-    (:id group-delete :cmd context-navigator-view-delete-dispatch
-         :keys ("d") :contexts (groups) :section groups :desc-key :groups-help-delete)
-    (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys () :contexts (groups) :section groups :desc-key :toggle-multi-group)
-    (:id multigroup-toggle :cmd context-navigator-view-toggle-multi-group
-         :keys ("M") :contexts (groups) :section groups :desc-key :toggle-multi-group)
+    
 
     ;; Multifile
     (:id mf-visit :cmd context-navigator-multifile-activate
