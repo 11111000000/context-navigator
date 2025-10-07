@@ -1401,7 +1401,11 @@ Also reload the currently active group from disk (no clearing)."
   (let* ((was-mode (bound-and-true-p context-navigator-mode))
          (sidebar (ignore-errors (context-navigator--sidebar-visible-p)))
          (buffer  (ignore-errors (context-navigator--buffer-mode-visible-p)))
-         (disp    (and (boundp 'context-navigator-display-mode) context-navigator-display-mode)))
+         (disp    (and (boundp 'context-navigator-display-mode) context-navigator-display-mode))
+         ;; Preserve current context to restore after restart
+         (prev-state (ignore-errors (context-navigator--state-get)))
+         (prev-root (and prev-state (context-navigator-state-last-project-root prev-state)))
+         (prev-slug (and prev-state (context-navigator-state-current-group-slug prev-state))))
     ;; Suppress empty saves across the whole restart window.
     (setq context-navigator-persist-suppress-empty-save t)
     ;; Best-effort autosave of current group before restart
@@ -1452,13 +1456,16 @@ Also reload the currently active group from disk (no clearing)."
       ('sidebar (ignore-errors (context-navigator-view-open)))
       ('buffer  (ignore-errors (context-navigator-buffer-open)))
       (_ nil))
-    ;; After restart, try to recover project context automatically by selecting
-    ;; the first file-visiting buffer's project on the current frame and publishing
-    ;; a :project-switch event so other components (sidebar) can pick it up.
-    (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
-      (when root
-        (context-navigator-events-publish :project-switch root)
-        (ignore-errors (context-navigator-groups-open))))
+    ;; After restart, prefer restoring the previously active group directly when available.
+    ;; This avoids briefly switching to another project or clearing the current group.
+    (if (and (stringp prev-slug) (not (string-empty-p prev-slug)))
+        (ignore-errors (context-navigator--load-group-for-root prev-root prev-slug))
+      ;; Fallback: recover project context automatically by selecting the first
+      ;; file-visiting buffer's project and publishing :project-switch.
+      (let ((root (ignore-errors (context-navigator--pick-root-for-autoproject))))
+        (when root
+          (context-navigator-events-publish :project-switch root)
+          (ignore-errors (context-navigator-groups-open)))))
     ;; Allow saves again after restart has finished wiring; loading-phase handlers
     ;; will clear the suppression flag once items are loaded.
     (setq context-navigator-persist-suppress-empty-save nil)

@@ -96,15 +96,24 @@ SIZE is interpreted as:
 
 ;;;###autoload
 (defun context-navigator-buffer-close ()
-  "Close Navigator buffer windows on the current frame (do not kill the buffer)."
+  "Close Navigator buffer windows on the current frame (do not kill the buffer).
+
+Also close any Navigator splits (Groups/Stats) if they are open."
   (interactive)
   (let* ((buf (get-buffer context-navigator-view--buffer-name)))
     (when (buffer-live-p buf)
+      ;; Close Groups/Stats splits first to avoid leaving orphan side windows.
+      (ignore-errors
+        (when (fboundp 'context-navigator-groups-split-close)
+          (context-navigator-groups-split-close)))
+      (ignore-errors
+        (when (fboundp 'context-navigator-stats-split-close)
+          (context-navigator-stats-split-close)))
+      ;; Now close all windows that show the Navigator buffer in buffer-mode.
       (dolist (w (window-list (selected-frame) 'no-minibuffer))
         (when (and (window-live-p w)
                    (eq (window-buffer w) buf))
-          (delete-window w)))
-      )))
+          (delete-window w))))))
 
 ;;;###autoload
 (defun context-navigator-buffer-toggle ()

@@ -164,8 +164,7 @@ Groups: Navigate / Groups / Session / Tools."
      ("p" :tr-switch-project context-navigator-switch-to-current-buffer-project))
     (:section context
      ("g" :tr-groups-list context-navigator-view-show-groups)
-     ("D" :clear-group context-navigator-context-clear-current-group)
-     ("u" :tr-unload context-navigator-context-unload))
+     ("D" :clear-group context-navigator-context-clear-current-group))
     (:section actions
      ("a" :tr-add-universal context-navigator-add-universal)
      ("f" :add-from-minibuf context-navigator-add-from-minibuffer)

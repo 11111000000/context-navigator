@@ -240,12 +240,24 @@ Also schedule a refit of all splits to their content after any window layout cha
     (when (window-live-p navw)
       (let* ((inhibit-redisplay t)
              (window-combination-resize t)
-             (buf (context-navigator-groups-split--ensure-buffer))
-             (existing (context-navigator-groups-split--visible-window))
-             (target-height (context-navigator-groups-split--target-height navw))
-             (kind (window-parameter navw 'context-navigator-view))
-             (win (or existing
-                      (if (eq kind 'sidebar)
+             (existing (context-navigator-groups-split--visible-window)))
+        (if (window-live-p existing)
+            (progn
+              ;; Fast path when already visible: avoid re-creating/reassigning buffers and reselection.
+              (context-navigator-groups-split--install-subs)
+              (unless context-navigator-groups-split--wcch-on
+                (add-hook 'window-configuration-change-hook
+                          #'context-navigator-groups-split--maybe-autoclose)
+                (setq context-navigator-groups-split--wcch-on t))
+              (context-navigator-groups-split--render)
+              (context-navigator-groups-split--fit-window existing navw)
+              (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
+              (context-navigator-groups-split--notify-changed)
+              existing)
+          (let* ((buf (context-navigator-groups-split--ensure-buffer))
+                 (target-height (context-navigator-groups-split--target-height navw))
+                 (kind (window-parameter navw 'context-navigator-view))
+                 (win (if (eq kind 'sidebar)
                           ;; Under sidebar: use side-window in same side
                           (let* ((side (or (window-parameter navw 'window-side) 'left))
                                  (params (list (cons 'side side)
@@ -260,25 +272,24 @@ Also schedule a refit of all splits to their content after any window layout cha
                               (display-buffer-in-side-window
                                buf `((side . bottom)
                                      (slot . 0)
-                                     (window-height . ,target-height)))))))))
-        (when (window-live-p win)
-          (set-window-buffer win buf)
-          (set-window-parameter win 'context-navigator-groups t)
-          (set-window-dedicated-p win t)
-          (context-navigator-groups-split--install-subs)
-          (unless context-navigator-groups-split--wcch-on
-            (add-hook 'window-configuration-change-hook
-                      #'context-navigator-groups-split--maybe-autoclose)
-            (setq context-navigator-groups-split--wcch-on t))
-          (context-navigator-groups-split--render)
-          ;; Fit height after rendering so it reflects actual content.
-          (context-navigator-groups-split--fit-window win navw)
-          (ignore-errors (context-navigator-groups-split--refit-all))
-          ;; Refit once more on next tick to allow the side-window layout to settle.
-          (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
-          (context-navigator-groups-split--notify-changed)
-          (select-window win)
-          win)))))
+                                     (window-height . ,target-height))))))))
+            (when (window-live-p win)
+              (set-window-buffer win buf)
+              (set-window-parameter win 'context-navigator-groups t)
+              (set-window-dedicated-p win t)
+              (context-navigator-groups-split--install-subs)
+              (unless context-navigator-groups-split--wcch-on
+                (add-hook 'window-configuration-change-hook
+                          #'context-navigator-groups-split--maybe-autoclose)
+                (setq context-navigator-groups-split--wcch-on t))
+              (context-navigator-groups-split--render)
+              ;; Fit height after rendering so it reflects actual content.
+              (context-navigator-groups-split--fit-window win navw)
+              ;; Refit once more on next tick to allow the side-window layout to settle.
+              (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
+              (context-navigator-groups-split--notify-changed)
+              (select-window win)
+              win)))))))
 
 ;;;###autoload
 (defun context-navigator-groups-split-close ()
@@ -294,7 +305,6 @@ Always return focus to the items list in the Navigator."
                  #'context-navigator-groups-split--maybe-autoclose)
     (setq context-navigator-groups-split--wcch-on nil))
   (context-navigator-groups-split--notify-changed)
-  (ignore-errors (context-navigator-groups-split--refit-all))
   ;; Also refit after layout settles.
   (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-groups-split--refit-all))))
   ;; Ensure Navigator is in items mode and focused with point on an item line

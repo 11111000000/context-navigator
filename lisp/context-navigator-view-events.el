@@ -266,10 +266,8 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                  (when (eq context-navigator-view--mode 'groups)
                    (when (fboundp 'context-navigator-view--invalidate-render-caches)
                      (context-navigator-view--invalidate-render-caches t))
-                   ;; Немедленная перерисовка, чтобы изменения списка групп были видны сразу
-                   (context-navigator-view--render-if-visible)
-                   ;; И мягкий дебаунс на всякий случай (обновление заголовка/индикаторов)
-                   (context-navigator-view--schedule-render)))))))
+                   ;; Немедленная перерисовка (достаточно одной перерисовки без дополнительного дебаунса)
+                   (context-navigator-view--render-if-visible)))))))
         context-navigator-view--subs)
   ;; Re-render headerline/controls on selection change (affects push/MG gating)
   (push (context-navigator-events-subscribe

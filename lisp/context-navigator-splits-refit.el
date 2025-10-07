@@ -27,6 +27,11 @@
   "Robust refit for Navigator splits."
   :group 'context-navigator)
 
+(defcustom context-navigator-splits-refit-enable nil
+  "When non-nil, install global refit hooks/advices for Navigator splits.
+Disabled by default to avoid extra hooks in performance-sensitive setups."
+  :type 'boolean :group 'context-navigator-splits-refit)
+
 (defcustom context-navigator-splits-refit-delay 0.03
   "Debounce delay (seconds) before refitting all splits after a layout change."
   :type 'number :group 'context-navigator-splits-refit)
@@ -106,31 +111,32 @@
   (when (cnsr--split-windows)
     (cnsr--schedule-refit)))
 
-;; Install the hook globally; it's cheap and debounced.
-(add-hook 'window-configuration-change-hook #'cnsr--wcch)
+(when context-navigator-splits-refit-enable
+  ;; Install the hook globally; it's cheap and debounced.
+  (add-hook 'window-configuration-change-hook #'cnsr--wcch)
 
-;; Add advice around split open/close to trigger refit immediately and after delay.
-(with-eval-after-load 'context-navigator-groups-split
-  (ignore-errors
-    ;; Ensure a sane default buffer name before opening, if the module hasn't set it yet.
-    (defun cnsr--groups-ensure-buffer-name (&rest _)
-      (unless (and (boundp 'context-navigator-groups-split-buffer-name)
-                   (stringp context-navigator-groups-split-buffer-name))
-        (setq context-navigator-groups-split-buffer-name "*Context Navigator: Groups*")))
-    (advice-add 'context-navigator-groups-split-open  :before #'cnsr--groups-ensure-buffer-name)
-    (advice-add 'context-navigator-groups-split-open  :after (lambda (&rest _) (cnsr--schedule-refit)))
-    (advice-add 'context-navigator-groups-split-close :after (lambda (&rest _) (cnsr--schedule-refit)))))
+  ;; Add advice around split open/close to trigger refit immediately and after delay.
+  (with-eval-after-load 'context-navigator-groups-split
+    (ignore-errors
+      ;; Ensure a sane default buffer name before opening, if the module hasn't set it yet.
+      (defun cnsr--groups-ensure-buffer-name (&rest _)
+        (unless (and (boundp 'context-navigator-groups-split-buffer-name)
+                     (stringp context-navigator-groups-split-buffer-name))
+          (setq context-navigator-groups-split-buffer-name "*Context Navigator: Groups*")))
+      (advice-add 'context-navigator-groups-split-open  :before #'cnsr--groups-ensure-buffer-name)
+      (advice-add 'context-navigator-groups-split-open  :after (lambda (&rest _) (cnsr--schedule-refit)))
+      (advice-add 'context-navigator-groups-split-close :after (lambda (&rest _) (cnsr--schedule-refit)))))
 
-(with-eval-after-load 'context-navigator-stats-split
-  (ignore-errors
-    ;; Ensure a sane default buffer name before opening, if the module hasn't set it yet.
-    (defun cnsr--stats-ensure-buffer-name (&rest _)
-      (unless (and (boundp 'context-navigator-stats-split-buffer-name)
-                   (stringp context-navigator-stats-split-buffer-name))
-        (setq context-navigator-stats-split-buffer-name "*Context Navigator: Stats*")))
-    (advice-add 'context-navigator-stats-split-open  :before #'cnsr--stats-ensure-buffer-name)
-    (advice-add 'context-navigator-stats-split-open  :after (lambda (&rest _) (cnsr--schedule-refit)))
-    (advice-add 'context-navigator-stats-split-close :after (lambda (&rest _) (cnsr--schedule-refit)))))
+  (with-eval-after-load 'context-navigator-stats-split
+    (ignore-errors
+      ;; Ensure a sane default buffer name before opening, if the module hasn't set it yet.
+      (defun cnsr--stats-ensure-buffer-name (&rest _)
+        (unless (and (boundp 'context-navigator-stats-split-buffer-name)
+                     (stringp context-navigator-stats-split-buffer-name))
+          (setq context-navigator-stats-split-buffer-name "*Context Navigator: Stats*")))
+      (advice-add 'context-navigator-stats-split-open  :before #'cnsr--stats-ensure-buffer-name)
+      (advice-add 'context-navigator-stats-split-open  :after (lambda (&rest _) (cnsr--schedule-refit)))
+      (advice-add 'context-navigator-stats-split-close :after (lambda (&rest _) (cnsr--schedule-refit))))))
 
 (provide 'context-navigator-splits-refit)
 ;;; context-navigator-splits-refit.el ends here

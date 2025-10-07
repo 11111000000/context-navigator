@@ -37,6 +37,8 @@
          :keys ("G") :contexts (global) :section navigate :desc-key :toggle-groups-split)
     (:id stats :cmd context-navigator-view-stats-toggle
          :keys ("S") :contexts (global) :section act :desc-key :stats)
+    (:id disable-all :cmd context-navigator-view-disable-all-gptel
+         :keys ("U") :contexts (global) :section act :desc-key :disable-all-gptel)
     
     ;; Session (items/groups)
     (:id push-toggle :cmd context-navigator-view-toggle-push
@@ -87,8 +89,7 @@
          :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items) :section act :desc-key :toggle-all-gptel)
-    (:id disable-all :cmd context-navigator-view-disable-all-gptel
-         :keys ("U") :contexts (items) :section act :desc-key :disable-all-gptel)
+    
     ;; (:id enable-all :cmd context-navigator-view-enable-all-gptel
     ;;      :keys ("A") :contexts (items) :section act :desc-key :enable-all-gptel)
     (:id delete :cmd context-navigator-view-delete-dispatch
