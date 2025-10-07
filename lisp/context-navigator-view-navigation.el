@@ -169,5 +169,44 @@ before searching. Also clamps START to buffer bounds."
          (pos  (context-navigator-view--find-prev-ui-pos beg)))
     (when pos (goto-char pos))))
 
+;;;###autoload
+(defun context-navigator-view-next-item ()
+  "Select next item in sidebar."
+  (interactive)
+  (let* ((here (point))
+         (props '(context-navigator-item context-navigator-group-slug))
+         (inside (cl-some (lambda (p) (get-text-property here p)) props))
+         ;; Exclusive semantics: if we're on an item/group line, start after its run
+         (start (if inside
+                    (context-navigator-view--run-end here)
+                  (min (point-max) (1+ here))))
+         (pos (context-navigator-view--find-next-itemish-pos start)))
+    ;; Wrap to the first item/group when none found ahead
+    (unless pos
+      (setq pos (context-navigator-view--find-next-itemish-pos (point-min))))
+    (when pos
+      (goto-char pos)
+      (beginning-of-line))))
+
+;;;###autoload
+(defun context-navigator-view-previous-item ()
+  "Select previous item in sidebar."
+  (interactive)
+  (let* ((here (point))
+         ;; Exclusive semantics: if we're on an item/group line, use run-beg as the boundary
+         (start (context-navigator-view--run-beg here))
+         (pos (context-navigator-view--find-prev-itemish-pos start)))
+    ;; Wrap to the last item/group when none found before
+    (unless pos
+      (let ((p (context-navigator-view--find-next-itemish-pos (point-min)))
+            (last nil))
+        (while p
+          (setq last p)
+          (setq p (context-navigator-view--find-next-itemish-pos (1+ p))))
+        (setq pos last)))
+    (when pos
+      (goto-char pos)
+      (beginning-of-line))))
+
 (provide 'context-navigator-view-navigation)
 ;;; context-navigator-view-navigation.el ends here
