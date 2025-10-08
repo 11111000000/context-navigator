@@ -367,13 +367,13 @@ Always return focus to the items list in the Navigator."
 
 ;; Improve nav window detection: prefer any window showing the main Navigator buffer.
 (defun context-navigator-groups-split--nav-window ()
-  "Return Navigator window (sidebar or buffer-mode) on the current frame."
+  "Return Navigator window (sidebar or buffer-mode) on any frame."
   (catch 'hit
     (let ((nbuf (get-buffer "*context-navigator*")))
-      (dolist (w (window-list nil 'no-mini))
-        (when (and (window-live-p w)
-                   (eq (window-buffer w) nbuf))
-          (throw 'hit w))))
+      (when (buffer-live-p nbuf)
+        (dolist (w (get-buffer-window-list nbuf nil t))
+          (when (window-live-p w)
+            (throw 'hit w)))))
     nil))
 
 (defun context-navigator-groups-split--fit-window (win navw)

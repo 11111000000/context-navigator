@@ -116,14 +116,11 @@ otherwise use a small fixed-height window."
           (when (fboundp 'transient-posframe-mode)
             (funcall 'transient-posframe-mode 1))
           (apply orig-fun args))
-      ;; Fallback: small fixed-height pop-up window below the selected window.
+      ;; Fallback: small fixed-height pop-up window at the bottom of the frame
+      ;; (non-destructive to side windows like Navigator/Groups/Stats).
       (let ((transient-display-buffer-action
-             '(display-buffer-below-selected
-               . ((side . bottom)
-                  (slot . 0)
-                  ;; Use a small fixed height (lines). Tweak to taste.
-                  (window-height . 12)
-                  ;; Keep it from being expanded by other commands.
+             '(display-buffer-at-bottom
+               . ((window-height . 12)
                   (preserve-size . (t . nil))
                   (window-parameters . ((no-other-window . t)
                                         (no-delete-other-windows . t)))))))

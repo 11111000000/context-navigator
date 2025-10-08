@@ -27,25 +27,22 @@
 (defcustom context-navigator-keyspec
   '(
     ;; Global (sidebar/buffer): panel/context/actions/control/logs all come from keyspec
-    ;; Panel / basic UI
     (:id menu :cmd context-navigator-view-open-menu
          :keys ("?") :contexts (global) :section tools :desc-key :help-help)
     (:id quit :cmd context-navigator-view-quit
          :keys ("q") :contexts (global) :section tools :desc-key :help-quit)
-    (:id toggle-sidebar :cmd context-navigator-toggle
-         :keys ("n") :contexts (global) :section tools :desc-key :tr-toggle-sidebar)
     (:id display-mode :cmd context-navigator-display-mode-toggle
          :keys ("W") :contexts (global) :section tools :desc-key :tr-display-mode)
+    (:id toggle-sidebar :cmd context-navigator-toggle
+         :keys ("n") :contexts (global) :section navigate :desc-key :tr-toggle-sidebar)
     (:id switch-project :cmd context-navigator-switch-to-current-buffer-project
          :keys ("p") :contexts (global) :section tools :desc-key :tr-switch-project)
-
-    ;; Context / groups
     (:id groups-split :cmd context-navigator-groups-split-toggle
          :keys ("G") :contexts (global) :section navigate :desc-key :toggle-groups-split)
     (:id groups-list :cmd context-navigator-view-show-groups
          :keys ("g") :contexts (global) :section navigate :desc-key :tr-groups-list)
     (:id stats :cmd context-navigator-view-stats-toggle
-         :keys ("S") :contexts (global) :section act :desc-key :stats)
+         :keys ("S") :contexts (global) :section navigate :desc-key :stats)
 
     ;; Actions
     (:id add-universal :cmd context-navigator-add-universal

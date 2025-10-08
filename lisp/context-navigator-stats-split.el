@@ -109,15 +109,13 @@ Also schedule a refit of all splits to their content after any window layout cha
     (floor (/ (float bytes) k))))
 
 (defun context-navigator-stats-split--nav-window ()
-  "Return a Navigator window (sidebar or buffer-mode) on the current frame, or nil."
+  "Return a Navigator window (sidebar or buffer-mode) on any frame, or nil."
   (catch 'hit
-    (dolist (w (window-list nil 'no-mini))
-      (when (and (window-live-p w)
-                 (let ((buf (window-buffer w)))
-                   (or (memq (window-parameter w 'context-navigator-view) '(sidebar buffer))
-                       (and (buffer-live-p buf)
-                            (equal (buffer-name buf) "*context-navigator*")))))
-        (throw 'hit w)))
+    (let ((buf (get-buffer "*context-navigator*")))
+      (when (buffer-live-p buf)
+        (dolist (w (get-buffer-window-list buf nil t))
+          (when (window-live-p w)
+            (throw 'hit w)))))
     nil))
 
 (defun context-navigator-stats-split--fit-window (win navw)
