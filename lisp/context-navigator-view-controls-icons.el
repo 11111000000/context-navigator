@@ -110,7 +110,7 @@ to the textual/compact style (with brackets)."
     (stats . ((on  . (:foreground "purple"  :raise -0.1))
               (off . (:foreground "gray60"  :raise -0.1))))
     (toggle-all-gptel . (:foreground "SteelBlue4"))
-    (razor . (:foreground "magenta3"))
+    (razor . (:foreground "SteelBlue4"))
     (multifile . (:foreground "purple"))
     (groups-split . ((on  . (:foreground "MediumOrchid3" :raise -0.1))
                      (off . (:foreground "gray60"        :raise -0.1))))

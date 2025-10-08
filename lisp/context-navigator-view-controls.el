@@ -223,7 +223,9 @@ Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
 
 ;; Layout: order of controls for header-line toolbar.
 (defcustom context-navigator-headerline-controls-order
-  '(push auto-project multi-group :gap groups-split stats multifile :gap undo redo :gap toggle-all-gptel :gap razor push-now :gap open-buffers close-buffers :gap clear-group)
+  '(push auto-project multi-group :gap groups-split stats multifile :gap undo redo
+         :gap toggle-all-gptel razor :gap push-now :gap open-buffers close-buffers
+         :gap clear-group)
   "Controls order for the header-line toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
