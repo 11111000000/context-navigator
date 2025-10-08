@@ -28,9 +28,9 @@
   '(
     ;; Global (sidebar/buffer): panel/context/actions/control/logs all come from keyspec
     (:id menu :cmd context-navigator-view-open-menu
-         :keys ("?") :contexts (global) :section tools :desc-key :help-help)
+         :keys ("?") :contexts (items global) :section tools :desc-key :help-help)
     (:id quit :cmd context-navigator-view-quit
-         :keys ("q") :contexts (global) :section tools :desc-key :help-quit)
+         :keys ("q") :contexts (items global) :section tools :desc-key :help-quit)
     (:id display-mode :cmd context-navigator-display-mode-toggle
          :keys ("W") :contexts (global) :section tools :desc-key :tr-display-mode)
     (:id toggle-sidebar :cmd context-navigator-toggle
@@ -38,10 +38,10 @@
     (:id switch-project :cmd context-navigator-switch-to-current-buffer-project
          :keys ("p") :contexts (global) :section tools :desc-key :tr-switch-project)
     (:id groups-split :cmd context-navigator-groups-split-toggle
-         :keys ("G" "h") :contexts (global) :section navigate :desc-key :toggle-groups-split)
+         :keys ("G" "h") :contexts (items global) :section navigate :desc-key :toggle-groups-split)
 
     (:id stats :cmd context-navigator-view-stats-toggle
-         :keys ("S") :contexts (global) :section navigate :desc-key :stats)
+         :keys ("S") :contexts (items global) :section navigate :desc-key :stats)
 
     ;; Actions
     (:id add-universal :cmd context-navigator-add-universal
@@ -116,9 +116,7 @@
     (:id group-duplicate :cmd context-navigator-view-group-duplicate
          :keys ("C") :contexts (groups-split) :section act :desc-key :help-group-duplicate)
     (:id group-delete :cmd context-navigator-view-delete-dispatch
-         :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)
-    (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys ("m") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
+         :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)    
     
     ;; Items actions
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
@@ -157,7 +155,7 @@
     (:id mf-visit2 :cmd context-navigator-multifile-visit
          :keys ("v") :contexts (multifile) :section act :desc-key :mf-action-visit)
     (:id mf-toggle :cmd context-navigator-multifile-toggle
-         :keys ("t") :contexts (multifile) :section act :desc-key :mf-action-toggle)
+         :keys ("m") :contexts (multifile) :section act :desc-key :mf-action-toggle)
     (:id mf-delete :cmd context-navigator-multifile-delete
          :keys ("d") :contexts (multifile) :section act :desc-key :mf-action-delete)
     (:id mf-push :cmd context-navigator-multifile-push
@@ -290,10 +288,9 @@ Falls back to broader contexts when exact CONTEXT not found:
 - context-navigator-multifile-mode-map    ← multifile + global
 - context-navigator-groups-split-mode-map ← groups-split + global"
   (interactive)
-  ;; View (only global/items; 'groups now lives in the split)
+  ;; View: apply only items (no global bindings in the view map)
   (when (and (boundp 'context-navigator-view-mode-map)
              (keymapp context-navigator-view-mode-map))
-    (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
     (context-navigator-keys-apply-to context-navigator-view-mode-map 'items))
   ;; Multifile
   (when (and (boundp 'context-navigator-multifile-mode-map)

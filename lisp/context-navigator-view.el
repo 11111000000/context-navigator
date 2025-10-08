@@ -511,7 +511,6 @@ Only minimal remaps are defined here; all other bindings are applied from `conte
 
 ;; Apply centralized keyspec bindings (middle path)
 (when (fboundp 'context-navigator-keys-apply-to)
-  (context-navigator-keys-apply-to context-navigator-view-mode-map 'global)
   (context-navigator-keys-apply-to context-navigator-view-mode-map 'items))
 
 (defun context-navigator-view--hl-line-range ()

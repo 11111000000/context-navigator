@@ -70,9 +70,8 @@
   "Apply which-key replacements for Navigator maps from keyspec (idempotent, safe)."
   (interactive)
   (when (featurep 'which-key)
-    ;; Sidebar (only global/items for the main view map; groups live in split)
+    ;; Sidebar: apply only items (no global labels in the view map)
     (ignore-errors
-      (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'global)
       (context-navigator-which-key--apply-to-map 'context-navigator-view-mode-map 'items))
     ;; Multifile
     (ignore-errors
