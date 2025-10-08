@@ -90,6 +90,20 @@
     (setq groups (ignore-errors (context-navigator-persist-list-groups root)))
     (setq groups (sort (or groups '()) #'context-navigator--groups-sortless))
     (context-navigator-events-publish :groups-list-updated root groups)
+    ;; Also update the sidebar Groups view immediately (in case events are not yet wired),
+    ;; so the result of create/delete/duplicate is visible without manual refresh.
+    (let ((buf (get-buffer "*context-navigator*")))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (setq-local context-navigator-view--groups groups)
+          ;; Invalidate render caches so the next render isn't skipped
+          (when (fboundp 'context-navigator-view--invalidate-render-caches)
+            (context-navigator-view--invalidate-render-caches))
+          ;; Schedule a refresh and render now if visible
+          (when (fboundp 'context-navigator-view--schedule-render)
+            (context-navigator-view--schedule-render))
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (context-navigator-view--render-if-visible)))))
     groups))
 
 ;;;###autoload

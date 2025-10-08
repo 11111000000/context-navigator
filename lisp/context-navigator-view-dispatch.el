@@ -60,6 +60,11 @@
 ;; Buffer-local mode flag defined by the main view
 (defvar-local context-navigator-view--mode 'items)
 
+(defun context-navigator-view--groups-ui-context-p ()
+  "Return non-nil when current UI is a groups context (Navigator groups view or Groups split)."
+  (or (eq context-navigator-view--mode 'groups)
+      (eq major-mode 'context-navigator-groups-split-mode)))
+
 ;;;###autoload
 (defun context-navigator-view-activate ()
   "RET action:
@@ -124,7 +129,7 @@
 (defun context-navigator-view-delete-dispatch ()
   "d action: delete item (items mode) or group (groups mode)."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
+  (if (context-navigator-view--groups-ui-context-p)
       (if-let* ((slug (get-text-property (point) 'context-navigator-group-slug)))
           (progn
             (ignore-errors (context-navigator-group-delete slug))
@@ -150,19 +155,21 @@
 (defun context-navigator-view-group-create ()
   "Create a new group (groups mode)."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
+  (if (context-navigator-view--groups-ui-context-p)
       (let ((slug (ignore-errors (context-navigator-group-create))))
-        ;; After successful creation, switch to items view immediately.
+        ;; After successful creation: in Navigator groups view switch to items,
+        ;; in Groups split we keep the split as-is (list will refresh).
         (when (and slug (stringp slug))
-          (setq context-navigator-view--mode 'items)
-          (context-navigator-view--schedule-render)))
+          (when (eq major-mode 'context-navigator-view-mode)
+            (setq context-navigator-view--mode 'items)
+            (context-navigator-view--schedule-render))))
     (context-navigator-ui-info :press-h-open-groups-first)))
 
 ;;;###autoload
 (defun context-navigator-view-group-rename ()
   "Rename selected group (groups mode)."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
+  (if (context-navigator-view--groups-ui-context-p)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
         (ignore-errors (context-navigator-group-rename slug))
         (context-navigator-view--schedule-render)
@@ -173,7 +180,7 @@
 (defun context-navigator-view-group-duplicate ()
   "Duplicate selected group (groups mode)."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
+  (if (context-navigator-view--groups-ui-context-p)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
         (ignore-errors (context-navigator-group-duplicate slug))
         (context-navigator-view--schedule-render)
@@ -184,7 +191,7 @@
 (defun context-navigator-view-group-edit-description ()
   "Edit description for selected group (groups mode) or current group otherwise."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
+  (if (context-navigator-view--groups-ui-context-p)
       (let ((slug (get-text-property (point) 'context-navigator-group-slug)))
         (ignore-errors (context-navigator-group-edit-description slug))
         (context-navigator-view--schedule-render)

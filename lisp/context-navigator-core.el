@@ -99,7 +99,7 @@ latest state at execution time; setting this to 0 disables debouncing
   "Autoload context when switching projects."
   :type 'boolean :group 'context-navigator)
 
-(defcustom context-navigator-default-push-to-gptel nil
+(defcustom context-navigator-default-push-to-gptel t
   "Default session state for pushing Navigator context to gptel."
   :type 'boolean :group 'context-navigator)
 
@@ -1373,15 +1373,19 @@ Strategy:
   (context-navigator--subscribe-model-refreshed))
 
 (defun context-navigator--reload-active-group-or-autoproject ()
-  "Reload active group from disk; otherwise pick a reasonable project root."
+  "Reload current group from disk (persisted :current); otherwise pick a reasonable project root."
   (let* ((st (ignore-errors (context-navigator--state-get)))
-         (root (and st (context-navigator-state-last-project-root st)))
-         (slug (and st (context-navigator-state-current-group-slug st))))
+         (root (or (and st (ignore-errors (context-navigator-state-last-project-root st)))
+                   (ignore-errors (context-navigator--pick-root-for-autoproject))))
+         ;; Read :current from state.el when available; fall back to existing state's slug or \"default\"
+         (ps (ignore-errors (context-navigator-persist-state-load root)))
+         (slug (or (and st (ignore-errors (context-navigator-state-current-group-slug st)))
+                   (and (listp ps) (plist-get ps :current))
+                   "default")))
     (if (and (stringp slug) (not (string-empty-p slug)))
         (ignore-errors (context-navigator--load-group-for-root root slug))
       (when context-navigator--auto-project-switch
-        (let ((r (ignore-errors (context-navigator--pick-root-for-autoproject))))
-          (context-navigator-events-publish :project-switch r))))))
+        (context-navigator-events-publish :project-switch root)))))
 
 (defun context-navigator--reinit-after-reload ()
   "Reinstall hooks/subscriptions when file is reloaded and mode is ON.
@@ -1438,8 +1442,9 @@ Also reload the currently active group from disk (no clearing)."
                   context-navigator-icons
                   context-navigator-i18n
                   context-navigator-headerline
-                  context-navigator-modeline
-                  context-navigator-path-add
+                  context-navigator-view-modeline
+                  context-navigator-add-paths
+                  context-navigator-which-key
                   context-navigator-transient
                   context-navigator-view)))
       (dolist (m mods)
@@ -1466,6 +1471,11 @@ Also reload the currently active group from disk (no clearing)."
         (when root
           (context-navigator-events-publish :project-switch root)
           (ignore-errors (context-navigator-groups-open)))))
+    ;; Re-apply keys and which-key labels (if available) after reload.
+    (when (fboundp 'context-navigator-keys-apply-known-keymaps)
+      (ignore-errors (context-navigator-keys-apply-known-keymaps)))
+    (when (fboundp 'context-navigator-which-key-apply!)
+      (ignore-errors (context-navigator-which-key-apply!)))
     ;; Allow saves again after restart has finished wiring; loading-phase handlers
     ;; will clear the suppression flag once items are loaded.
     (setq context-navigator-persist-suppress-empty-save nil)

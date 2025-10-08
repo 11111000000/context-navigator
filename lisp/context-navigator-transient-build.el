@@ -155,52 +155,29 @@ Groups: Navigate / Groups / Session / Tools."
      (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
     lst))
 
+(defun context-navigator-transient-build-groups-split ()
+  "Return a list of raw group vectors for the Groups split transient.
+Groups: Navigate / Actions / Tools."
+  (let* ((g1 (context-navigator-transient-build--group 'groups-split '(navigate)))
+         (g2 (context-navigator-transient-build--group 'groups-split '(act)))
+         (g3 (context-navigator-transient-build--group 'groups-split '(tools)))
+         (lst (delq nil (list g1 g2 g3))))
+    (context-navigator-transient-build--log
+     "build-groups-split: groups=%s (navigate=%s act=%s tools=%s)"
+     (length lst) (and g1 t) (and g2 t) (and g3 t))
+    lst))
+
 ;; -------- Global transient (Panel/Project, Context/Groups, Actions, Control, Logs)
 
-(defcustom context-navigator-transient-global-spec
-  '((:section panel
-     ("n" :tr-toggle-sidebar context-navigator-toggle)
-     ("O" :tr-display-mode context-navigator-display-mode-toggle)
-     ("p" :tr-switch-project context-navigator-switch-to-current-buffer-project))
-    (:section context
-     ("g" :tr-groups-list context-navigator-view-show-groups)
-     ("D" :clear-group context-navigator-context-clear-current-group))
-    (:section actions
-     ("a" :tr-add-universal context-navigator-add-universal)
-     ("f" :add-from-minibuf context-navigator-add-from-minibuffer)
-     ("t" :add-from-text context-navigator-add-from-text)
-     ("b" :select-by-name context-navigator-select-by-name)
-     ("o" :tr-open-buffers context-navigator-view-open-all-buffers)
-     ("m" :tr-multifile context-navigator-multifile-open))
-    (:section control
-     ("M" :toggle-multi-group context-navigator-view-toggle-multi-group)
-     ("V" :tr-toggle-push context-navigator-toggle-push-to-gptel)
-     ("A" :tr-toggle-auto context-navigator-toggle-auto-project-switch)
-     ;; ("M" :enable-all-gptel context-navigator-view-enable-all-gptel)
-     ;; ("U" :disable-all-gptel context-navigator-view-disable-all-gptel)
-     ("T" :toggle-all-gptel context-navigator-view-toggle-all-gptel)
-     ("P" :tr-push-now context-navigator-push-to-gptel-now)
-     ("X" :clear-gptel context-navigator-clear-gptel-now)
-     ("R" :tr-razor context-navigator-razor-run :if (lambda () (derived-mode-p 'org-mode))))
-    (:section logs
-     ("D" :tr-logs-toggle context-navigator-log-toggle)
-     ("L" :tr-logs-open context-navigator-log-open)
-     ("K" :tr-logs-clear context-navigator-log-clear)
-     ("=" :tr-logs-set-level context-navigator-log-set-level)
-     ("F" :tr-logs-toggle-file context-navigator-log-toggle-file-persistence)))
-  "Global transient spec: sections with (key i18n-key command [:if PRED])."
-  :type 'sexp
-  :group 'context-navigator-transient-build)
+(defvar context-navigator-transient-global-spec nil
+  "Obsolete. Global transient spec is generated from keyspec now.
+See `context-navigator-transient-build-global'.")
+(put 'context-navigator-transient-global-spec 'obsolete-variable
+     "Use keyspec + context-navigator-transient-build-global instead.")
 
 (defun context-navigator-transient-build--title-global (sec)
-  "Localized title for global transient section SEC."
-  (pcase sec
-    ('panel   (context-navigator-i18n :tr-panel))
-    ('context (context-navigator-i18n :tr-context))
-    ('actions (context-navigator-i18n :tr-actions))
-    ('control (context-navigator-i18n :tr-control))
-    ('logs    (context-navigator-i18n :tr-logs))
-    (_        (symbol-name sec))))
+  "Obsolete. Use `context-navigator-transient-build--title' instead."
+  (context-navigator-transient-build--title sec))
 
 (defun context-navigator-transient-build-global ()
   "Build global transient raw groups from keyspec (:contexts contains 'global).

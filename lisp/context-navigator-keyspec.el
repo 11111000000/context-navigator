@@ -38,7 +38,7 @@
     (:id switch-project :cmd context-navigator-switch-to-current-buffer-project
          :keys ("p") :contexts (global) :section tools :desc-key :tr-switch-project)
     (:id groups-split :cmd context-navigator-groups-split-toggle
-         :keys ("G") :contexts (global) :section navigate :desc-key :toggle-groups-split)
+         :keys ("G" "h") :contexts (global) :section navigate :desc-key :toggle-groups-split)
     (:id groups-list :cmd context-navigator-view-show-groups
          :keys ("g") :contexts (global) :section navigate :desc-key :tr-groups-list)
     (:id stats :cmd context-navigator-view-stats-toggle
@@ -107,7 +107,7 @@
 
     ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar    
     (:id gs-close :cmd context-navigator-groups-split-close
-         :keys ("q") :contexts (groups-split) :section navigate :desc-key :help-quit)
+         :keys ("q" "h") :contexts (groups-split) :section navigate :desc-key :help-quit)
     (:id gs-next :cmd next-line
          :keys ("j" "n" "<down>") :contexts (groups-split) :section navigate :desc-key :help-next-item)
     (:id gs-prev :cmd previous-line
@@ -123,7 +123,7 @@
     (:id group-duplicate :cmd context-navigator-view-group-duplicate
          :keys ("C") :contexts (groups-split) :section act :desc-key :help-group-duplicate)
     (:id group-delete :cmd context-navigator-view-delete-dispatch
-         :keys ("D") :contexts (groups) :section act :desc-key :groups-help-delete)
+         :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
          :keys ("t") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
     

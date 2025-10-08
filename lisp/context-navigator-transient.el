@@ -99,6 +99,29 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
        (transient-parse-suffixes 'context-navigator-view-transient (list cols))))
     (transient-setup 'context-navigator-view-transient)))
 
+;;;###autoload
+(transient-define-prefix context-navigator-groups-split-transient ()
+  "Groups split menu"
+  (interactive)
+  (let* ((core (context-navigator-transient-build-groups-split))
+         ;; Help/Exit as a regular group vector
+         (help ["Help/Exit"
+                ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)
+                ("q" (lambda () (context-navigator-i18n :help-quit)) context-navigator-view-quit)])
+         (raw-groups (append core (list help)))
+         (core-len   (and (listp core) (length core))))
+    (ignore-errors
+      (when (fboundp 'context-navigator-debug)
+        (context-navigator-debug :info :transient
+                                 "groups-split-transient: core-len(list)=%s" core-len)))
+    (when (or (null core) (= (or core-len 0) 0))
+      (message "[context-navigator] groups-split transient core is empty (len=%S)" core-len))
+    (let* ((cols (apply #'vector raw-groups)))
+      (transient--set-layout
+       'context-navigator-groups-split-transient
+       (transient-parse-suffixes 'context-navigator-groups-split-transient (list cols))))
+    (transient-setup 'context-navigator-groups-split-transient)))
+
 ;; Add logic moved to context-navigator-add.el
 
 ;; Always show our transients in a small pop-up window, regardless of previous pop-up sizes.
@@ -128,6 +151,7 @@ otherwise use a small fixed-height window."
 
 (advice-add 'context-navigator-transient :around #'context-navigator--with-small-transient)
 (advice-add 'context-navigator-view-transient :around #'context-navigator--with-small-transient)
+(advice-add 'context-navigator-groups-split-transient :around #'context-navigator--with-small-transient)
 
 (provide 'context-navigator-transient)
 ;;; context-navigator-transient.el ends here

@@ -176,9 +176,13 @@
 
 ;;;###autoload
 (defun context-navigator-start ()
-  "Enable the mode, refresh model, and open Navigator (buffer or sidebar) per current display mode."
+  "Enable the mode, refresh model, and open Navigator (buffer or sidebar) per current display mode.
+Ensure session flags follow defaults. Initial project switch is handled by the mode when enabled."
   (interactive)
-  (context-navigator-mode 1)     ;; autoloads core
+  (context-navigator-mode 1)     ;; autoloads core and triggers initial project switch when ON
+  ;; Ensure session flags follow defaults on startup
+  (setq context-navigator--auto-project-switch context-navigator-default-auto-project-switch)
+  (setq context-navigator--push-to-gptel       context-navigator-default-push-to-gptel)
   (context-navigator-refresh)    ;; autoloads core if needed
   (ignore-errors (context-navigator-open)))
 

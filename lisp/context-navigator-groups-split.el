@@ -333,11 +333,17 @@ Always return focus to the items list in the Navigator."
 
 ;;;###autoload
 (defun context-navigator-groups-split-toggle ()
-  "Toggle the Groups split."
+  "Context-aware toggle for the Groups split:
+- When invoked from the Groups split, close it.
+- When invoked from elsewhere (e.g., Navigator items), open if closed, otherwise focus it."
   (interactive)
-  (if (context-navigator-groups-split-visible-p)
+  (if (eq major-mode 'context-navigator-groups-split-mode)
       (context-navigator-groups-split-close)
-    (context-navigator-groups-split-open)))
+    (if (context-navigator-groups-split-visible-p)
+        (let ((win (context-navigator-groups-split--visible-window)))
+          (when (window-live-p win) (select-window win))
+          win)
+      (context-navigator-groups-split-open))))
 
 (defun context-navigator-groups-split--focus-navigator ()
   "Move focus back to Navigator window if present."

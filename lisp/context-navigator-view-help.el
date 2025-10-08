@@ -17,6 +17,9 @@
 ;;;###autoload
 (autoload 'context-navigator-view-transient "context-navigator-transient"
   "Open Context Navigator transient menu." t)
+;;;###autoload
+(autoload 'context-navigator-groups-split-transient "context-navigator-transient"
+  "Open Groups Split transient menu." t)
 
 ;;;###autoload
 (defun context-navigator-view-help ()
@@ -103,6 +106,11 @@ Otherwise open the Global transient. Fallback to Help if transients are unavaila
                                  "open-menu: in-view=%s sidebar=%s focused=%s"
                                  (and in-view t) (and sidebar-win t) (and focused-in-sidebar t))))
     (cond
+     ;; Groups split buffer → Groups-split transient
+     ((eq major-mode 'context-navigator-groups-split-mode)
+      (if (fboundp 'context-navigator-groups-split-transient)
+          (call-interactively 'context-navigator-groups-split-transient)
+        (call-interactively 'context-navigator-view-help)))
      ;; Sidebar is visible/active → View transient
      (in-view
       (if (fboundp 'context-navigator-view-transient)
