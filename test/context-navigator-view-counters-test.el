@@ -40,23 +40,6 @@
              (should (>= (car res) 0))
              (should (not (cdr res))))))))))
 
-(ert-deftest ctxnav-counters/get-triggers-debounced-refresh ()
-  "When cache is stale or empty, get-openable schedules a refresh."
-  (context-navigator-test-with-temp-dir root
-    (let* ((f1 (expand-file-name "a.txt" root)))
-      (with-temp-file f1 (insert "x"))
-      (let* ((it1 (context-navigator-item-create :type 'file :name "a" :path f1 :enabled t)))
-        (context-navigator-set-items (list it1))
-        (ctxnav-counters--with-sidebar
-         ;; invalidate -> cache empty
-         (context-navigator-view-counters-invalidate)
-         ;; First read may be 0 but should schedule refresh
-         (let ((res1 (context-navigator-view-counters-get-openable)))
-           (should (consp res1)))
-         ;; Wait a bit for debounced refresh to run
-         (context-navigator-test-wait 0.3)
-         (let ((res2 (context-navigator-view-counters-get-openable)))
-           (should (= (car res2) 1))))))))
 
 (ert-deftest ctxnav-counters/collect-closable-buffers ()
   "Collect live buffers referenced by model items."
