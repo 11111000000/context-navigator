@@ -54,7 +54,7 @@
     (:id select-by-name :cmd context-navigator-select-by-name
          :keys ("b") :contexts (global) :section act :desc-key :select-by-name)
     (:id multifile-open :cmd context-navigator-multifile-open
-         :keys ("m") :contexts (global) :section tools :desc-key :tr-multifile)
+         :keys ("O") :contexts (global) :section tools :desc-key :tr-multifile)
 
     ;; Control / session
     (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
@@ -125,11 +125,11 @@
     (:id group-delete :cmd context-navigator-view-delete-dispatch
          :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)
     (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
-         :keys ("t") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
+         :keys ("m") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
     
     ;; Items actions
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
-         :keys ("SPC" "t") :contexts (items) :section act :desc-key :help-toggle-gptel)
+         :keys ("m") :contexts (items) :section act :desc-key :help-toggle-gptel)
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items global) :section act :desc-key :toggle-all-gptel)
     
@@ -300,8 +300,9 @@ Falls back to broader contexts when exact CONTEXT not found:
   ;; Multifile
   (when (and (boundp 'context-navigator-multifile-mode-map)
              (keymapp context-navigator-multifile-mode-map))
-    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'multifile)
-    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'global))
+    ;; Apply global first so local multifile context can override collisions (e.g., q)
+    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'global)
+    (context-navigator-keys-apply-to context-navigator-multifile-mode-map 'multifile))
   ;; Groups split (bottom panel)
   (when (and (boundp 'context-navigator-groups-split-mode-map)
              (keymapp context-navigator-groups-split-mode-map))

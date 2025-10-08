@@ -388,6 +388,14 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
     (if prev
         (progn
           (context-navigator--apply-snapshot prev)
+          ;; Форсируем перерисовку: инвалидация кеша контента (plain-text хеш)
+          ;; нужна для случаев, когда изменились только фейсы/проперти.
+          (let ((buf (get-buffer "*context-navigator*")))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (setq-local context-navigator-render--last-hash nil))))
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (ignore-errors (context-navigator-view--render-if-visible)))
           (context-navigator-ui-info :razor-undo))
       (context-navigator-ui-info :nothing-to-undo))))
 
@@ -400,6 +408,13 @@ This avoids depending on cl-copy-struct and keeps copying explicit."
     (if next
         (progn
           (context-navigator--apply-snapshot next)
+          ;; Принудительная перерисовка (как в контролах): инвалидация кеша + render now
+          (let ((buf (get-buffer "*context-navigator*")))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (setq-local context-navigator-render--last-hash nil))))
+          (when (fboundp 'context-navigator-view--render-if-visible)
+            (ignore-errors (context-navigator-view--render-if-visible)))
           (context-navigator-ui-info :razor-redo))
       (context-navigator-ui-info :nothing-to-redo))))
 

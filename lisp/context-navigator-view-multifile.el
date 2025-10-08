@@ -91,6 +91,8 @@
     (define-key m (kbd "<tab>")     #'context-navigator-multifile-toggle-section)
     (define-key m [tab]             #'context-navigator-multifile-toggle-section)
     (define-key m (kbd "C-i")       #'context-navigator-multifile-toggle-section)
+    ;; Ensure q quits Multifile view locally (override any global 'q')
+    (define-key m (kbd "q")         #'context-navigator-multifile-close)
     m)
   "Keymap for `context-navigator-multifile-mode'.")
 ;; Apply centralized keyspec bindings
