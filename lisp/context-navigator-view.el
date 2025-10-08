@@ -195,6 +195,20 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (declare-function context-navigator-view-group-toggle-select "context-navigator-view-dispatch" ())
 (declare-function context-navigator-view-push-now-dispatch "context-navigator-view-dispatch" ())
 
+;; Lightweight autoloads for dispatchers so keyspec can bind before files load
+;; (works even when the umbrella file wasn't required yet).
+(autoload 'context-navigator-view-activate            "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-toggle-dispatch     "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-refresh-dispatch    "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-delete-dispatch     "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-go-up               "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-group-create        "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-group-rename        "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-group-duplicate     "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-group-edit-description "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-group-toggle-select "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-push-now-dispatch   "context-navigator-view-dispatch" nil t)
+
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
 (defvar-local context-navigator-view--mode 'items) ;; 'items | 'groups

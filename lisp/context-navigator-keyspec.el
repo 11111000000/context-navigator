@@ -121,6 +121,7 @@
     ;; Items actions
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("m") :contexts (items) :section act :desc-key :help-toggle-gptel)
+    
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items global) :section act :desc-key :toggle-all-gptel)
     
