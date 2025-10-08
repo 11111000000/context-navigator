@@ -42,6 +42,18 @@
 (defvar-local context-navigator--modeline-inactive-face-cookie nil)
 (defvar-local context-navigator--modeline-active-face-cookie nil)
 
+(defvar-local context-navigator-modeline--cached-menu nil
+  "Cached concatenated controls string for Navigator modeline.")
+
+(defun context-navigator-modeline--rebuild-menu-cache ()
+  "Rebuild and cache the controls menu string for the Navigator modeline.
+This function may call heavy control renderers; call it only on explicit events."
+  (let* ((segs (and (fboundp 'context-navigator-view-controls-segments)
+                    (context-navigator-view-controls-segments)))
+         (txt (mapconcat (lambda (s) (or s "")) (or segs '()) "")))
+    (setq context-navigator-modeline--cached-menu txt)
+    txt))
+
 (defun context-navigator-modeline--ensure-face ()
   "Ensure Navigator modeline uses header-line-like background with no border."
   (when (eq major-mode 'context-navigator-view-mode)
@@ -149,14 +161,13 @@ If the item is outside the current project root, show an abbreviated absolute pa
         ""))))
 
 (defun context-navigator-modeline-string ()
-  "Return controls line as modeline for Context Navigator buffers.
-Do not override faces of individual segments; only dim the leading padding."
-  (let* ((segs (and (fboundp 'context-navigator-view-controls-segments)
-                    (context-navigator-view-controls-segments)))
-         (txt (mapconcat (lambda (s) (or s "")) (or segs '()) ""))
-         ;; Apply modeline face only to the left padding so segment faces remain visible.
-         (pad (propertize " " 'face context-navigator-view-modeline-face)))
-    (concat pad txt)))
+  "Return toolbar controls for Navigator modeline from cache (no IO on redisplay)."
+  (let* ((pad (propertize " " 'face context-navigator-view-modeline-face))
+         (body (or context-navigator-modeline--cached-menu
+                   (and (fboundp 'context-navigator-modeline--rebuild-menu-cache)
+                        (context-navigator-modeline--rebuild-menu-cache))
+                   "")))
+    (concat pad body)))
 
 (defun context-navigator-modeline--apply (buffer)
   "Apply or remove modeline in BUFFER based on the feature flag.

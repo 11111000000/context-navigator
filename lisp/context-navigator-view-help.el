@@ -53,11 +53,12 @@
                 ('act      (context-navigator-i18n :tr-actions))
                 ('groups   (context-navigator-i18n :tr-groups))
                 ('session  (context-navigator-i18n :tr-session))
+                ('logs     (context-navigator-i18n :tr-logs))
                 (_         "Tools"))))
-           (order '(navigate act groups session tools))
+           (order '(navigate act session tools logs))
            (global-help (and (fboundp 'context-navigator-keys-help)
                              (context-navigator-keys-help 'global)))
-           (ctx (if (eq mode 'groups) 'groups 'items))
+           (ctx 'items)
            (ctx-help (and (fboundp 'context-navigator-keys-help)
                           (context-navigator-keys-help ctx))))
       ;; Title
@@ -67,8 +68,7 @@
                (context-navigator-i18n :help-global-title)
                (funcall flatten global-help))
       ;; Context keys (Items/Groups)
-      (princ (if (eq ctx 'groups) (context-navigator-i18n :tr-groups)
-               (context-navigator-i18n :tr-items)))
+      (princ (context-navigator-i18n :tr-items))
       (princ "\n\n")
       (dolist (sec order)
         (let* ((block (assoc sec ctx-help))
@@ -77,10 +77,7 @@
           (when pairs
             (funcall print-section title pairs))))
       ;; Small summaries
-      (when (eq ctx 'items)
-        (princ (context-navigator-i18n :items-help-help)) (princ "\n"))
-      (when (eq ctx 'groups)
-        (princ (context-navigator-i18n :help-groups-summary)) (princ "\n")))))
+      (princ (context-navigator-i18n :items-help-help)) (princ "\n"))))
 
 ;;;###autoload
 (defun context-navigator-view-open-menu ()

@@ -39,6 +39,7 @@
     ('act      (context-navigator-i18n :tr-actions))
     ('groups   (context-navigator-i18n :tr-groups))
     ('session  (context-navigator-i18n :tr-session))
+    ('logs     (context-navigator-i18n :tr-logs))
     (_         "Tools")))
 
 (defun context-navigator-transient-build--entries (context sections)
@@ -136,24 +137,14 @@ Groups: Navigate / Actions / Session / Tools."
          (g2 (context-navigator-transient-build--group 'items   '(act)))
          (g3 (context-navigator-transient-build--group 'items   '(session)))
          (g4 (context-navigator-transient-build--group 'items   '(tools)))
-         (lst (delq nil (list g1 g2 g3 g4))))
+         (g5 (context-navigator-transient-build--group 'items   '(logs)))
+         (lst (delq nil (list g1 g2 g3 g4 g5))))
     (context-navigator-transient-build--log
-     "build-view-items: groups=%s (navigate=%s act=%s session=%s tools=%s)"
-     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
+     "build-view-items: groups=%s (navigate=%s act=%s session=%s tools=%s logs=%s)"
+     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t) (and g5 t))
     lst))
 
-(defun context-navigator-transient-build-view-groups ()
-  "Return a list of raw group vectors for the View (groups mode).
-Groups: Navigate / Groups / Session / Tools."
-  (let* ((g1 (context-navigator-transient-build--group 'groups  '(navigate)))
-         (g2 (context-navigator-transient-build--group 'groups  '(groups)))
-         (g3 (context-navigator-transient-build--group 'groups  '(session)))
-         (g4 (context-navigator-transient-build--group 'groups  '(tools)))
-         (lst (delq nil (list g1 g2 g3 g4))))
-    (context-navigator-transient-build--log
-     "build-view-groups: groups=%s (navigate=%s groups=%s session=%s tools=%s)"
-     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
-    lst))
+
 
 (defun context-navigator-transient-build-groups-split ()
   "Return a list of raw group vectors for the Groups split transient.
@@ -161,10 +152,11 @@ Groups: Navigate / Actions / Tools."
   (let* ((g1 (context-navigator-transient-build--group 'groups-split '(navigate)))
          (g2 (context-navigator-transient-build--group 'groups-split '(act)))
          (g3 (context-navigator-transient-build--group 'groups-split '(tools)))
-         (lst (delq nil (list g1 g2 g3))))
+         (g4 (context-navigator-transient-build--group 'groups-split '(logs)))
+         (lst (delq nil (list g1 g2 g3 g4))))
     (context-navigator-transient-build--log
-     "build-groups-split: groups=%s (navigate=%s act=%s tools=%s)"
-     (length lst) (and g1 t) (and g2 t) (and g3 t))
+     "build-groups-split: groups=%s (navigate=%s act=%s tools=%s logs=%s)"
+     (length lst) (and g1 t) (and g2 t) (and g3 t) (and g4 t))
     lst))
 
 ;; -------- Global transient (Panel/Project, Context/Groups, Actions, Control, Logs)
@@ -182,7 +174,7 @@ See `context-navigator-transient-build-global'.")
 (defun context-navigator-transient-build-global ()
   "Build global transient raw groups from keyspec (:contexts contains 'global).
 Return a list of group vectors suitable for `transient-parse-suffixes'."
-  (let* ((sections '(navigate act session tools))
+  (let* ((sections '(navigate act session tools logs))
          (groups '()))
     (dolist (sec sections)
       (let ((g (context-navigator-transient-build--group 'global (list sec))))

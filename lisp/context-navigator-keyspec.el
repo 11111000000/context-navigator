@@ -7,8 +7,8 @@
 ;; - :id       stable identifier
 ;; - :cmd      command symbol
 ;; - :keys     list of key strings (kbd style)
-;; - :contexts (items groups multifile global)
-;; - :section  navigate | act | groups | session | tools
+;; - :contexts (items groups-split multifile global)
+;; - :section  navigate | act | groups | session | tools | logs
 ;; - :desc-key i18n key for help/labels (optional)
 ;;
 ;; Provides:
@@ -39,8 +39,7 @@
          :keys ("p") :contexts (global) :section tools :desc-key :tr-switch-project)
     (:id groups-split :cmd context-navigator-groups-split-toggle
          :keys ("G" "h") :contexts (global) :section navigate :desc-key :toggle-groups-split)
-    (:id groups-list :cmd context-navigator-view-show-groups
-         :keys ("g") :contexts (global) :section navigate :desc-key :tr-groups-list)
+
     (:id stats :cmd context-navigator-view-stats-toggle
          :keys ("S") :contexts (global) :section navigate :desc-key :stats)
 
@@ -58,38 +57,32 @@
 
     ;; Control / session
     (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
-         :keys ("M") :contexts (global) :section navigate :desc-key :toggle-multi-group)
+         :keys ("M") :contexts (global items groups-split) :section navigate :desc-key :toggle-multi-group)
     (:id push-toggle :cmd context-navigator-view-toggle-push
-         :keys ("V") :contexts (global) :section session :desc-key :help-toggle-push)
+         :keys ("V") :contexts (global items groups-split) :section session :desc-key :help-toggle-push)
     (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
-         :keys ("A") :contexts (global) :section session :desc-key :help-toggle-auto)
+         :keys ("A") :contexts (global items groups-split) :section session :desc-key :help-toggle-auto)
     (:id push-now :cmd context-navigator-view-push-now
-         :keys ("P") :contexts (global) :section session :desc-key :help-push-now)
+         :keys ("P") :contexts (global items groups-split) :section session :desc-key :help-push-now)
     (:id disable-all :cmd context-navigator-view-disable-all-gptel
-         :keys ("U") :contexts (global) :section act :desc-key :disable-all-gptel)
+         :keys ("U") :contexts (global items groups-split) :section act :desc-key :disable-all-gptel)
     ;; Toggle-all/clear-gptel будут также доступны в global через расширение контекста ниже.
     (:id razor-run :cmd context-navigator-view-razor-run
-         :keys ("R") :contexts (global) :section tools :desc-key :tr-razor)
+         :keys ("R") :contexts (global items groups-split) :section tools :desc-key :tr-razor)
 
     ;; Logs
     (:id logs-toggle :cmd context-navigator-log-toggle
-         :keys ("D") :contexts (global) :section tools :desc-key :tr-logs-toggle)
+         :keys ("D") :contexts (global) :section logs :desc-key :tr-logs-toggle)
     (:id logs-open :cmd context-navigator-log-open
-         :keys ("L") :contexts (global) :section tools :desc-key :tr-logs-open)
+         :keys ("L") :contexts (global) :section logs :desc-key :tr-logs-open)
     (:id logs-clear :cmd context-navigator-log-clear
-         :keys ("K") :contexts (global) :section tools :desc-key :tr-logs-clear)
+         :keys ("K") :contexts (global) :section logs :desc-key :tr-logs-clear)
     (:id logs-set-level :cmd context-navigator-log-set-level
-         :keys ("=") :contexts (global) :section tools :desc-key :tr-logs-set-level)
+         :keys ("=") :contexts (global) :section logs :desc-key :tr-logs-set-level)
     (:id logs-toggle-file :cmd context-navigator-log-toggle-file-persistence
-         :keys ("F") :contexts (global) :section tools :desc-key :tr-logs-toggle-file)
+         :keys ("F") :contexts (global) :section logs :desc-key :tr-logs-toggle-file)
 
-    ;; Session (items/groups)
-    (:id push-toggle :cmd context-navigator-view-toggle-push
-         :keys ("V") :contexts (global) :section session :desc-key :help-toggle-push)
-    (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
-         :keys ("A") :contexts (global) :section session :desc-key :help-toggle-auto)
-    (:id push-now :cmd context-navigator-view-push-now
-         :keys ("P") :contexts (global) :section session :desc-key :help-push-now)
+
     
     ;; Navigate (items/groups)
     (:id next :cmd context-navigator-view-next-item
@@ -97,13 +90,13 @@
     (:id prev :cmd context-navigator-view-previous-item
          :keys ("k" "p" "<up>") :contexts (items groups-split) :section navigate :desc-key :help-previous-item)
     (:id activate :cmd context-navigator-view-activate
-         :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (items groups) :section navigate :desc-key :help-activate)
+         :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (items) :section navigate :desc-key :help-activate)
     (:id preview :cmd context-navigator-view-preview
          :keys ("v") :contexts (items) :section navigate :desc-key :help-preview)
     (:id tab-next :cmd context-navigator-view-tab-next
-         :keys ("TAB" "<tab>" "C-i") :contexts (items groups) :section navigate :desc-key :help-next-item)
+         :keys ("TAB" "<tab>" "C-i") :contexts (items) :section navigate :desc-key :help-next-item)
     (:id tab-prev :cmd context-navigator-view-tab-previous
-         :keys ("<backtab>" "S-<tab>") :contexts (items groups) :section navigate :desc-key :help-previous-item)
+         :keys ("<backtab>" "S-<tab>") :contexts (items) :section navigate :desc-key :help-previous-item)
 
     ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar    
     (:id gs-close :cmd context-navigator-groups-split-close
@@ -138,7 +131,7 @@
     (:id delete :cmd context-navigator-view-delete-dispatch
          :keys ("d") :contexts (items) :section act :desc-key :help-delete)
     (:id refresh :cmd context-navigator-view-refresh-dispatch
-         :keys ("g") :contexts (items groups) :section act :desc-key :help-refresh)
+         :keys ("g") :contexts (items) :section act :desc-key :help-refresh)
     (:id open-buffers :cmd context-navigator-view-open-all-buffers
          :keys ("o") :contexts (items global) :section act :desc-key :help-open-all)
     (:id close-buffers :cmd context-navigator-view-close-all-buffers
@@ -147,6 +140,12 @@
          :keys ("x") :contexts (items global) :section act :desc-key :help-clear-group)
     (:id clear-gptel :cmd context-navigator-view-clear-gptel
          :keys ("X") :contexts (items global) :section act :desc-key :help-clear-gptel)
+
+    ;; Undo/Redo only in items and groups-split
+    (:id undo :cmd context-navigator-undo
+         :keys ("C-_") :contexts (items groups-split) :section tools :desc-key :razor-undo)
+    (:id redo :cmd context-navigator-redo
+         :keys ("M-_") :contexts (items groups-split) :section tools :desc-key :razor-redo)
     
     ;; Multifile
     (:id mf-visit :cmd context-navigator-multifile-activate
@@ -231,8 +230,7 @@ Falls back to broader contexts when exact CONTEXT not found:
   (let* ((entries context-navigator-keyspec)
          (ctx-chain
           (cond
-           ((eq context 'items)     '(items groups global))
-           ((eq context 'groups)    '(groups items global))
+           ((eq context 'items)     '(items global))
            ((eq context 'multifile) '(multifile global))
            (t                       (list context 'global)))))
     (catch 'hit
@@ -332,10 +330,10 @@ Profile may add/remove alias keys per action/context without changing the base s
      )
     (vimish
      ;; Ensure vim-like aliases present (most already in base spec).
-     (:id next     :contexts (items groups) :add ("j"))
-     (:id prev     :contexts (items groups) :add ("k"))
-     (:id groups-split  :contexts (items groups) :add ("h"))
-     (:id activate :contexts (items groups) :add ("l"))))
+     (:id next     :contexts (items) :add ("j"))
+     (:id prev     :contexts (items) :add ("k"))
+     (:id groups-split  :contexts (items) :add ("h"))
+     (:id activate :contexts (items) :add ("l"))))
   "Overlay edits per profile: a list keyed by profile symbol of plist edits:
 (:id ID :contexts (ctx...) :add (keys...) [:remove (keys...)])"
   :type '(alist :key-type symbol :value-type (repeat plist))

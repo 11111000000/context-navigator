@@ -127,6 +127,9 @@ DEFAULT should be a short key text like \"p\", \"x\", \"RET\", etc."
         (setq-local context-navigator-view--last-render-key nil)
         (setq-local context-navigator-headerline--cache-key nil)
         (setq-local context-navigator-headerline--cache-str nil)
+        ;; Rebuild modeline menu cache so redisplay doesn't compute controls.
+        (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
+          (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
         (force-mode-line-update t)
         (when (fboundp 'context-navigator-view--render-if-visible)
           (context-navigator-view--render-if-visible))))))
@@ -164,6 +167,26 @@ DEFAULT should be a short key text like \"p\", \"x\", \"RET\", etc."
         (when (integerp tot)
           (setq sum (+ sum tot)))))))
 
+(defun context-navigator-view-controls--mg-active-p ()
+  "Return non-nil if Multi-group mode is active for current root."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st)))
+         (ps (and (stringp root)
+                  (ignore-errors (context-navigator-persist-state-load root)))))
+    (and (listp ps) (plist-member ps :multi) (plist-get ps :multi))))
+
+(defun context-navigator-view-controls--can-push-p ()
+  "Return non-nil if pushing to gptel is allowed now.
+In Multi-group mode: selection non-empty and aggregated total > 0.
+Otherwise: current group has at least one enabled item."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st))))
+    (if (context-navigator-view-controls--mg-active-p)
+        (let* ((sel (context-navigator-view-controls--selected-slugs)))
+          (and (listp sel) (> (length sel) 0)
+               (> (context-navigator-view-controls--sum-total-for-slugs root sel) 0)))
+      (context-navigator-view-controls--items-enabled-p))))
+
 (defun context-navigator-view-controls--push-allowed-p ()
   "Return non-nil when push/auto should be enabled in groups mode.
 Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
@@ -185,19 +208,16 @@ Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
 
 (defun context-navigator-view-controls--push-disabled-reason ()
   "Return a localized reason string when push is disabled, or nil."
-  (let* ((mode (and (boundp 'context-navigator-view--mode)
-                    context-navigator-view--mode)))
-    (if (eq mode 'groups)
-        (let* ((st (ignore-errors (context-navigator--state-get)))
-               (root (and st (context-navigator-state-last-project-root st)))
-               (sel (context-navigator-view-controls--selected-slugs)))
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (root (and st (context-navigator-state-last-project-root st))))
+    (if (context-navigator-view-controls--mg-active-p)
+        (let* ((sel (context-navigator-view-controls--selected-slugs)))
           (cond
            ((or (null (listp sel)) (= (length sel) 0))
             (context-navigator-i18n :no-group-selected))
            ((<= (context-navigator-view-controls--sum-total-for-slugs root sel) 0)
             (context-navigator-i18n :no-items-in-selection))
            (t nil)))
-      ;; items mode
       (unless (context-navigator-view-controls--items-enabled-p)
         (context-navigator-i18n :razor-no-enabled-items)))))
 
@@ -231,16 +251,10 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :help ,(lambda ()
                 (let ((base (funcall tr :toggle-push))
                       (why (context-navigator-view-controls--push-disabled-reason)))
-                  (if (and why (not (context-navigator-view-controls--push-allowed-p)))
-                      (format "%s — %s" base why)
-                    base)))
+                  (if why (format "%s — %s" base why) base)))
        :enabled-p ,(lambda ()
                      (and (ignore-errors (context-navigator-gptel-available-p))
-                          (let* ((mode (and (boundp 'context-navigator-view--mode)
-                                            context-navigator-view--mode)))
-                            (if (eq mode 'groups)
-                                (context-navigator-view-controls--push-allowed-p)
-                              (context-navigator-view-controls--items-enabled-p)))))
+                          (context-navigator-view-controls--can-push-p)))
        :visible-p ,(lambda () t)
        :state-fn ,(lambda ()
                     (if (and (boundp 'context-navigator--push-to-gptel)
@@ -366,20 +380,10 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :command context-navigator-view-push-now
        :help ,(lambda ()
                 (let ((base (funcall tr :push-now))
-                      (mode (and (boundp 'context-navigator-view--mode)
-                                 context-navigator-view--mode)))
-                  (if (and (not (if (eq mode 'groups)
-                                    (context-navigator-view-controls--push-allowed-p)
-                                  (context-navigator-view-controls--items-enabled-p))))
-                      (let ((why (context-navigator-view-controls--push-disabled-reason)))
-                        (if why (format "%s — %s" base why) base))
-                    base)))
+                      (why (context-navigator-view-controls--push-disabled-reason)))
+                  (if why (format "%s — %s" base why) base)))
        :enabled-p ,(lambda ()
-                     (let* ((mode (and (boundp 'context-navigator-view--mode)
-                                       context-navigator-view--mode)))
-                       (if (eq mode 'groups)
-                           (context-navigator-view-controls--push-allowed-p)
-                         (context-navigator-view-controls--items-enabled-p))))
+                     (context-navigator-view-controls--can-push-p))
        :visible-p ,(lambda () t)
        :spinner-fn ,(lambda ()
                       (and (boundp 'context-navigator-view--gptel-batch-start-time)
@@ -560,6 +564,9 @@ Returns a propertized string or nil when not visible."
                (setq-local context-navigator-view--last-render-key nil)
                (setq-local context-navigator-headerline--cache-key nil)
                (setq-local context-navigator-headerline--cache-str nil)
+               ;; Rebuild modeline menu cache on structural changes
+               (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
+                 (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
                (when (fboundp 'context-navigator-view--render-if-visible)
                  (context-navigator-view--render-if-visible))))))
        ;; Ensure the navigator buffer uses the default header-line face.

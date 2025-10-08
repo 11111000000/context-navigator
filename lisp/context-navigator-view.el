@@ -223,6 +223,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--sticky-window-start nil)    ;; sticky: window-start to restore after re-render
 (defvar-local context-navigator-view--restore-once nil)           ;; one-shot: force cursor restore on next items render
 (defvar-local context-navigator-view--last-cursor-key nil)        ;; last observed cursor anchor (item key or "..")
+(defvar-local context-navigator-view--last-modeline-key nil)      ;; last modeline anchor we rendered
 (defvar-local context-navigator-view--cursor-post-cmd-fn nil)     ;; post-command hook to track cursor anchor
 
 (defun context-navigator-view-toggle-collapse-immediate ()
@@ -414,11 +415,7 @@ background."
                                      context-navigator-view--load-progress))
           (context-navigator-view--render-loading state header total)
           (throw 'context-navigator-view--render nil))
-        (cond
-         ((eq context-navigator-view--mode 'groups)
-          (context-navigator-view-render-groups state header total))
-         (t
-          (context-navigator-view-render-items state header total)))
+        (context-navigator-view-render-items state header total)
         ;; Refresh pinned title (posframe) after render
         (ignore-errors
           (when (fboundp 'context-navigator-title-refresh)
@@ -498,11 +495,7 @@ Keyboard bindings are inherited from `context-navigator-view-mode-map'.")
     (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
     ;; Safe defaults so core actions work even if keyspec hasn't been applied yet.
     ;; Keys from keyspec (when applied) will override these.
-    (define-key m (kbd "t") #'context-navigator-view-toggle-enabled)
-    (define-key m (kbd "s") #'context-navigator-view-stats-toggle)
-    ;; Undo/Redo inside Navigator buffers
-    (define-key m (kbd "C-_") #'context-navigator-undo)
-    (define-key m (kbd "M-_") #'context-navigator-redo)
+    ;; Undo/Redo come from keyspec (items/groups-split contexts)
     m)
   "Keymap for =context-navigator-view-mode'.
 Only minimal remaps are defined here; all other bindings are applied from `context-navigator-keyspec'.")
@@ -676,11 +669,9 @@ Do not highlight purely decorative separators."
 ;;; Dispatchers and commands
 
 (defun context-navigator-view-toggle-dispatch ()
-  "Toggle item or group selection depending on current View mode."
+  "Toggle item selection."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
-      (call-interactively 'context-navigator-view-group-toggle-select)
-    (call-interactively 'context-navigator-view-toggle-enabled)))
+  (call-interactively 'context-navigator-view-toggle-enabled))
 
 ;;;###autoload
 (defun context-navigator-view-toggle-multi-group-shim ()

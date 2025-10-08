@@ -142,6 +142,10 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                                                 "predictive lamps: enabled=%d"
                                                 (length (or keys '()))))))
                  (ignore-errors (context-navigator-view--invalidate-openable))
+                 ;; Rebuild modeline toolbar cache so redisplay stays cheap
+                 (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
+                   (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
+                 (force-mode-line-update t)
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
@@ -295,6 +299,10 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
                  ;; Invalidate render caches so selection lamps update immediately
                  (when (fboundp 'context-navigator-view--invalidate-render-caches)
                    (context-navigator-view--invalidate-render-caches t))
+                 ;; Rebuild modeline toolbar cache (menu depends on selection/MG)
+                 (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
+                   (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
+                 (force-mode-line-update t)
                  (context-navigator-view--schedule-render))))))
         context-navigator-view--subs))
 
@@ -322,6 +330,7 @@ Stores item key or \"..\" into `context-navigator-view--last-cursor-key'."
 (defvar context-navigator-view--gptel-poll-timer)
 (defvar context-navigator-view--buflist-fn nil)
 (defvar context-navigator-view--winselect-fn nil)
+(defvar context-navigator-view--last-modeline-key nil)
 
 ;; Small helpers now live here (moved from view.el)
 
@@ -390,12 +399,18 @@ hooks and a post-command updater. Also starts optional gptel polling."
     ;; Update modeline status as point moves inside the buffer
     (setq context-navigator-view--status-post-cmd-fn
           (lambda ()
-            ;; Обновление строки статуса (как было)
+            ;; Обновлять модельную строку только при смене якоря (ключа элемента).
             (when (and (eq major-mode 'context-navigator-view-mode)
                        (boundp 'context-navigator-view-modeline-enable)
                        context-navigator-view-modeline-enable)
-              (force-mode-line-update nil))
-            ))
+              (let* ((key (or (and (stringp context-navigator-view--last-cursor-key)
+                                   (not (string-empty-p context-navigator-view--last-cursor-key))
+                                   context-navigator-view--last-cursor-key)
+                              (let ((it (get-text-property (point) 'context-navigator-item)))
+                                (and it (context-navigator-model-item-key it))))))
+                (unless (equal key context-navigator-view--last-modeline-key)
+                  (setq context-navigator-view--last-modeline-key key)
+                  (force-mode-line-update nil))))))
     (add-hook 'post-command-hook context-navigator-view--status-post-cmd-fn nil t)
     (when (fboundp 'context-navigator-view--initial-compute-counters)
       (context-navigator-view--initial-compute-counters))

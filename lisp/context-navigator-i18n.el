@@ -147,6 +147,9 @@
     (:tr-session
      (en . "Session")
      (ru . "Сессия"))
+    (:tr-logs
+     (en . "Logs")
+     (ru . "Логи"))
     (:tr-help-exit
      (en . "Help / Exit")
      (ru . "Справка / Выход"))

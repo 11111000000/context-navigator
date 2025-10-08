@@ -72,10 +72,7 @@ Calls `context-navigator-view-activate' when available; otherwise shows a hint."
 (transient-define-prefix context-navigator-view-transient ()
   "Navigator menu"
   (interactive)
-  (let* ((core (if (and (boundp 'context-navigator-view--mode)
-                        (eq context-navigator-view--mode 'groups))
-                   (context-navigator-transient-build-view-groups)
-                 (context-navigator-transient-build-view-items)))
+  (let* ((core (context-navigator-transient-build-view-items))
          ;; Help/Exit as a regular group vector
          (help ["Help/Exit"
                 ("H" (lambda () (context-navigator-i18n :help-help)) context-navigator-view-help)

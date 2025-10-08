@@ -119,11 +119,9 @@
 
 ;;;###autoload
 (defun context-navigator-view-refresh-dispatch ()
-  "g action: refresh items or groups, depending on mode."
+  "g action: refresh items."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
-      (ignore-errors (context-navigator-groups-open))
-    (context-navigator-view-refresh)))
+  (context-navigator-view-refresh))
 
 ;;;###autoload
 (defun context-navigator-view-delete-dispatch ()
@@ -312,19 +310,10 @@ When push→gptel is ON, auto-apply aggregated selection if under threshold."
 
 ;;;###autoload
 (defun context-navigator-view-push-now-dispatch ()
-  "Push now: in groups mode push aggregated selected groups; otherwise delegate."
+  "Push current items to gptel now."
   (interactive)
-  (if (eq context-navigator-view--mode 'groups)
-      (let* ((st (ignore-errors (context-navigator--state-get)))
-             (root (and st (context-navigator-state-last-project-root st)))
-             (pstate (or (ignore-errors (context-navigator-persist-state-load root)) '()))
-             (sel (and (plist-member pstate :selected) (plist-get pstate :selected))))
-        (if (or (null (listp sel)) (= (length sel) 0))
-            (context-navigator-ui-info :no-group-selected)
-          (ignore-errors (context-navigator-apply-groups-now root sel))))
-    ;; Items mode: keep original behavior
-    (when (fboundp 'context-navigator-view-push-now)
-      (call-interactively 'context-navigator-view-push-now))))
+  (when (fboundp 'context-navigator-view-push-now)
+    (call-interactively 'context-navigator-view-push-now)))
 
 (provide 'context-navigator-view-dispatch)
 ;;; context-navigator-view-dispatch.el ends here

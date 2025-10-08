@@ -110,8 +110,6 @@
 (autoload 'context-navigator-view-group-edit-description "context-navigator-view-dispatch" "Edit a group's description from the sidebar." t)
 ;;;###autoload
 (autoload 'context-navigator-view-toggle-multi-group "context-navigator-view-dispatch" "Toggle per-project multi-group mode (:multi in state.el)." t)
-;;;###autoload
-(autoload 'context-navigator-view-toggle-multi-group "context-navigator-view-dispatch" "Toggle per-project multi-group mode (:multi in state.el)." t)
 
 ;;; Footer / batch actions
 ;;;###autoload

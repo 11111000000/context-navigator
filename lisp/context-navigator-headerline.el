@@ -19,6 +19,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'context-navigator-model)
 
 (defgroup context-navigator-headerline nil
   "Header-line controls for Context Navigator."
@@ -59,22 +60,25 @@
          (slug (and st (ignore-errors (context-navigator-state-current-group-slug st)))))
     (list root slug)))
 
-(defun context-navigator-headerline--mg-flag (root)
-  "Return non-nil when Multi-group is active for ROOT."
-  (let* ((ps (and (stringp root)
-                  (ignore-errors (context-navigator-persist-state-load root)))))
-    (and (listp ps) (plist-member ps :multi) (plist-get ps :multi))))
+(defun context-navigator-headerline--mg-flag (_root)
+  "Return non-nil when Multi-group is active for ROOT.
+Avoid disk IO during redisplay: do not read state.el here."
+  nil)
 
-(defun context-navigator-headerline--counts (root slug mg)
-  "Return (ENABLED TOTAL) for group SLUG in ROOT. If MG, return 0 0 fast."
-  (let ((en 0) (tot 0))
-    (when (and (stringp root) (stringp slug) (not mg))
-      (let* ((file (ignore-errors (context-navigator-persist-context-file root slug)))
-             (pair (and (stringp file)
-                        (ignore-errors (context-navigator-persist-group-enabled-count file)))))
-        (when (and (consp pair) (integerp (car pair)) (integerp (cdr pair)))
-          (setq en (car pair) tot (cdr pair)))))
-    (list en tot)))
+(defun context-navigator-headerline--counts (_root _slug mg)
+  "Return (ENABLED TOTAL) from in-memory items; if MG, return 0 0.
+Never read files during redisplay."
+  (if mg
+      (list 0 0)
+    (let* ((st (ignore-errors (context-navigator--state-get)))
+           (items (and st (ignore-errors (context-navigator-state-items st)))))
+      (let* ((tot (length (or items '())))
+             (en (and (listp items)
+                      (cl-count-if (lambda (it)
+                                     (and (context-navigator-item-p it)
+                                          (context-navigator-item-enabled it)))
+                                   items))))
+        (list (or en 0) (or tot 0))))))
 
 (defun context-navigator-headerline--state (mg en tot)
   "Derive tri-state symbol from MG and counts EN, TOT."
