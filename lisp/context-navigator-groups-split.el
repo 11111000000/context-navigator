@@ -94,6 +94,9 @@ not through the Navigator sidebar maps."
 ;; Major mode for Groups split buffer so keyspec/which-key can target it
 (defvar context-navigator-groups-split-mode-map
   (let ((m (make-sparse-keymap)))
+    ;; Undo/Redo in Groups split
+    (define-key m (kbd "C-_") #'context-navigator-undo)
+    (define-key m (kbd "M-_") #'context-navigator-redo)
     m)
   "Keymap for `context-navigator-groups-split-mode'.")
 
@@ -416,7 +419,15 @@ another split won't inflate this one."
           (let* ((lines (ignore-errors (context-navigator-view-groups-body-lines st)))
                  (help  (ignore-errors (context-navigator-view--groups-help-lines (window-body-width win))))
                  (all   (append (or lines '()) (or help '()))))
-            (dolist (ln all) (insert (or ln "") "\n"))
+            ;; Trim trailing empty lines
+            (while (and all (stringp (car (last all))) (string-empty-p (car (last all))))
+              (setq all (butlast all)))
+            ;; Insert lines without a trailing newline to avoid an extra blank row
+            (let ((n (length all)) (i 0))
+              (dolist (ln all)
+                (insert (or ln ""))
+                (setq i (1+ i))
+                (when (< i n) (insert "\n"))))
             ;; Replace per-line keymaps so keys are resolved in the split context
             (context-navigator-groups-split--adopt-line-keymaps))
           ;; Preserve point: prefer one-shot focus; else keep current line's slug; else current group.

@@ -442,11 +442,14 @@ WIN is the window that shows the current buffer, or nil."
     (point)))
 
 (defun context-navigator-render--write-lines (lines)
-  "Erase current buffer and insert LINES, preserving text properties per line."
+  "Erase current buffer and insert LINES, preserving text properties per line.
+Do not add a trailing newline after the last line to avoid an extra blank row at the end."
   (erase-buffer)
-  (dolist (ln lines)
-    (when (stringp ln) (insert ln))
-    (insert "\n")))
+  (let ((n (length lines)) (i 0))
+    (dolist (ln lines)
+      (when (stringp ln) (insert ln))
+      (setq i (1+ i))
+      (when (< i n) (insert "\n")))))
 
 (defun context-navigator-render--restore-window-state (win state)
   "Restore point/column, mark and window-start using STATE for current buffer.

@@ -617,20 +617,19 @@ or global (nil) when nothing is found."
       (context-navigator-events-publish :project-switch root))))
 
 (defun context-navigator-push-to-gptel-now ()
-  "Manually push current model to gptel (reset + add enabled).
-
-Graceful when gptel is absent: show an informative message and do nothing."
+  "Manually push current model to gptel asynchronously (batched)."
   (interactive)
   (if (not (context-navigator-gptel-available-p))
       (progn
         (context-navigator-ui-info :gptel-not-available)
         nil)
-    ;; Try a best-effort clear, then apply desired state.
+    ;; Best-effort clear first, then start batched apply to avoid UI hangs.
     (ignore-errors (context-navigator-gptel-clear-all-now))
     (let* ((st (context-navigator--state-get))
-           (items (and st (context-navigator-state-items st))))
-      (ignore-errors (context-navigator-gptel-apply (or items '())))
-      (context-navigator-ui-info :pushed-items (length (or items '()))))))
+           (items (and st (context-navigator-state-items st)))
+           (token (and st (context-navigator-state-load-token st))))
+      (let ((context-navigator-gptel-require-visible-window nil))
+        (ignore-errors (context-navigator--gptel-defer-or-start (or items '()) token))))))
 
 (defun context-navigator-clear-gptel-now ()
   "Clear gptel context and disable all items in the current model."

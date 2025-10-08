@@ -500,6 +500,9 @@ Keyboard bindings are inherited from `context-navigator-view-mode-map'.")
     ;; Keys from keyspec (when applied) will override these.
     (define-key m (kbd "t") #'context-navigator-view-toggle-enabled)
     (define-key m (kbd "s") #'context-navigator-view-stats-toggle)
+    ;; Undo/Redo inside Navigator buffers
+    (define-key m (kbd "C-_") #'context-navigator-undo)
+    (define-key m (kbd "M-_") #'context-navigator-redo)
     m)
   "Keymap for =context-navigator-view-mode'.
 Only minimal remaps are defined here; all other bindings are applied from `context-navigator-keyspec'.")

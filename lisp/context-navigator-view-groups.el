@@ -13,6 +13,30 @@
 (require 'context-navigator-stats)
 (require 'context-navigator-core)
 
+(defface context-navigator-active-group-face
+  '((t :foreground "MediumOrchid3" :weight bold))
+  "Face for the active group name in groups list."
+  :group 'context-navigator)
+
+(defun context-navigator-view-groups--icon ()
+  "Return folder icon for groups list, consistent with controls styling.
+Uses all-the-icons when available; falls back to an emoji.
+The icon is vertically adjusted to sit ~3px lower."
+  (let* ((icon
+          (cond
+           ((fboundp 'all-the-icons-material)
+            (ignore-errors
+              (all-the-icons-material "folder_open" :height 0.9 :v-adjust 0.0)))
+           ((fboundp 'all-the-icons-faicon)
+            (ignore-errors
+              (all-the-icons-faicon "folder-open" :height 0.9 :v-adjust 0.0)))
+           (t nil))))
+    (when (stringp icon)
+      (propertize icon
+                  'face '(:foreground "MediumOrchid3")
+                  ;; lower baseline a bit (~3px depending on font size)
+                  'display '(raise -0.1)))))
+
 
 ;;;###autoload
 (defun context-navigator-view-groups-header-lines (_header _total-width)
@@ -47,7 +71,10 @@ the display name and the items count."
                  ;; Lamp indicator like in items (green=selected, gray=not selected)
                  (lamp (when mg
                          (ignore-errors (context-navigator-indicator-string sel-p t))))
-                 (gico "📁")
+                 (gico (or (ignore-errors (context-navigator-view-groups--icon))
+                           (propertize "📁"
+                                       'face '(:foreground "MediumOrchid3")
+                                       'display '(raise -0.1))))
                  (cnt-str (format "%d" (max 0 (or cnt 0))))
                  (prefix (string-trim
                           (mapconcat #'identity
@@ -67,10 +94,9 @@ the display name and the items count."
                                  s)
             (when (and context-navigator-highlight-active-group
                        active (string= active slug))
-              (let ((beg (length prefix))
-                    (end (+ (length prefix) (length disp))))
-                (when (<= 0 beg end (length s))
-                  (add-text-properties beg end (list 'face 'mode-line-emphasis) s))))
+              ;; Подсвечиваем всю строку, чтобы иконка, имя и счётчик были окрашены.
+              ;; Добавляем face спереди (append=nil), чтобы он имел приоритет над локальными фейсами.
+              (add-face-text-property 0 (length s) 'context-navigator-active-group-face nil s))
             (setq lines (append lines (list s)))))
         lines)))))
 
@@ -86,6 +112,9 @@ Title is shown in the header-line; the buffer shows controls (top), groups, and 
   (let* ((groups-lines (context-navigator-view-groups-body-lines state))
          (help-lines (context-navigator-view--groups-help-lines total-width))
          (lines (append groups-lines help-lines)))
+    ;; Trim trailing empty lines to avoid an extra blank line after groups
+    (while (and (consp lines) (stringp (car (last lines))) (string-empty-p (car (last lines))))
+      (setq lines (butlast lines)))
     (setq context-navigator-view--last-lines lines
           context-navigator-view--header header)
     (context-navigator-render-apply-to-buffer (current-buffer) lines)

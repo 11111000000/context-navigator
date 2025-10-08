@@ -149,7 +149,10 @@ window rebalancing (e.g., when opening another split) won't inflate it."
       (unless (derived-mode-p 'special-mode)
         (special-mode))
       (setq-local buffer-read-only t)
-      (setq-local truncate-lines t))
+      (setq-local truncate-lines t)
+      ;; Undo/Redo in Stats split buffer (local bindings)
+      (local-set-key (kbd "C-_") #'context-navigator-undo)
+      (local-set-key (kbd "M-_") #'context-navigator-redo))
     buf))
 
 (defun context-navigator-stats-split--visible-window ()
