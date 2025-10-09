@@ -208,6 +208,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (autoload 'context-navigator-view-group-edit-description "context-navigator-view-dispatch" nil t)
 (autoload 'context-navigator-view-group-toggle-select "context-navigator-view-dispatch" nil t)
 (autoload 'context-navigator-view-push-now-dispatch   "context-navigator-view-dispatch" nil t)
+(autoload 'context-navigator-view-stats-toggle "context-navigator-view" nil t)
 
 (defvar-local context-navigator-view--subs nil)
 (defvar-local context-navigator-view--header "Context")
