@@ -56,9 +56,15 @@
                                    'face '(:foreground "MediumOrchid3" :height 0.9)
                                    'display '(raise -0.1)))
                    "🏷"))
+         (arrow (if icon-p
+                    (ignore-errors
+                      (propertize (all-the-icons-material "arrow_forward")
+                                  'face '(:foreground "gray50" :height 0.83)
+                                  'display '(raise -0.13)))
+                  " ➔ "))
          (base (cond
                 ((eq mode 'groups) (format "%s %s" ico-proj proj))
-                (slug (format "%s %s  %s %s" ico-proj proj ico-gr slug))
+                (slug (format "%s %s  %s %s %s" ico-proj proj arrow ico-gr slug))
                 (t (format "%s %s" ico-proj proj))))
          (txt (concat (make-string (max 0 context-navigator-title-left-padding) ?\s)
                       base))
