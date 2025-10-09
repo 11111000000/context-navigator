@@ -22,8 +22,11 @@ Repository: https://github.com/11111000000/context-navigator
 * Screenshots
 
 #+caption: Items view — your current context (enabled files, buffers, selections)
-#+attr_org: :width 820
 [[./context-navigator-items.png]]
+
+#+caption: Items view — your current context (enabled files, buffers, selections)
+[[./context-navigator.png]]
+
 
 * Requirements
 
