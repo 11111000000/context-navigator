@@ -107,6 +107,8 @@
          :keys ("k" "p" "<up>") :contexts (groups-split) :section navigate :desc-key :help-previous-item)
     (:id gs-activate :cmd context-navigator-groups-split-select
          :keys ("l" "RET" "<return>" "<kp-enter>") :contexts (groups-split) :section navigate :desc-key :help-activate)
+    (:id group-toggle-select :cmd context-navigator-view-group-toggle-select
+         :keys ("m") :contexts (groups-split) :section act :desc-key :toggle-multi-group)
     (:id group-create :cmd context-navigator-view-group-create
          :keys ("a" "+") :contexts (groups-split) :section act :desc-key :help-group-create)
     (:id group-rename :cmd context-navigator-view-group-rename

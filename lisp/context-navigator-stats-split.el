@@ -74,6 +74,103 @@ the cached aggregate without re-reading group files."
 
 (defvar context-navigator-stats-split--refit-pending nil)
 
+;; Tabs: tab-line integration for Stats split
+(defvar context-navigator-stats-split--last-active-tab 'summary
+  "Last selected tab for the Stats split (restored across buffer recreations).")
+(defvar-local context-navigator-stats-split--active-tab 'summary)
+
+(defun context-navigator-stats-split--select-tab (tab &rest _)
+  "Switch active tab for the Stats split and re-render."
+  (setq context-navigator-stats-split--active-tab tab)
+  (setq context-navigator-stats-split--last-active-tab tab)
+  (context-navigator-stats-split--render)
+  ;; Fit window height to the freshly rendered content using our constrained fitter
+  (let ((win  (ignore-errors (context-navigator-stats-split--visible-window)))
+        (navw (ignore-errors (context-navigator-stats-split--nav-window))))
+    (when (and (window-live-p win) (window-live-p navw))
+      (context-navigator-stats-split--fit-window win navw)))
+  ;; And schedule a follow-up refit as a safety net
+  (run-at-time 0 nil (lambda () (ignore-errors (context-navigator-stats-split--refit-all)))))
+
+(defun context-navigator-stats-split--tabline ()
+  "Return propertized tab-line segment for Stats split (Summary | Types)."
+  (let* ((mk (lambda (key label)
+               (let* ((cur (eq context-navigator-stats-split--active-tab key))
+                      (face (if cur 'tab-line-tab-current 'tab-line-tab))
+                      (m (let ((km (make-sparse-keymap)))
+                           ;; Handle clicks in the tab-line area
+                           (define-key km [tab-line mouse-1]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           (define-key km [tab-line mouse-2]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           ;; Fallbacks for generic/down events
+                           (define-key km [mouse-1]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           (define-key km [mouse-2]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           (define-key km [down-mouse-1]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           (define-key km [down-mouse-2]
+                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                           ;; Keyboard convenience
+                           (define-key km (kbd "RET")
+                             (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
+                           (define-key km (kbd "TAB")
+                             (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
+                           km)))
+                 (propertize (format " %s " label)
+                             'face face
+                             'mouse-face 'mode-line-highlight
+                             'help-echo label
+                             'keymap m
+                             'local-map m
+                             'follow-link t)))))
+    (concat (funcall mk 'summary "Summary")
+            (propertize " " 'face 'tab-line)
+            (funcall mk 'types "Types"))))
+
+;; Types tab: render a table with file kind statistics (count and percent)
+(defun context-navigator-stats-split--types-lines (_total-width)
+  "Return lines for file type stats: rows only (no header)."
+  (let* ((st (ignore-errors (context-navigator--state-get)))
+         (items (and st (ignore-errors (context-navigator-state-items st))))
+         (files (cl-remove-if-not
+                 (lambda (it)
+                   (and (eq (context-navigator-item-type it) 'file)
+                        (context-navigator-item-enabled it)))
+                 (or items '())))
+         (total (max 1 (length files)))
+         (counts (make-hash-table :test 'equal)))
+    (dolist (it files)
+      (let* ((p (context-navigator-item-path it))
+             (ext (and (stringp p) (downcase (or (file-name-extension p) ""))))
+             (key (if (and ext (> (length ext) 0)) ext "<none>")))
+        (puthash key (1+ (gethash key counts 0)) counts)))
+    (let (rows)
+      (maphash (lambda (k v) (push (cons k v) rows)) counts)
+      (setq rows (cl-sort rows #'> :key #'cdr))
+      (let* ((mk-icon (lambda (ext)
+                        (let* ((name (if (string= ext "<none>") "file" (concat "x." ext))))
+                          (cond
+                           ((fboundp 'all-the-icons-icon-for-file)
+                            ;; Сохраняем оригинальный face иконки (не перезаписываем шрифт)
+                            (ignore-errors (all-the-icons-icon-for-file name)))
+                           (t "•")))))
+             (lines '()))
+        (dolist (cell rows)
+          (let* ((ext (car cell))
+                 (n (cdr cell))
+                 (pct (floor (+ 0.5 (* 100.0 (/ (float n) total)))))
+                 (ico-raw (or (funcall mk-icon ext) ""))
+                 ;; Выравниваем колонку иконки до ширины 2
+                 (ico (let* ((w (string-width ico-raw))
+                             (pad (max 0 (- 2 w))))
+                        (concat ico-raw (make-string pad ?\s))))
+                 (label (if (string= ext "<none>") "<no ext>" (concat "." ext)))
+                 (line (format " %s %-10s %6d %4d%%" ico label n pct)))
+            (push line lines)))
+        (nreverse lines)))))
+
 (defun context-navigator-stats-split--schedule-refit ()
   "Debounce refit of all Navigator splits after window layout changes."
   (unless context-navigator-stats-split--refit-pending
@@ -123,12 +220,20 @@ Also schedule a refit of all splits to their content after any window layout cha
 Temporarily unlock window height to allow shrinking, then lock height so later
 window rebalancing (e.g., when opening another split) won't inflate it."
   (when (and (window-live-p win) (window-live-p navw))
-    (let* ((max-pref (max 1 (or context-navigator-stats-split-height 5)))
+    (let* ((base-pref (max 1 (or context-navigator-stats-split-height 5)))
+           ;; В режиме Types учитываем ещё +1 строку (итого +2 к базовой), чтобы таблица полностью помещалась
+           (types-active (with-current-buffer (window-buffer win)
+                           (and (boundp 'context-navigator-stats-split--active-tab)
+                                (eq context-navigator-stats-split--active-tab 'types))))
+           (extra (if types-active 2 0))
+           (max-pref (+ base-pref extra))
            (half     (max 1 (floor (/ (window-total-height navw) 2))))
            ;; Реальная высота контента буфера (в строках)
            (content  (with-current-buffer (window-buffer win)
                        (max 1 (count-lines (point-min) (point-max)))))
-           (desired  (min content (min max-pref half)))
+           ;; +2 к контенту для Types, чтобы последняя строка таблицы не обрезалась
+           (eff-content (+ content extra))
+           (desired  (min eff-content (min max-pref half)))
            (window-combination-resize t))
       ;; Allow resizing first, then fix height so other operations don't enlarge it.
       (set-window-parameter win 'window-size-fixed nil)
@@ -150,9 +255,18 @@ window rebalancing (e.g., when opening another split) won't inflate it."
         (special-mode))
       (setq-local buffer-read-only t)
       (setq-local truncate-lines t)
+      ;; Моноширинный шрифт для стабильной таблицы
+      (setq-local buffer-face-mode-face 'fixed-pitch)
+      (buffer-face-mode 1)
       ;; Undo/Redo in Stats split buffer (local bindings)
       (local-set-key (kbd "C-_") #'context-navigator-undo)
-      (local-set-key (kbd "M-_") #'context-navigator-redo))
+      (local-set-key (kbd "M-_") #'context-navigator-redo)
+      ;; Восстановить последнюю выбранную вкладку при первом запуске буфера
+      (unless (local-variable-p 'context-navigator-stats-split--active-tab)
+        (setq-local context-navigator-stats-split--active-tab context-navigator-stats-split--last-active-tab))
+      ;; Enable tab-line tabs (Summary | Types)
+      (setq-local tab-line-format '(:eval (context-navigator-stats-split--tabline)))
+      (tab-line-mode 1))
     buf))
 
 (defun context-navigator-stats-split--visible-window ()
@@ -303,8 +417,8 @@ window rebalancing (e.g., when opening another split) won't inflate it."
                          (context-navigator-i18n :stats-tokens)
                          (context-navigator-i18n :enabled) (max 0 (or ten 0))
                          (context-navigator-i18n :total)    (max 0 (or t-all 0)))))
-      ;; Exactly 5 lines
-      (list hdr row1 row2 row3 ""))))
+      ;; Exactly 5 lines (no header — info only)
+      (list row1 row2 row3 "" ""))))
 
 (defun context-navigator-stats-split--items-lines (total-width)
   "Return exactly 5 lines for items view.
@@ -360,7 +474,7 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                                (context-navigator-i18n :stats-tokens)
                                (context-navigator-i18n :enabled) (max 0 (or ten 0))
                                (context-navigator-i18n :total)    (max 0 (or t-all 0)))))
-            (list hdr row1 row2 row3 "")))
+            (list row1 row2 row3 "" "")))
       ;; Single-group: compute via shared stats
       (let* ((pl (ignore-errors (context-navigator-stats--compute-now)))
              (en    (or (plist-get pl :items-en) 0))
@@ -405,28 +519,37 @@ When MG is ON and selection non-empty, show aggregated unified stats; otherwise 
                            (context-navigator-i18n :stats-tokens)
                            (context-navigator-i18n :enabled) (max 0 ten)
                            (context-navigator-i18n :total)    (max 0 t-all))))
-        (list hdr row1 row2 row3 "")))))
+        (list row1 row2 row3 "" "")))))
 
 (defun context-navigator-stats-split--render-lines (total-width)
-  "Return exactly 5 lines of Stats content for TOTAL-WIDTH columns.
-- In items view: compute from current items (shared stats)
-- In groups view: show aggregate summary for selected groups (dedup-enabled)"
-  (pcase (context-navigator-stats-split--view-mode)
-    ('groups (context-navigator-stats-split--groups-lines total-width))
-    (_       (context-navigator-stats-split--items-lines total-width))))
+  "Return Stats content for TOTAL-WIDTH columns.
+Tabs:
+- Summary: compact numeric info (no header line)
+- Types  : table with file kinds, counts and percentage"
+  (if (eq context-navigator-stats-split--active-tab 'types)
+      (context-navigator-stats-split--types-lines total-width)
+    (pcase (context-navigator-stats-split--view-mode)
+      ('groups (context-navigator-stats-split--groups-lines total-width))
+      (_       (context-navigator-stats-split--items-lines total-width)))))
 
 (defun context-navigator-stats-split--render ()
   "Render 5-line Stats into the split buffer (no-op when invisible)."
   (let* ((w (context-navigator-stats-split--visible-window)))
     (when (window-live-p w)
       (let* ((buf (window-buffer w))
-             (tw (max 30 (window-body-width w)))
-             (lines (context-navigator-stats-split--render-lines tw)))
+             (tw (max 30 (window-body-width w))))
         (with-current-buffer buf
-          (let ((inhibit-read-only t))
+          ;; Всегда восстанавливаем последний выбранный таб перед рендером,
+          ;; чтобы изменения модели не сбрасывали вкладку на Summary.
+          (setq-local context-navigator-stats-split--active-tab context-navigator-stats-split--last-active-tab)
+          (let ((inhibit-read-only t)
+                (lines (context-navigator-stats-split--render-lines tw)))
             (erase-buffer)
             (dolist (ln lines)
-              (insert (or ln "") "\n"))))))))
+              (insert (or ln "") "\n"))))
+        ;; Fit height to content immediately after rendering, like Groups split
+        (when-let ((navw (context-navigator-stats-split--nav-window)))
+          (context-navigator-stats-split--fit-window w navw))))))
 
 (defun context-navigator-stats-split--install-subs ()
   "Subscribe to events that should refresh the Stats split (idempotent)."

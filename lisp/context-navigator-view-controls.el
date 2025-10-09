@@ -56,13 +56,13 @@
   :group 'context-navigator)
 
 (defface context-navigator-headerline
-  '((t :background "#2f2f2f" :foreground "gray90"))
+  '((t :inherit default))
   "Default header-line face for Context Navigator.
-Used as the header-line background in the Navigator buffer."
+Inherit the theme's header-line face (no custom background)."
   :group 'context-navigator-view-controls)
 
 (defface context-navigator-view-controls-disabled-face
-  '((t :foreground "gray27"))
+  '((t :inherit shadow)
   "Face for disabled header-line controls.
 Only changes foreground (no height/weight), so icon/text size stays stable."
   :group 'context-navigator-view-controls)

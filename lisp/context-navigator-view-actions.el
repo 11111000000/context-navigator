@@ -155,7 +155,7 @@ updated set to gptel immediately. The new state is persisted via autosave."
                (idx (and st2 (context-navigator-state-index st2)))
                (it2 (and idx (gethash key idx)))
                (en (and it2 (context-navigator-item-enabled it2))))
-          (context-navigator-ui-info (if en :item-enabled :item-disabled) name))
+          (ignore en))
         ;; Minimal UI refresh without forcing cache invalidation (prevents flicker).
         ;; Also render immediately so the indicator lamp updates right away.
         (if (fboundp 'context-navigator-view--schedule-render-soft)
