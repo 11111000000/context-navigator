@@ -3,7 +3,7 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;; Build header-line toolbar controls (toggles + actions) for the Navigator view.
+;; Build toolbar controls (toggles + actions) for the Navigator view.
 ;; Split out of context-navigator-view.el to reduce coupling.
 ;;
 ;; This module does not require the full view to avoid cycles; it declares the
@@ -12,7 +12,7 @@
 ;;
 ;; Refactoring note:
 ;; - Controls are now described declaratively in a registry: logic + appearance
-;; - Order/visibility is configured via a single header-line order
+;; - Order/visibility is configured via a single order
 ;; - Rendering is unified and consumes registry + order
 
 ;;; Code:
@@ -55,43 +55,20 @@
   "Toolbar controls (toggles and actions) for Context Navigator view."
   :group 'context-navigator)
 
-(defface context-navigator-headerline
+(defface context-navigator-toolbar
   '((t :inherit default))
-  "Default header-line face for Context Navigator.
-Inherit the theme's header-line face (no custom background)."
+  "Default toolbar face for Context Navigator.
+Inherit the theme's toolbar face (no custom background)."
   :group 'context-navigator-view-controls)
 
 (defface context-navigator-view-controls-disabled-face
-  '((t :inherit shadow)
-  "Face for disabled header-line controls.
+  '((t :inherit shadow))
+  "Face for disabled controls.
 Only changes foreground (no height/weight), so icon/text size stays stable."
-  :group 'context-navigator-view-controls))
+  :group 'context-navigator-view-controls)
 
-(defvar-local context-navigator--headerline-face-cookie nil
-  "Face-remap cookie for remapping the header-line face in Navigator buffer.")
-
-(defun context-navigator-view-controls--ensure-headerline-face ()
-  "Ensure the Navigator buffer uses `context-navigator-headerline' for its header-line."
-  (let ((buf (get-buffer "*context-navigator*")))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        ;; Remap the built-in `header-line' face buffer-locally to our custom face.
-        ;; Reset any previous remap to keep the operation idempotent.
-        (when context-navigator--headerline-face-cookie
-          (ignore-errors
-            (face-remap-remove-relative context-navigator--headerline-face-cookie))
-          (setq context-navigator--headerline-face-cookie nil))
-        (setq context-navigator--headerline-face-cookie
-              (face-remap-add-relative 'header-line 'context-navigator-headerline))
-        ;; Force header-line redraw
-        (force-mode-line-update t)))))
-
-(defun context-navigator-header--ensure-face ()
-  "Generic alias to ensure Navigator header-line face is applied for the buffer."
-  (context-navigator-view-controls--ensure-headerline-face))
-
-;; Apply default header-line face now if the buffer already exists.
-(context-navigator-view-controls--ensure-headerline-face)
+(defvar-local context-navigator--toolbar-face-cookie nil
+  "Face-remap cookie for remapping the face in Navigator buffer.")
 
 ;; --- Keys fallback labels from keyspec (Middle Path) ------------------------
 
@@ -118,15 +95,15 @@ DEFAULT should be a short key text like \"p\", \"x\", \"RET\", etc."
     (format " [%s]" disp)))
 
 (defun context-navigator-view-controls--after-control-invoke ()
-  "Force immediate UI/header-line refresh after a control command."
+  "Force immediate UI refresh after a control command."
   (let ((buf (get-buffer "*context-navigator*")))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        ;; Invalidate view and headerline caches and refresh immediately.
+        ;; Invalidate view and toolbar caches and refresh immediately.
         (setq-local context-navigator-render--last-hash nil)
         (setq-local context-navigator-view--last-render-key nil)
-        (setq-local context-navigator-headerline--cache-key nil)
-        (setq-local context-navigator-headerline--cache-str nil)
+        (setq-local context-navigator-controls--cache-key nil)
+        (setq-local context-navigator-controls--cache-str nil)
         ;; Rebuild modeline menu cache so redisplay doesn't compute controls.
         (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
           (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
@@ -221,12 +198,12 @@ Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
       (unless (context-navigator-view-controls--items-enabled-p)
         (context-navigator-i18n :razor-no-enabled-items)))))
 
-;; Layout: order of controls for header-line toolbar.
-(defcustom context-navigator-headerline-controls-order
+;; Layout: order of controls for toolbar.
+(defcustom context-navigator-toolbar-controls-order
   '(push auto-project multi-group :gap groups-split stats multifile :gap undo redo
          :gap toggle-all-gptel razor :gap push-now :gap open-buffers close-buffers
          :gap clear-group)
-  "Controls order for the header-line toolbar.
+  "Controls order for the toolbar.
 Remove a key to hide the control. You may also insert :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
   :group 'context-navigator-view-controls)
@@ -460,7 +437,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                       ((or 'icons 'auto) " [MF]")
                       (_ " [Multifile]"))))
       ))
-  "Registry of Navigator controls for header-line toolbar."
+  "Registry of Navigator controls for toolbar."
   :type '(alist :key-type symbol :value-type plist)
   :group 'context-navigator-view-controls)
 
@@ -538,8 +515,8 @@ Returns a propertized string or nil when not visible."
         (and (> (length s) 0) s)))))
 
 (defun context-navigator-view-controls-segments (&optional _where)
-  "Return ordered control segments for the header-line as a list of strings."
-  (let* ((order context-navigator-headerline-controls-order)
+  "Return ordered control segments for the controls as a list of strings."
+  (let* ((order context-navigator-toolbar-controls-order)
          (res '()))
     (dolist (k order)
       (if (eq k :gap)
@@ -551,7 +528,7 @@ Returns a propertized string or nil when not visible."
 
 ;; Auto-refresh UI when registry or order variables change.
 (when (fboundp 'add-variable-watcher)
-  (dolist (sym '(context-navigator-headerline-controls-order
+  (dolist (sym '(context-navigator-toolbar-controls-order
                  context-navigator-view-controls-registry))
     (add-variable-watcher
      sym
@@ -561,18 +538,16 @@ Returns a propertized string or nil when not visible."
          (let ((buf (get-buffer "*context-navigator*")))
            (when (buffer-live-p buf)
              (with-current-buffer buf
-               ;; Invalidate view and headerline caches
+               ;; Invalidate view and toolbar caches
                (setq-local context-navigator-render--last-hash nil)
                (setq-local context-navigator-view--last-render-key nil)
-               (setq-local context-navigator-headerline--cache-key nil)
-               (setq-local context-navigator-headerline--cache-str nil)
+               (setq-local context-navigator-controls--cache-key nil)
+               (setq-local context-navigator-controls--cache-str nil)
                ;; Rebuild modeline menu cache on structural changes
                (when (fboundp 'context-navigator-modeline--rebuild-menu-cache)
                  (ignore-errors (context-navigator-modeline--rebuild-menu-cache)))
                (when (fboundp 'context-navigator-view--render-if-visible)
                  (context-navigator-view--render-if-visible))))))
-       ;; Ensure the navigator buffer uses the default header-line face.
-       (context-navigator-view-controls--ensure-headerline-face)
        (force-mode-line-update t)))))
 
 (defun context-navigator-view-controls--wrap-segments (segments total-width)
@@ -616,7 +591,7 @@ Segments longer than TOTAL-WIDTH are soft-split using `truncate-string-to-width'
     (nreverse acc)))
 
 (defun context-navigator-view-controls-lines (total-width)
-  "Return header-line control lines wrapped to TOTAL-WIDTH columns.
+  "Return toolbar control lines wrapped to TOTAL-WIDTH columns.
 
 When TOTAL-WIDTH is nil or non-positive, try to use the selected window width;
 fallback to 80 columns."

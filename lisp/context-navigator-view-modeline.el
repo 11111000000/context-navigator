@@ -69,11 +69,11 @@ This function may call heavy control renderers; call it only on explicit events.
       (setq context-navigator--modeline-active-face-cookie nil))
     ;; Inherit header-line, but explicitly drop :box to remove thick border.
     (setq context-navigator--modeline-face-cookie
-          (face-remap-add-relative 'mode-line 'context-navigator-headerline '(:box nil)))
+          (face-remap-add-relative 'mode-line 'context-navigator-toolbar '(:box nil)))
     (setq context-navigator--modeline-inactive-face-cookie
-          (face-remap-add-relative 'mode-line-inactive 'context-navigator-headerline '(:box nil)))
+          (face-remap-add-relative 'mode-line-inactive 'context-navigator-toolbar '(:box nil)))
     (setq context-navigator--modeline-active-face-cookie
-          (face-remap-add-relative 'mode-line-active 'context-navigator-headerline '(:box nil)))))
+          (face-remap-add-relative 'mode-line-active 'context-navigator-toolbar '(:box nil)))))
 
 (defun context-navigator-modeline--remove-face ()
   "Remove modeline face remaps previously applied by Navigator."

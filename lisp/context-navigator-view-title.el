@@ -19,7 +19,7 @@
      "Title is shown in the header-line by default.")
 
 (defface context-navigator-title-face
-  '((t :inherit mode-line-emphasis))
+  '((t :inherit header-line))
   "Face for pinned title text."
   :group 'context-navigator-title)
 

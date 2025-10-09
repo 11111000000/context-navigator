@@ -24,7 +24,7 @@
 (require 'subr-x)
 
 (defgroup context-navigator-view-controls-icons nil
-  "Graphic icons for Context Navigator controls (header-line, etc.)."
+  "Graphic icons for Context Navigator controls."
   :group 'context-navigator
   :prefix "context-navigator-view-controls-")
 
@@ -144,7 +144,7 @@ for that key/state. When :height is provided, it overrides
   '("mf-")
   "List of key name prefixes treated as \"local-only\" icon keys (e.g. Multifile header controls).
 Audit and consistency checks can treat keys with these prefixes as local UI-only and not
-flag them as unused in the global header-line registry."
+flag them as unused in the global registry."
   :type '(repeat string)
   :group 'context-navigator-view-controls-icons)
 
@@ -244,20 +244,20 @@ from the user-configured maps without any hardcoded fallbacks."
   "Clear the internal cache of rendered control icons."
   (clrhash context-navigator-view-controls-icons--cache))
 
-;; Auto-refresh UI (header-line controls) when icons become available or settings/theme change.
+;; Auto-refresh UI when icons become available or settings/theme change.
 (defun context-navigator-view-controls-icons--refresh-ui ()
-  "Force header-line controls to rebuild after icon settings change."
+  "Force controls to rebuild after icon settings change."
   (ignore-errors (context-navigator-view-controls-icons-clear-cache))
   ;; Prefer a local sidebar re-render over full model refresh to avoid generation spam.
   (ignore-errors
     (let ((buf (get-buffer "*context-navigator*")))
       (when (buffer-live-p buf)
         (with-current-buffer buf
-          ;; Invalidate view and headerline caches
+          ;; Invalidate view and control caches
           (setq-local context-navigator-render--last-hash nil)
           (setq-local context-navigator-view--last-render-key nil)
-          (setq-local context-navigator-headerline--cache-key nil)
-          (setq-local context-navigator-headerline--cache-str nil)
+          (setq-local context-navigator-controls--cache-key nil)
+          (setq-local context-navigator-controls--cache-str nil)
           (when (fboundp 'context-navigator-view--render-if-visible)
             (context-navigator-view--render-if-visible))))))
   ;; Also refresh Multifile header-line if it's open.

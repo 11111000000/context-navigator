@@ -188,7 +188,7 @@ Ensure session flags follow defaults. Initial project switch is handled by the m
 ;;;###autoload
 (autoload 'context-navigator-multifile-open "context-navigator-multifile"
   "Open Context Multifile View." t)
-;;;###autoload
+;;;##
 (autoload 'context-navigator-multifile-close "context-navigator-multifile"
   "Close Context Multifile View." t)
 

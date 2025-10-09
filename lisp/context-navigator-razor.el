@@ -12,7 +12,7 @@
 ;; - Expects strict JSON {keep_keys:[...], rationale:"..."}; one retry on format error
 ;; - Applies: leaves enabled only the returned keys (disables the rest)
 ;; - If auto-push is on — applies to gptel immediately
-;; - Maintains per-group history (Undo/Redo in the header-line)
+;; - Maintains per-group history (Undo/Redo)
 
 ;;; Code:
 
@@ -113,31 +113,31 @@
 (defvar context-navigator-razor--debug-resolve nil
   "When non-nil, `context-navigator-razor--resolve-token' returns (KEY . REASON) for logging.")
 
-;; UI status for header-line spinner
+;; UI status for spinner
 (defvar context-navigator-razor--running nil
   "Non-nil while Occam (razor) analysis is running.")
 
 (defvar context-navigator-razor--spinner-index 0
-  "Current spinner frame index for the header-line Occam indicator.")
+  "Current spinner frame index for the Occam indicator.")
 
 (defvar context-navigator-razor--spinner-timer nil
-  "Timer used to animate the header-line Occam spinner.")
+  "Timer used to animate the Occam spinner.")
 
 (defcustom context-navigator-razor-spinner-frames
   '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-  "Frames used for the Occam header-line spinner."
+  "Frames used for the Occam spinner."
   :type '(repeat string)
   :group 'context-navigator-razor)
 
 (defun context-navigator-razor-spinner-frame ()
-  "Return current visual spinner frame string for the header-line."
+  "Return current visual spinner frame string."
   (let* ((frames (or context-navigator-razor-spinner-frames
                      '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")))
          (len (max 1 (length frames))))
     (nth (mod (or context-navigator-razor--spinner-index 0) len) frames)))
 
-(defun context-navigator-razor--schedule-header-refresh ()
-  "Request immediate header-line refresh for the Navigator buffer (no debounce)."
+(defun context-navigator-razor--schedule-controls-refresh ()
+  "Request immediate controls refresh for the Navigator buffer (no debounce)."
   (let ((buf (get-buffer "*context-navigator*")))
     (when (buffer-live-p buf)
       (with-current-buffer buf
@@ -147,7 +147,7 @@
           (progn
             (setq-local context-navigator-render--last-hash nil)
             (setq-local context-navigator-view--last-render-key nil)))
-        ;; Форсируем переоценку header-line (:eval) даже если тело буфера не менялось
+        ;; Форсируем переоценку controls (:eval) даже если тело буфера не менялось
         (force-mode-line-update t)
         (when (fboundp 'context-navigator-view--render-if-visible)
           (context-navigator-view--render-if-visible))))))
@@ -163,14 +163,14 @@
                      (lambda ()
                        (setq context-navigator-razor--spinner-index
                              (1+ (or context-navigator-razor--spinner-index 0)))
-                       (context-navigator-razor--schedule-header-refresh)))))
+                       (context-navigator-razor--schedule-controls-refresh)))))
 (defun context-navigator-razor--notify-stop ()
   "Mark razor run as finished and stop spinner animation."
   (setq context-navigator-razor--running nil)
   (when (timerp context-navigator-razor--spinner-timer)
     (cancel-timer context-navigator-razor--spinner-timer))
   (setq context-navigator-razor--spinner-timer nil)
-  (context-navigator-razor--schedule-header-refresh))
+  (context-navigator-razor--schedule-controls-refresh))
 
 (defun context-navigator-razor--absolute-p (s)
   "Return non-nil if S looks like an absolute path (POSIX, Windows drive, or TRAMP)."

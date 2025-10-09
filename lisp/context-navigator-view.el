@@ -23,7 +23,6 @@
 (require 'context-navigator-i18n)
 (require 'context-navigator-log)
 (require 'context-navigator-view-modeline)
-(require 'context-navigator-headerline)
 (require 'context-navigator-stats)
 (require 'context-navigator-stats-split)
 (ignore-errors (require 'context-navigator-groups-split nil t))
@@ -297,8 +296,8 @@ When ALSO-HEADERLINE is non-nil, also reset header-line cache locals."
   (setq-local context-navigator-render--last-hash nil)
   (setq-local context-navigator-view--last-render-key nil)
   (when also-headerline
-    (setq-local context-navigator-headerline--cache-key nil)
-    (setq-local context-navigator-headerline--cache-str nil)))
+    (setq-local context-navigator-controls--cache-key nil)
+    (setq-local context-navigator-controls--cache-str nil)))
 
 
 (defun context-navigator-view--invalidate-openable ()
@@ -495,6 +494,24 @@ model generation changed."
     m)
   "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
 
+(defun context-navigator-view--headerline-format ()
+  "Return title string for Navigator header-line (project[: group])."
+  (let* ((title (and (fboundp 'context-navigator-title--compute)
+                     (context-navigator-title--compute)))
+         (s (copy-sequence (or title ""))))
+    (when (and (stringp s) (> (length s) 0))
+      (when (and (boundp 'context-navigator-view--title-line-keymap)
+                 (keymapp context-navigator-view--title-line-keymap))
+        (add-text-properties
+         0 (length s)
+         (list 'mouse-face 'mode-line-highlight
+               'help-echo (and (fboundp 'context-navigator-i18n)
+                               (context-navigator-i18n :title-toggle-hint))
+               'keymap context-navigator-view--title-line-keymap
+               'local-map context-navigator-view--title-line-keymap)
+         s)))
+    s))
+
 (defvar context-navigator-view--group-line-keymap
   (let ((m (make-sparse-keymap)))
     ;; Mouse only; all keyboard keys come from the parent mode-map via keyspec.
@@ -546,16 +563,12 @@ Do not highlight purely decorative separators."
   "Major mode for context-navigator sidebar buffer."
   (buffer-disable-undo)
   (setq truncate-lines t
-        cursor-type t)
-  (when (fboundp 'context-navigator-header--ensure-face)
-    (context-navigator-header--ensure-face))
-  ;; Modeline disabled temporarily to avoid state/plist mismatch during redisplay.
-  ;; See: selection toggle error after [t] in groups causing plist access on struct state.
-  (when (fboundp 'context-navigator-headerline--apply)
-    (context-navigator-headerline--apply (current-buffer)))
+        cursor-type t)  
   ;; Apply minimal modeline (safe; uses struct accessors and persist state)
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
+  ;; Header line: show title [project[: group]]
+  (setq header-line-format '((:eval (context-navigator-view--headerline-format))))
   ;; Используем стандартный hl-line (без собственных оверлеев)
   (hl-line-mode 1)
   ;; Track last cursor anchor (item key or "..") cheaply on every command; persist only on exit.

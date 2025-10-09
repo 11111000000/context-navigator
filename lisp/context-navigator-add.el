@@ -245,8 +245,8 @@ NEW-OR-ENABLED contains items that should be applied to gptel immediately (new o
           (when invalidate
             (setq-local context-navigator-render--last-hash nil)
             (setq-local context-navigator-view--last-render-key nil)
-            (setq-local context-navigator-headerline--cache-key nil)
-            (setq-local context-navigator-headerline--cache-str nil))
+            (setq-local context-navigator-controls--cache-key nil)
+            (setq-local context-navigator-controls--cache-str nil))
           (when (fboundp 'context-navigator-view--render-if-visible)
             (context-navigator-view--render-if-visible))
           (when (fboundp 'context-navigator-debug)

@@ -22,6 +22,14 @@
 (require 'context-navigator-compat)
 (require 'context-navigator-groups)
 
+;; Ensure project tracking vars are always bound early (used by hooks during initialization)
+(defvar context-navigator-project--last-root nil)
+(defvar context-navigator-project--last-switch-time 0.0)
+
+;; Ensure event bus vars are bound early to avoid void-variable during partial loads
+(defvar context-navigator--event-subscribers (make-hash-table :test 'eq))
+(defvar context-navigator--debounce-timers nil)
+
 
 
 ;; Forward declaration to avoid load cycle with sidebar/buffer view
@@ -1455,7 +1463,6 @@ Also reload the currently active group from disk (no clearing)."
                   context-navigator-render
                   context-navigator-icons
                   context-navigator-i18n
-                  context-navigator-headerline
                   context-navigator-view-modeline
                   context-navigator-add-paths
                   context-navigator-which-key

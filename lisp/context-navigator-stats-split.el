@@ -598,7 +598,7 @@ Tabs:
             ;; Zebra background disabled per user request.
         ;; Fit height to content immediately after rendering, like Groups split
         (when-let ((navw (context-navigator-stats-split--nav-window)))
-          (context-navigator-stats-split--fit-window w navw))))))
+          (context-navigator-stats-split--fit-window w navw))))))))
 
 (defun context-navigator-stats-split--install-subs ()
   "Subscribe to events that should refresh the Stats split (idempotent)."
@@ -641,8 +641,8 @@ Tabs:
   (let ((buf (get-buffer "*context-navigator*")))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-headerline--cache-key nil)
-        (setq-local context-navigator-headerline--cache-str nil)
+        (setq-local context-navigator-controls--cache-key nil)
+        (setq-local context-navigator-controls--cache-str nil)
         (when (fboundp 'context-navigator-view--render-if-visible)
           (context-navigator-view--render-if-visible))))))
 

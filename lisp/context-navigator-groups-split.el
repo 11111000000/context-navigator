@@ -158,8 +158,8 @@ not through the Navigator sidebar maps."
   (let ((buf (get-buffer "*context-navigator*")))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq-local context-navigator-headerline--cache-key nil)
-        (setq-local context-navigator-headerline--cache-str nil)
+        (setq-local context-navigator-controls--cache-key nil)
+        (setq-local context-navigator-controls--cache-str nil)
         (force-mode-line-update t)))))
 
 (defun context-navigator-groups-split--refit-all ()
