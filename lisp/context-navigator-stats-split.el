@@ -18,6 +18,8 @@
 (require 'context-navigator-persist)
 (require 'context-navigator-i18n)
 (require 'context-navigator-util)
+(require 'color)
+(require 'color)
 
 ;; Cross-module helpers (optional; guard with fboundp at callsites)
 (declare-function context-navigator-groups-split--visible-window "context-navigator-groups-split" ())
@@ -73,6 +75,28 @@ the cached aggregate without re-reading group files."
 (defvar context-navigator-stats-split--wcch-on nil)
 
 (defvar context-navigator-stats-split--refit-pending nil)
+
+;; Faces for Types table formatting (pastel tones)
+(defface context-navigator-stats-types-count-face
+  '((t :foreground "LightSteelBlue3"))
+  "Face for counts in the Types table."
+  :group 'context-navigator-stats-split)
+
+(defface context-navigator-stats-types-percent-face
+  '((t :foreground "DarkSeaGreen3"))
+  "Face for percentages in the Types table."
+  :group 'context-navigator-stats-split)
+
+;; Faces for Types table formatting (pastel tones)
+(defface context-navigator-stats-types-count-face
+  '((t :foreground "SteelBlue3"))
+  "Face for counts in the Types table."
+  :group 'context-navigator-stats-split)
+
+(defface context-navigator-stats-types-percent-face
+  '((t :foreground "SeaGreen4"))
+  "Face for percentages in the Types table."
+  :group 'context-navigator-stats-split)
 
 ;; Tabs: tab-line integration for Stats split
 (defvar context-navigator-stats-split--last-active-tab 'summary
@@ -131,7 +155,9 @@ the cached aggregate without re-reading group files."
 
 ;; Types tab: render a table with file kind statistics (count and percent)
 (defun context-navigator-stats-split--types-lines (_total-width)
-  "Return lines for file type stats: rows only (no header)."
+  "Return lines for file type stats: rows only (no header).
+Percent is computed by total size (KB) per type relative to total size
+of enabled file items in the current context."
   (let* ((st (ignore-errors (context-navigator--state-get)))
          (items (and st (ignore-errors (context-navigator-state-items st))))
          (files (cl-remove-if-not
@@ -139,36 +165,54 @@ the cached aggregate without re-reading group files."
                    (and (eq (context-navigator-item-type it) 'file)
                         (context-navigator-item-enabled it)))
                  (or items '())))
-         (total (max 1 (length files)))
-         (counts (make-hash-table :test 'equal)))
+         (counts (make-hash-table :test 'equal))
+         (bytes  (make-hash-table :test 'equal))
+         (total-bytes 0))
+    ;; Collect counts and bytes by extension
     (dolist (it files)
       (let* ((p (context-navigator-item-path it))
              (ext (and (stringp p) (downcase (or (file-name-extension p) ""))))
-             (key (if (and ext (> (length ext) 0)) ext "<none>")))
-        (puthash key (1+ (gethash key counts 0)) counts)))
+             (key (if (and ext (> (length ext) 0)) ext "<none>"))
+             (b (or (ignore-errors (context-navigator-stats--item-bytes it)) 0)))
+        (puthash key (1+ (gethash key counts 0)) counts)
+        (puthash key (+ b (gethash key bytes 0)) bytes)
+        (setq total-bytes (+ total-bytes (max 0 b)))))
     (let (rows)
-      (maphash (lambda (k v) (push (cons k v) rows)) counts)
-      (setq rows (cl-sort rows #'> :key #'cdr))
+      ;; rows = (ext . (count . bytes))
+      (maphash (lambda (k v)
+                 (push (cons k (cons v (gethash k bytes 0))) rows))
+               counts)
+      ;; Keep previous visual ordering by count; percentage is by bytes.
+      (setq rows (cl-sort rows #'> :key (lambda (cell) (car (cdr cell)))))
       (let* ((mk-icon (lambda (ext)
                         (let* ((name (if (string= ext "<none>") "file" (concat "x." ext))))
                           (cond
                            ((fboundp 'all-the-icons-icon-for-file)
-                            ;; Сохраняем оригинальный face иконки (не перезаписываем шрифт)
                             (ignore-errors (all-the-icons-icon-for-file name)))
                            (t "•")))))
-             (lines '()))
-        (dolist (cell rows)
-          (let* ((ext (car cell))
-                 (n (cdr cell))
-                 (pct (floor (+ 0.5 (* 100.0 (/ (float n) total)))))
-                 (ico-raw (or (funcall mk-icon ext) ""))
-                 ;; Выравниваем колонку иконки до ширины 2
-                 (ico (let* ((w (string-width ico-raw))
-                             (pad (max 0 (- 2 w))))
-                        (concat ico-raw (make-string pad ?\s))))
-                 (label (if (string= ext "<none>") "<no ext>" (concat "." ext)))
-                 (line (format " %s %-10s %6d %4d%%" ico label n pct)))
-            (push line lines)))
+             (lines '())
+             (tb (max 1 total-bytes))) ;; prevent div-by-zero
+        (cl-loop with idx = 0
+                 for cell in rows do
+                 (cl-incf idx)
+                 (let* ((ext   (car cell))
+                        (n     (car (cdr cell)))
+                        (b     (cdr (cdr cell)))
+                        ;; Percent by size (bytes); KB basis doesn't change percentage.
+                        (pct   (floor (+ 0.5 (* 100.0 (/ (float b) (float tb))))))
+                        (ico-raw (or (funcall mk-icon ext) ""))
+                        (ico (let* ((w (string-width ico-raw))
+                                    (pad (max 0 (- 2 w))))
+                               (concat ico-raw (make-string pad ?\s))))
+                        (label (if (string= ext "<none>") "<no ext>" (concat "." ext)))
+                        ;; Build colored numeric cells (counts and percentages)
+                        (count-cell (propertize (format "%6d" n) 'face 'context-navigator-stats-types-count-face))
+                        (pct-cell   (propertize (format "%4d%%" pct) 'face 'context-navigator-stats-types-percent-face))
+                        (line (concat
+                               " " ico " "
+                               (format "%-10s " label)
+                               count-cell " " pct-cell)))
+                   (push line lines)))
         (nreverse lines)))))
 
 (defun context-navigator-stats-split--schedule-refit ()
@@ -545,8 +589,13 @@ Tabs:
           (let ((inhibit-read-only t)
                 (lines (context-navigator-stats-split--render-lines tw)))
             (erase-buffer)
-            (dolist (ln lines)
-              (insert (or ln "") "\n"))))
+            ;; Insert lines without trailing newline
+            (let ((i 0) (n (length lines)))
+              (while (< i n)
+                (insert (or (nth i lines) ""))
+                (setq i (1+ i))
+                (when (< i n) (insert "\n"))))
+            ;; Zebra background disabled per user request.
         ;; Fit height to content immediately after rendering, like Groups split
         (when-let ((navw (context-navigator-stats-split--nav-window)))
           (context-navigator-stats-split--fit-window w navw))))))

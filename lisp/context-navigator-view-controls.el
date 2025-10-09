@@ -65,7 +65,7 @@ Inherit the theme's header-line face (no custom background)."
   '((t :inherit shadow)
   "Face for disabled header-line controls.
 Only changes foreground (no height/weight), so icon/text size stays stable."
-  :group 'context-navigator-view-controls)
+  :group 'context-navigator-view-controls))
 
 (defvar-local context-navigator--headerline-face-cookie nil
   "Face-remap cookie for remapping the header-line face in Navigator buffer.")
