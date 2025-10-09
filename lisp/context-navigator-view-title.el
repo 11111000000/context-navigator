@@ -62,10 +62,29 @@
                                   'face '(:foreground "gray50" :height 0.83)
                                   'display '(raise -0.13)))
                   " ➔ "))
+         (items (and st (context-navigator-state-items st)))
+         (total (length (or items '())))
+         (enabled (cl-count-if (lambda (it) (context-navigator-item-enabled it)) (or items '())))
+         (ind-state (cond
+                     ((<= total 0) 'absent)
+                     ((= enabled 0) 'absent)
+                     ((= enabled total) 'ok)
+                     (t 'mismatch)))
+         (ico-ind
+          (let ((s (ignore-errors
+                     (when (fboundp 'context-navigator-icons-for-indicator)
+                       (context-navigator-icons-for-indicator ind-state)))))
+            (if (and (stringp s) (> (length s) 0))
+                s
+              (let* ((raw (pcase ind-state ('ok "●") ('mismatch "◐") (_ "○")))
+                     (color (pcase ind-state ('ok "green4") ('mismatch "goldenrod2") (_ "gray"))))
+                (propertize raw
+                            'face (list :foreground color :height 0.75)
+                            'display '(raise 0.08))))))
          (base (cond
-                ((eq mode 'groups) (format "%s %s" ico-proj proj))
-                (slug (format "%s %s  %s %s %s" ico-proj proj arrow ico-gr slug))
-                (t (format "%s %s" ico-proj proj))))
+                ((eq mode 'groups) (format "%s  %s %s" ico-ind ico-proj proj))
+                (slug (format "%s  %s %s  %s %s %s" ico-ind ico-proj proj arrow ico-gr slug))
+                (t (format "%s  %s %s" ico-ind ico-proj proj))))
          (txt (concat (make-string (max 0 context-navigator-title-left-padding) ?\s)
                       base))
          (s (copy-sequence txt)))
