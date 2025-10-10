@@ -252,6 +252,46 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--spinner-degraded nil)       ;; when non-nil, render static indicator
 (defvar-local context-navigator--headerline-face-cookie nil)      ;; face-remap cookie for header-line
 
+;; --- Live filter (name/content) state (first part: name filter only) --------
+(defvar-local context-navigator-view--filter-mode nil)        ;; nil | 'name | 'content
+(defvar-local context-navigator-view--filter-query nil)       ;; current query string
+(defvar-local context-navigator-view--filter-last-count nil)  ;; filtered count
+(defvar-local context-navigator-view--filter-last-total nil)  ;; total count
+
+(defun context-navigator-view--filter-active-p ()
+  "Return non-nil when a filter is active and the query is non-empty."
+  (and (memq context-navigator-view--filter-mode '(name content))
+       (stringp context-navigator-view--filter-query)
+       (> (length (string-trim context-navigator-view--filter-query)) 0)))
+
+(defvar context-navigator-view--filter-clear-keymap
+  (when (fboundp 'context-navigator-view-ui-make-keymap)
+    (context-navigator-view-ui-make-keymap 'context-navigator-view-filter-clear))
+  "Clickable keymap for the [×] filter-clear icon in the header-line.")
+
+(defun context-navigator-view--filter-header-segment ()
+  "Return header-line segment for active filter with a clickable clear icon."
+  (when (context-navigator-view--filter-active-p)
+    (let* ((mode (if (eq context-navigator-view--filter-mode 'name) "S" "F"))
+           (q (or context-navigator-view--filter-query ""))
+           (n (or context-navigator-view--filter-last-count 0))
+           (tot (or context-navigator-view--filter-last-total 0))
+           (x (propertize "[×]"
+                          'mouse-face 'mode-line-highlight
+                          'help-echo (and (fboundp 'context-navigator-i18n)
+                                          (context-navigator-i18n :filter-clear))
+                          'keymap context-navigator-view--filter-clear-keymap
+                          'local-map context-navigator-view--filter-clear-keymap))
+           (txt (format " %s %s: %s %d/%d" x mode q (max 0 n) (max 0 tot))))
+      (propertize txt 'face 'context-navigator-title-face))))
+
+(defun context-navigator-view--keyboard-quit-or-clear ()
+  "C-g: clear active filter when present; otherwise perform normal keyboard-quit."
+  (interactive)
+  (if (context-navigator-view--filter-active-p)
+      (call-interactively 'context-navigator-view-filter-clear)
+    (call-interactively 'keyboard-quit)))
+
 (defcustom context-navigator-view-header-props
   '(context-navigator-header)
   "List of text-properties that mark section headers in the sidebar."
@@ -409,8 +449,11 @@ background."
            ;; Include groups list fingerprint in groups mode so list changes force rerender.
            (groups-hash (and (eq mode 'groups)
                              (sxhash-equal context-navigator-view--groups)))
+           ;; Include filter state so live filter typing forces re-render
+           (fmode context-navigator-view--filter-mode)
+           (fquery (or context-navigator-view--filter-query ""))
            ;; Compose key (include session flags so toggles force a refresh)
-           (key (list gen mode total gptel-hash openable plus header push-on auto-on context-navigator-view--collapsed-p groups-hash)))
+           (key (list gen mode total gptel-hash openable plus header fmode fquery push-on auto-on context-navigator-view--collapsed-p groups-hash)))
       (when (equal key context-navigator-view--last-render-key)
         (ignore-errors
           (context-navigator-debug :trace :ui "render: skip (same key) %S" key)))
@@ -496,10 +539,12 @@ model generation changed."
   "Keymap attached to the title line to support mouse/TAB/RET collapse/expand.")
 
 (defun context-navigator-view--headerline-format ()
-  "Return title string for Navigator header-line (project[: group])."
+  "Return title string for Navigator header-line (project[: group]) plus filter segment."
   (let* ((title (and (fboundp 'context-navigator-title--compute)
                      (context-navigator-title--compute)))
-         (s (copy-sequence (or title ""))))
+         (s (copy-sequence (or title "")))
+         (seg (and (fboundp 'context-navigator-view--filter-header-segment)
+                   (context-navigator-view--filter-header-segment))))
     (when (and (stringp s) (> (length s) 0))
       (when (and (boundp 'context-navigator-view--title-line-keymap)
                  (keymapp context-navigator-view--title-line-keymap))
@@ -511,7 +556,9 @@ model generation changed."
                'keymap context-navigator-view--title-line-keymap
                'local-map context-navigator-view--title-line-keymap)
          s)))
-    s))
+    (if (and (stringp seg) (> (length seg) 0))
+        (concat s "   " seg)
+      s)))
 
 (defvar context-navigator-view--group-line-keymap
   (let ((m (make-sparse-keymap)))
@@ -526,6 +573,7 @@ Keyboard bindings are inherited from `context-navigator-view-mode-map'.")
     ;; Keep only essential remaps here; all other bindings come from keyspec.
     (define-key m [remap delete-other-windows] #'context-navigator-delete-other-windows)
     (define-key m [remap indent-for-tab-command] #'context-navigator-view-tab-next)
+    (define-key m [remap keyboard-quit] #'context-navigator-view--keyboard-quit-or-clear)
     ;; Safe defaults so core actions work even if keyspec hasn't been applied yet.
     ;; Keys from keyspec (when applied) will override these.
     ;; Undo/Redo come from keyspec (items/groups-split contexts)

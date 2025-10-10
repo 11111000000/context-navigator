@@ -419,5 +419,57 @@ from all selected groups; otherwise push current group's items."
           (call-interactively 'context-navigator-razor-run))
       (context-navigator-ui-error :razor-only-org-mode))))
 
+;; --- Live filters (first part: by name) -------------------------------------
+
+(defvar context-navigator-view--filter-mode)
+(defvar context-navigator-view--filter-query)
+(defvar context-navigator-view--filter-last-count)
+(defvar context-navigator-view--filter-last-total)
+
+(defun context-navigator-view-filter-clear ()
+  "Clear any active filter and redraw."
+  (interactive)
+  (setq context-navigator-view--filter-mode nil)
+  (setq context-navigator-view--filter-query nil)
+  (setq context-navigator-view--filter-last-count nil)
+  (setq context-navigator-view--filter-last-total nil)
+  (when (fboundp 'context-navigator-view--schedule-render)
+    (context-navigator-view--schedule-render t)))
+
+(defun context-navigator-view--minibuffer-live-name-setup (navbuf)
+  "Install a minibuffer-local post-command hook to live-update 'name' filter."
+  (let ((update
+         (lambda ()
+           (let ((q (minibuffer-contents-no-properties)))
+             (when (buffer-live-p navbuf)
+               (with-current-buffer navbuf
+                 (setq context-navigator-view--filter-mode 'name)
+                 (setq context-navigator-view--filter-query q)
+                 (when (fboundp 'context-navigator-view--schedule-render)
+                   (context-navigator-view--schedule-render nil))))))))
+    (add-hook 'post-command-hook update nil t)))
+
+;;;###autoload
+(defun context-navigator-view-filter-by-name ()
+  "Start live filter by name/path using the minibuffer."
+  (interactive)
+  (let* ((navbuf (current-buffer))
+         (initial (or context-navigator-view--filter-query "")))
+    (condition-case _quit
+        (minibuffer-with-setup-hook
+            (lambda () (context-navigator-view--minibuffer-live-name-setup navbuf))
+          (let ((res (read-from-minibuffer (context-navigator-i18n :filter-name-prompt)
+                                           initial)))
+            (with-current-buffer navbuf
+              (if (and (stringp (string-trim res))
+                       (= (length (string-trim res)) 0))
+                  (context-navigator-view-filter-clear)
+                (setq context-navigator-view--filter-mode 'name)
+                (setq context-navigator-view--filter-query res)
+                (context-navigator-view--schedule-render nil)))))
+      (quit
+       (with-current-buffer navbuf
+         (context-navigator-view-filter-clear))))))
+
 (provide 'context-navigator-view-actions)
 ;;; context-navigator-view-actions.el ends here

@@ -74,10 +74,10 @@
      (be . "Дзеянні")
      (zh . "操作")
      (ja . "アクション"))
-     (:tr-control
+    (:tr-control
      (en . "Control")
      (ru . "Управление")
-     (fr . "Control"))    
+     (fr . "Control"))
     (:tr-gptel
      (en . "GPTel")
      (ru . "GPTel")
@@ -176,6 +176,15 @@
     (:select-by-name
      (en . "Select by name")
      (ru . "Выбрать по имени"))
+    (:filter-name
+     (en . "Filter by name")
+     (ru . "Фильтр по имени"))
+    (:filter-clear
+     (en . "Clear filter")
+     (ru . "Снять фильтр"))
+    (:filter-name-prompt
+     (en . "Filter (name/path): ")
+     (ru . "Фильтр (имя/путь): "))
     (:tr-toggle-push
      (en . "Toggle push→gptel")
      (ru . "Переключить отправку→gptel")

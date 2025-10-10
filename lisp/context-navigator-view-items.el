@@ -21,6 +21,55 @@
 (require 'context-navigator-view-title)
 (require 'context-navigator-persist)
 
+;; --- Live filter (name) helpers (first part) ---------------------------------
+
+(defvar context-navigator-view--filter-mode)
+(defvar context-navigator-view--filter-query)
+(defvar context-navigator-view--filter-last-count)
+(defvar context-navigator-view--filter-last-total)
+
+(defun context-navigator-view--items--tokens (s)
+  "Split S into lowercase whitespace-delimited tokens (no empties)."
+  (let* ((s (downcase (or s ""))))
+    (cl-remove-if (lambda (x) (or (null x) (string-empty-p x)))
+                  (split-string s "[ \t]+" t))))
+
+(defun context-navigator-view--items--searchable-text (it root)
+  "Return lowercase \"name + space + relpath\" for IT relative to ROOT."
+  (let* ((nm (or (context-navigator-item-name it) ""))
+         (rel (or (context-navigator-view--items--relpath-of it root) ""))
+         (txt (format "%s %s" nm rel)))
+    (downcase (string-trim txt))))
+
+(defun context-navigator-view--apply-name-filter (items root query)
+  "Filter ITEMS by QUERY tokens (all must match as substrings, case-insensitive)."
+  (let* ((toks (context-navigator-view--items--tokens query)))
+    (if (null toks)
+        items
+      (cl-remove-if-not
+       (lambda (it)
+         (let ((hay (context-navigator-view--items--searchable-text it root)))
+           (cl-every (lambda (tk) (string-match-p (regexp-quote tk) hay)) toks)))
+       items))))
+
+(defun context-navigator-view--maybe-apply-filter (state items)
+  "Apply active filter (name only for now) to ITEMS and update counters."
+  (let* ((root (and (context-navigator-state-p state)
+                    (context-navigator-state-last-project-root state)))
+         (mode (and (boundp 'context-navigator-view--filter-mode)
+                    context-navigator-view--filter-mode))
+         (qry (and (boundp 'context-navigator-view--filter-query)
+                   context-navigator-view--filter-query))
+         (tot (length (or items '())))
+         (res (cond
+               ((and (eq mode 'name)
+                     (stringp qry) (> (length (string-trim qry)) 0))
+                (context-navigator-view--apply-name-filter items root qry))
+               (t items))))
+    (setq context-navigator-view--filter-last-total tot)
+    (setq context-navigator-view--filter-last-count (length (or res '())))
+    res))
+
 (defcustom context-navigator-view-restore-cursor t
   "When non-nil, restore last cursor position in items view per group between sessions."
   :type 'boolean :group 'context-navigator)
@@ -201,20 +250,31 @@
 
 (defun context-navigator-view--items--sorted (state items)
   "Return items sorted with stable cache keyed by STATE generation and ROOT.
-Updates buffer-local caches:
+Updates buffer-local caches when no live filter is active:
 - context-navigator-view--sorted-items
 - context-navigator-view--sorted-gen
 - context-navigator-view--sorted-root
-Also maintains relpath cache per generation/root."
+Also maintains relpath cache per generation/root.
+
+When a live filter is active, bypass the sorted-items cache to sort the
+currently filtered list and avoid showing stale unfiltered items."
   (cl-destructuring-bind (gen . root)
       (context-navigator-view--items--state-gen-root state)
     (context-navigator-view--items--ensure-relpath-cache gen root)
-    (if (context-navigator-view--items--sorted-cache-valid-p gen root)
-        context-navigator-view--sorted-items
-      (let ((s (context-navigator-view--items--sort-items items root)))
-        (context-navigator-view--items--sorted-set-cache s gen root)
-        (context-navigator-view--items--sorted-debug-validate items s gen root)
-        s))))
+    (let ((filter-on (and (boundp 'context-navigator-view--filter-mode)
+                          (memq context-navigator-view--filter-mode '(name content))
+                          (stringp (and (boundp 'context-navigator-view--filter-query)
+                                        context-navigator-view--filter-query))
+                          (> (length (string-trim (or context-navigator-view--filter-query ""))) 0))))
+      (if (and (not filter-on)
+               (context-navigator-view--items--sorted-cache-valid-p gen root))
+          context-navigator-view--sorted-items
+        (let ((s (context-navigator-view--items--sort-items items root)))
+          ;; Only cache when filter is OFF; filtered lists should not overwrite the base cache.
+          (unless filter-on
+            (context-navigator-view--items--sorted-set-cache s gen root))
+          (context-navigator-view--items--sorted-debug-validate items s gen root)
+          s)))))
 
 (defun context-navigator-view--items--left-width (total-width)
   "Compute left column width from TOTAL-WIDTH, clamped to sane bounds."
@@ -260,7 +320,8 @@ Also maintains relpath cache per generation/root."
 (defun context-navigator-view--items-base-lines (state header total-width)
   "Return a list: (hl sep rest...) for items view base lines (no up-line)."
   (let* ((items (context-navigator-state-items state))
-         (sorted-items (context-navigator-view--items--sorted state items))
+         (items/ (context-navigator-view--maybe-apply-filter state items))
+         (sorted-items (context-navigator-view--items--sorted state items/))
          (left-width (context-navigator-view--items--left-width total-width))
          (item-lines (context-navigator-view--items--item-lines sorted-items left-width))
          (hl "")

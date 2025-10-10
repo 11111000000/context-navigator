@@ -83,7 +83,7 @@
          :keys ("F") :contexts (global) :section logs :desc-key :tr-logs-toggle-file)
 
 
-    
+
     ;; Navigate (items/groups)
     (:id next :cmd context-navigator-view-next-item
          :keys ("j" "n" "<down>") :contexts (items groups-split) :section navigate :desc-key :help-next-item)
@@ -98,7 +98,7 @@
     (:id tab-prev :cmd context-navigator-view-tab-previous
          :keys ("<backtab>" "S-<tab>") :contexts (items) :section navigate :desc-key :help-previous-item)
 
-    ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar    
+    ;; Groups split (bottom panel) — dedicated context so bindings don’t clash with sidebar
     (:id gs-close :cmd context-navigator-groups-split-close
          :keys ("q" "h") :contexts (groups-split) :section navigate :desc-key :help-quit)
     (:id gs-next :cmd next-line
@@ -118,15 +118,19 @@
     (:id group-duplicate :cmd context-navigator-view-group-duplicate
          :keys ("C") :contexts (groups-split) :section act :desc-key :help-group-duplicate)
     (:id group-delete :cmd context-navigator-view-delete-dispatch
-         :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)    
-    
+         :keys ("D") :contexts (groups-split) :section act :desc-key :groups-help-delete)
+
     ;; Items actions
+    (:id filter-name :cmd context-navigator-view-filter-by-name
+         :keys ("s") :contexts (items) :section tools :desc-key :filter-name)
+    (:id filter-clear :cmd context-navigator-view-filter-clear
+         :keys ("F") :contexts (items) :section tools :desc-key :filter-clear)
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch
          :keys ("m") :contexts (items) :section act :desc-key :help-toggle-gptel)
-    
+
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items global) :section act :desc-key :toggle-all-gptel)
-    
+
     ;; (:id enable-all :cmd context-navigator-view-enable-all-gptel
     ;;      :keys ("A") :contexts (items) :section act :desc-key :enable-all-gptel)
     (:id delete :cmd context-navigator-view-delete-dispatch
@@ -147,7 +151,7 @@
          :keys ("C-_") :contexts (items groups-split) :section tools :desc-key :razor-undo)
     (:id redo :cmd context-navigator-redo
          :keys ("M-_") :contexts (items groups-split) :section tools :desc-key :razor-redo)
-    
+
     ;; Multifile
     (:id mf-visit :cmd context-navigator-multifile-activate
          :keys ("RET" "<return>") :contexts (multifile) :section navigate :desc-key :mf-action-visit)
@@ -173,7 +177,7 @@
          :keys ("?") :contexts (multifile) :section tools :desc-key :help-help)
     (:id mf-close :cmd context-navigator-multifile-close
          :keys ("q") :contexts (multifile) :section tools :desc-key :help-quit))
-  
+
   "Centralized keyspec for Context Navigator (middle path)."
   :type '(repeat plist)
   :group 'context-navigator-keys)
