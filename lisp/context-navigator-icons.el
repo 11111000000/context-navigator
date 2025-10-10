@@ -24,6 +24,14 @@
   "Disable icons on remote/TRAMP buffers/paths."
   :type 'boolean :group 'context-navigator-icons)
 
+(defcustom context-navigator-icons-icon-height 0.65
+  "Default height scaling for item icons (file/buffer/selection) in the Navigator."
+  :type 'number :group 'context-navigator-icons)
+
+(defcustom context-navigator-icons-icon-raise -0.06
+  "Vertical raise for item icons to visually center them with text."
+  :type 'number :group 'context-navigator-icons)
+
 (defvar context-navigator-icons--cache (make-hash-table :test 'equal))
 
 (defun context-navigator-icons-clear-cache ()
@@ -47,7 +55,9 @@
                        (context-navigator-icons--remote-p item))))
     (let* ((key (list (context-navigator-item-type item)
                       (or (context-navigator-item-path item) "")
-                      (or (context-navigator-item-name item) "")))
+                      (or (context-navigator-item-name item) "")
+                      context-navigator-icons-icon-height
+                      context-navigator-icons-icon-raise))
            (cached (gethash key context-navigator-icons--cache)))
       (or cached
           (let* ((type (context-navigator-item-type item))
@@ -60,18 +70,19 @@
                     ('selection (ignore-errors (all-the-icons-material "content_copy")))
                     (_ nil))))
             (when (stringp raw)
-              ;; Shrink icon a bit and lower slightly to visually center with the filename
+              ;; Apply configured icon height and vertical raise to visually center with filename
               (let* ((face-prop (get-text-property 0 'face raw))
+                     (height-plist (list :height context-navigator-icons-icon-height))
                      (new-face (cond
-                                ((null face-prop) '(:height 0.9))
-                                ((symbolp face-prop) (list face-prop '(:height 0.9)))
+                                ((null face-prop) height-plist)
+                                ((symbolp face-prop) (list face-prop height-plist))
                                 ((and (listp face-prop) (keywordp (car face-prop)))
-                                 (list (append face-prop '(:height 0.9))))
-                                ((listp face-prop) (append face-prop (list '(:height 0.9))))
-                                (t '(:height 0.9))))
+                                 (list (append face-prop height-plist)))
+                                ((listp face-prop) (append face-prop (list height-plist)))
+                                (t height-plist)))
                      (icon (propertize raw
                                        'face new-face
-                                       'display '(raise -0.12))))
+                                       'display (list 'raise context-navigator-icons-icon-raise))))
                 (puthash key icon context-navigator-icons--cache)
                 icon)))))))
 

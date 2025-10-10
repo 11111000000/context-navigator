@@ -40,9 +40,9 @@
 (require 'context-navigator-view-navigation)
 (require 'context-navigator-view-spinner)
 ;; moved: UI keymap helpers now live here (no separate segments module)
-
-(require 'context-navigator-view-title)
 (require 'context-navigator-keyspec)
+(require 'context-navigator-view-title)
+
 
 ;; --- UI keymap helpers (moved from context-navigator-view-segments.el) -------
 
@@ -250,6 +250,7 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--spinner-index 0)
 (defvar-local context-navigator-view--spinner-last-time 0.0)      ;; last tick timestamp (float-time)
 (defvar-local context-navigator-view--spinner-degraded nil)       ;; when non-nil, render static indicator
+(defvar-local context-navigator--headerline-face-cookie nil)      ;; face-remap cookie for header-line
 
 (defcustom context-navigator-view-header-props
   '(context-navigator-header)
@@ -563,12 +564,18 @@ Do not highlight purely decorative separators."
   "Major mode for context-navigator sidebar buffer."
   (buffer-disable-undo)
   (setq truncate-lines t
-        cursor-type t)  
+        cursor-type t)
   ;; Apply minimal modeline (safe; uses struct accessors and persist state)
   (when (fboundp 'context-navigator-modeline--apply)
     (context-navigator-modeline--apply (current-buffer)))
   ;; Header line: show title [project[: group]]
   (setq header-line-format '((:eval (context-navigator-view--headerline-format))))
+  ;; Remap header-line face locally so Navigator header uses default background (no gray bar)
+  (when context-navigator--headerline-face-cookie
+    (ignore-errors (face-remap-remove-relative context-navigator--headerline-face-cookie))
+    (setq context-navigator--headerline-face-cookie nil))
+  (setq context-navigator--headerline-face-cookie
+        (face-remap-add-relative 'header-line 'context-navigator-headerline '(:box nil)))
   ;; Используем стандартный hl-line (без собственных оверлеев)
   (hl-line-mode 1)
   ;; Track last cursor anchor (item key or "..") cheaply on every command; persist only on exit.
@@ -595,6 +602,9 @@ Do not highlight purely decorative separators."
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (context-navigator-view-mode)
+        ;; Ensure modeline toolbar is applied immediately even if hooks didn’t fire yet.
+        (when (fboundp 'context-navigator-modeline--apply)
+          (context-navigator-modeline--apply (current-buffer)))
         (setq-local buffer-read-only t)
         (context-navigator-view-events-install)
         ;; Ensure core state is available when opening lazily via use-package.

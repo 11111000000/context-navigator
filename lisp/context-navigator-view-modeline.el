@@ -67,13 +67,13 @@ This function may call heavy control renderers; call it only on explicit events.
     (when context-navigator--modeline-active-face-cookie
       (ignore-errors (face-remap-remove-relative context-navigator--modeline-active-face-cookie))
       (setq context-navigator--modeline-active-face-cookie nil))
-    ;; Inherit header-line, but explicitly drop :box to remove thick border.
+    ;; Inherit header-line, and explicitly drop :box and :overline to remove borders/lines.
     (setq context-navigator--modeline-face-cookie
-          (face-remap-add-relative 'mode-line 'context-navigator-toolbar '(:box nil)))
+          (face-remap-add-relative 'mode-line 'context-navigator-toolbar '(:box nil :overline nil :underline nil)))
     (setq context-navigator--modeline-inactive-face-cookie
-          (face-remap-add-relative 'mode-line-inactive 'context-navigator-toolbar '(:box nil)))
+          (face-remap-add-relative 'mode-line-inactive 'context-navigator-toolbar '(:box nil :overline nil :underline nil)))
     (setq context-navigator--modeline-active-face-cookie
-          (face-remap-add-relative 'mode-line-active 'context-navigator-toolbar '(:box nil)))))
+          (face-remap-add-relative 'mode-line-active 'context-navigator-toolbar '(:box (:line-width -1 :style released-button) :overline nil :underline nil)))))
 
 (defun context-navigator-modeline--remove-face ()
   "Remove modeline face remaps previously applied by Navigator."
@@ -173,8 +173,8 @@ If the item is outside the current project root, show an abbreviated absolute pa
   "Apply or remove modeline in BUFFER based on the feature flag.
 Ensure the Navigator modeline has no border and uses the header-line background.
 
-Additionally, enforce the modeline via window parameter `mode-line-format' on
-all windows showing BUFFER to out-prioritize global modeline providers."
+Do not use per-window `mode-line-format' overrides to avoid leaking the toolbar
+into non-Navigator buffers when a window gets reused (e.g., Treemacs)."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (eq major-mode 'context-navigator-view-mode)
@@ -185,12 +185,19 @@ all windows showing BUFFER to out-prioritize global modeline providers."
           (if enabled
               (context-navigator-modeline--ensure-face)
             (context-navigator-modeline--remove-face)))
-        ;; Also set window-parameter 'mode-line-format so external modelines cannot override.
+        ;; Ensure any previous per-window override is cleared for windows that show this buffer
+        ;; so the toolbar doesn't persist if the window later shows a different buffer.
         (dolist (w (get-buffer-window-list (current-buffer) nil t))
           (when (window-live-p w)
-            (set-window-parameter w 'mode-line-format
-                                  (and context-navigator-view-modeline-enable
-                                       '((:eval (context-navigator-modeline-string)))))))
+            (set-window-parameter w 'mode-line-format nil)))
+        ;; Extra safety: clear stale overrides on the selected frame when they reference our toolbar.
+        (dolist (w (window-list (selected-frame) 'no-minibuffer))
+          (let ((val (window-parameter w 'mode-line-format)))
+            (when (and (listp val)
+                       (let ((flat (flatten-tree val)))
+                         (and (listp flat)
+                              (memq 'context-navigator-modeline-string flat))))
+              (set-window-parameter w 'mode-line-format nil))))
         (force-mode-line-update t)))))
 
 ;; React to runtime toggling
@@ -200,6 +207,16 @@ all windows showing BUFFER to out-prioritize global modeline providers."
    (lambda (_sym _newval _op _where)
      (dolist (buf (buffer-list))
        (context-navigator-modeline--apply buf)))))
+
+
+;; Apply when entering context-navigator-view-mode
+(add-hook 'context-navigator-view-mode-hook
+          (lambda ()
+            (context-navigator-modeline--apply (current-buffer))))
+
+;; Apply immediately for any existing Navigator buffers
+(dolist (buf (buffer-list))
+  (context-navigator-modeline--apply buf))
 
 
 ;;; context-navigator-modeline.el ends here

@@ -38,7 +38,7 @@
     (:id switch-project :cmd context-navigator-switch-to-current-buffer-project
          :keys ("p") :contexts (global) :section tools :desc-key :tr-switch-project)
     (:id groups-split :cmd context-navigator-groups-split-toggle
-         :keys ("G" "h") :contexts (items global) :section navigate :desc-key :toggle-groups-split)
+         :keys ("G" "h") :contexts (items global stats) :section navigate :desc-key :toggle-groups-split)
 
     (:id stats :cmd context-navigator-view-stats-toggle
          :keys ("S") :contexts (items global) :section navigate :desc-key :stats)

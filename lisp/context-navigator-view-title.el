@@ -19,8 +19,13 @@
      "Title is shown in the header-line by default.")
 
 (defface context-navigator-title-face
-  '((t :inherit header-line))
+  '((t :inherit default))
   "Face for pinned title text."
+  :group 'context-navigator-title)
+
+(defface context-navigator-headerline
+  '((t :inherit default))
+  "Face for Navigator header-line (applied via face-remap in the sidebar)."
   :group 'context-navigator-title)
 
 (defvar-local context-navigator--pintitle-on nil)
@@ -47,19 +52,19 @@
          (ico-proj (if icon-p
                        (ignore-errors
                          (propertize (all-the-icons-material "layers")
-                                     'face '(:foreground "DodgerBlue3" :height 0.9)
+                                     'face '(:inherit context-navigator-title-face :foreground "DodgerBlue3" :height 0.9)
                                      'display '(raise -0.1)))
                      "📁"))
          (ico-gr (if icon-p
                      (ignore-errors
                        (propertize (all-the-icons-material "folder")
-                                   'face '(:foreground "MediumOrchid3" :height 0.9)
+                                   'face '(:inherit context-navigator-title-face :foreground "MediumOrchid3" :height 0.9)
                                    'display '(raise -0.1)))
                    "🏷"))
          (arrow (if icon-p
                     (ignore-errors
                       (propertize (all-the-icons-material "arrow_forward")
-                                  'face '(:foreground "gray50" :height 0.83)
+                                  'face '(:inherit context-navigator-title-face :foreground "gray50" :height 0.83)
                                   'display '(raise -0.13)))
                   " ➔ "))
          (items (and st (context-navigator-state-items st)))
@@ -79,7 +84,7 @@
               (let* ((raw (pcase ind-state ('ok "●") ('mismatch "◐") (_ "○")))
                      (color (pcase ind-state ('ok "green4") ('mismatch "goldenrod2") (_ "gray"))))
                 (propertize raw
-                            'face (list :foreground color :height 0.75)
+                            'face (list :inherit 'context-navigator-title-face :foreground color :height 0.75)
                             'display '(raise 0.08))))))
          (base (cond
                 ((eq mode 'groups) (format "%s  %s %s" ico-ind ico-proj proj))
