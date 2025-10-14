@@ -252,11 +252,13 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
 (defvar-local context-navigator-view--spinner-degraded nil)       ;; when non-nil, render static indicator
 (defvar-local context-navigator--headerline-face-cookie nil)      ;; face-remap cookie for header-line
 
-;; --- Live filter (name/content) state (first part: name filter only) --------
+;; --- Live filter (name/content) state ---------------------------------------
 (defvar-local context-navigator-view--filter-mode nil)        ;; nil | 'name | 'content
 (defvar-local context-navigator-view--filter-query nil)       ;; current query string
 (defvar-local context-navigator-view--filter-last-count nil)  ;; filtered count
 (defvar-local context-navigator-view--filter-last-total nil)  ;; total count
+(defvar-local context-navigator-view--filter-results nil)     ;; hash-set of matched item keys for content filter
+(defvar-local context-navigator-view--content-run-id 0)       ;; incremental token for debounced scans
 
 (defun context-navigator-view--filter-active-p ()
   "Return non-nil when a filter is active and the query is non-empty."

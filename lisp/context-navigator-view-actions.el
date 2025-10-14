@@ -27,6 +27,7 @@
 (require 'context-navigator-gptel-bridge)
 (require 'context-navigator-i18n)
 (require 'context-navigator-log)
+(require 'context-navigator-events)
 
 ;; Optional: counters (for closable-buffers)
 (require 'context-navigator-view-counters)
@@ -419,12 +420,14 @@ from all selected groups; otherwise push current group's items."
           (call-interactively 'context-navigator-razor-run))
       (context-navigator-ui-error :razor-only-org-mode))))
 
-;; --- Live filters (first part: by name) -------------------------------------
+;; --- Live filters (by name and content v1) ----------------------------------
 
 (defvar context-navigator-view--filter-mode)
 (defvar context-navigator-view--filter-query)
 (defvar context-navigator-view--filter-last-count)
 (defvar context-navigator-view--filter-last-total)
+(defvar context-navigator-view--filter-results)
+(defvar context-navigator-view--content-run-id)
 
 (defun context-navigator-view-filter-clear ()
   "Clear any active filter and redraw."
@@ -433,8 +436,12 @@ from all selected groups; otherwise push current group's items."
   (setq context-navigator-view--filter-query nil)
   (setq context-navigator-view--filter-last-count nil)
   (setq context-navigator-view--filter-last-total nil)
+  (setq context-navigator-view--filter-results nil)
+  (setq context-navigator-view--content-run-id 0)
   (when (fboundp 'context-navigator-view--schedule-render)
     (context-navigator-view--schedule-render t)))
+
+;; --- [s] Name filter (live) -------------------------------------------------
 
 (defun context-navigator-view--minibuffer-live-name-setup (navbuf)
   "Install a minibuffer-local post-command hook to live-update 'name' filter."
@@ -467,6 +474,128 @@ from all selected groups; otherwise push current group's items."
                 (setq context-navigator-view--filter-mode 'name)
                 (setq context-navigator-view--filter-query res)
                 (context-navigator-view--schedule-render nil)))))
+      (quit
+       (with-current-buffer navbuf
+         (context-navigator-view-filter-clear))))))
+
+;; --- [f] Content filter (live; buffers/selections only; literal; casefold) --
+
+(defun context-navigator-view--filter--tokens (s)
+  "Lowercase whitespace-delimited tokens from S (no empties)."
+  (let* ((s (downcase (or s ""))))
+    (cl-remove-if (lambda (x) (or (null x) (string-empty-p x)))
+                  (split-string s "[ \t]+" t))))
+
+(defun context-navigator-view--content--buffer-matches-p (buf toks)
+  "Return non-nil when all TOKS occur in BUF (literal, case-insensitive)."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (save-excursion
+        (save-match-data
+          (let ((case-fold-search t))
+            (cl-every
+             (lambda (tk)
+               (goto-char (point-min))
+               (search-forward tk nil t))
+             toks)))))))
+
+(defun context-navigator-view--content--selection-matches-p (buf beg end toks)
+  "Return non-nil when all TOKS occur in selection [BEG,END] of BUF."
+  (when (and (buffer-live-p buf)
+             (integerp beg) (integerp end) (<= (1+ beg) end))
+    (with-current-buffer buf
+      (let* ((txt (downcase (buffer-substring-no-properties beg end))))
+        (cl-every (lambda (tk)
+                    (string-match-p (regexp-quote tk) txt))
+                  toks)))))
+
+(defun context-navigator-view--content--item-matches-p (it toks)
+  "Return non-nil when IT matches all TOKS by content under v1 rules."
+  (pcase (context-navigator-item-type it)
+    ('selection
+     (let* ((buf (or (context-navigator-item-buffer it)
+                     (and (stringp (context-navigator-item-path it))
+                          (get-file-buffer (context-navigator-item-path it)))))
+            (beg (context-navigator-item-beg it))
+            (end (context-navigator-item-end it)))
+       (context-navigator-view--content--selection-matches-p buf beg end toks)))
+    ((or 'buffer 'file)
+     (let* ((p (context-navigator-item-path it))
+            (buf (or (context-navigator-item-buffer it)
+                     (and (stringp p) (get-file-buffer p)))))
+       (context-navigator-view--content--buffer-matches-p buf toks)))
+    (_ nil)))
+
+(defun context-navigator-view--content-filter-run (query)
+  "Scan current items and update results set for content filter."
+  (let* ((toks (context-navigator-view--filter--tokens query))
+         (st   (ignore-errors (context-navigator--state-get)))
+         (items (and st (context-navigator-state-items st)))
+         (ht (make-hash-table :test 'equal)))
+    (when (and (listp items) (listp toks))
+      (dolist (it items)
+        (when (context-navigator-view--content--item-matches-p it toks)
+          (let ((k (context-navigator-model-item-key it)))
+            (when (stringp k) (puthash k t ht))))))
+    (setq context-navigator-view--filter-results ht)
+    (when (fboundp 'context-navigator-view--schedule-render)
+      (context-navigator-view--schedule-render nil))))
+
+(defun context-navigator-view--content-filter-schedule (navbuf query)
+  "Debounce content scan for NAVBUF/QUERY; ignore stale runs."
+  (when (buffer-live-p navbuf)
+    (with-current-buffer navbuf
+      (setq context-navigator-view--content-run-id (1+ (or context-navigator-view--content-run-id 0)))
+      (let ((run-id context-navigator-view--content-run-id))
+        (context-navigator-events-debounce
+         :content-filter 0.1
+         (lambda ()
+           (when (and (buffer-live-p navbuf))
+             (with-current-buffer navbuf
+               (when (and (eq context-navigator-view--filter-mode 'content)
+                          (= run-id context-navigator-view--content-run-id))
+                 (context-navigator-view--content-filter-run query))))))))))
+
+(defun context-navigator-view--minibuffer-live-content-setup (navbuf)
+  "Minibuffer hook: live-update 'content' filter with debounced scanning."
+  (let ((update
+         (lambda ()
+           (let ((q (minibuffer-contents-no-properties)))
+             (when (buffer-live-p navbuf)
+               (with-current-buffer navbuf
+                 (setq context-navigator-view--filter-mode 'content)
+                 (setq context-navigator-view--filter-query q)
+                 (if (< (length (string-trim q)) 2)
+                     (progn
+                       ;; too short → show all, but keep filter active in header
+                       (setq context-navigator-view--filter-results nil)
+                       (when (fboundp 'context-navigator-view--schedule-render)
+                         (context-navigator-view--schedule-render nil)))
+                   (context-navigator-view--content-filter-schedule navbuf q))))))))
+    (add-hook 'post-command-hook update nil t)))
+
+;;;###autoload
+(defun context-navigator-view-filter-by-content ()
+  "Start live filter by content (buffers/selections only) via minibuffer."
+  (interactive)
+  (let* ((navbuf (current-buffer))
+         (initial (or context-navigator-view--filter-query "")))
+    (condition-case _quit
+        (minibuffer-with-setup-hook
+            (lambda () (context-navigator-view--minibuffer-live-content-setup navbuf))
+          (let ((res (read-from-minibuffer (context-navigator-i18n :filter-content-prompt)
+                                           initial)))
+            (with-current-buffer navbuf
+              (if (and (stringp (string-trim res))
+                       (= (length (string-trim res)) 0))
+                  (context-navigator-view-filter-clear)
+                (setq context-navigator-view--filter-mode 'content)
+                (setq context-navigator-view--filter-query res)
+                (if (< (length (string-trim res)) 2)
+                    (progn
+                      (setq context-navigator-view--filter-results nil)
+                      (context-navigator-view--schedule-render nil))
+                  (context-navigator-view--content-filter-run res))))))
       (quit
        (with-current-buffer navbuf
          (context-navigator-view-filter-clear))))))

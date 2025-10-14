@@ -27,6 +27,7 @@
 (defvar context-navigator-view--filter-query)
 (defvar context-navigator-view--filter-last-count)
 (defvar context-navigator-view--filter-last-total)
+(defvar context-navigator-view--filter-results)
 
 (defun context-navigator-view--items--tokens (s)
   "Split S into lowercase whitespace-delimited tokens (no empties)."
@@ -53,7 +54,7 @@
        items))))
 
 (defun context-navigator-view--maybe-apply-filter (state items)
-  "Apply active filter (name only for now) to ITEMS and update counters."
+  "Apply active filter (name/content) to ITEMS and update counters."
   (let* ((root (and (context-navigator-state-p state)
                     (context-navigator-state-last-project-root state)))
          (mode (and (boundp 'context-navigator-view--filter-mode)
@@ -61,11 +62,27 @@
          (qry (and (boundp 'context-navigator-view--filter-query)
                    context-navigator-view--filter-query))
          (tot (length (or items '())))
-         (res (cond
-               ((and (eq mode 'name)
-                     (stringp qry) (> (length (string-trim qry)) 0))
-                (context-navigator-view--apply-name-filter items root qry))
-               (t items))))
+         (res
+          (cond
+           ;; Name filter (substring AND over tokens, case-insensitive)
+           ((and (eq mode 'name)
+                 (stringp qry) (> (length (string-trim qry)) 0))
+            (context-navigator-view--apply-name-filter items root qry))
+           ;; Content filter: when query length >= 2 and we have result-set,
+           ;; keep only items whose keys are present in it. Otherwise show all.
+           ((and (eq mode 'content)
+                 (stringp qry))
+            (let* ((qlen (length (string-trim qry)))
+                   (ht (and (boundp 'context-navigator-view--filter-results)
+                            context-navigator-view--filter-results)))
+              (if (and (>= qlen 2) (hash-table-p ht))
+                  (cl-remove-if-not
+                   (lambda (it)
+                     (let ((k (context-navigator-model-item-key it)))
+                       (and (stringp k) (gethash k ht))))
+                   (or items '()))
+                items)))
+           (t items))))
     (setq context-navigator-view--filter-last-total tot)
     (setq context-navigator-view--filter-last-count (length (or res '())))
     res))

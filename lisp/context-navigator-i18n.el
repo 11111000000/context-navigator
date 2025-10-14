@@ -179,12 +179,21 @@
     (:filter-name
      (en . "Filter by name")
      (ru . "Фильтр по имени"))
+    (:filter-content
+     (en . "Filter by content")
+     (ru . "Фильтр по содержимому"))
     (:filter-clear
      (en . "Clear filter")
      (ru . "Снять фильтр"))
     (:filter-name-prompt
      (en . "Filter (name/path): ")
      (ru . "Фильтр (имя/путь): "))
+    (:filter-content-prompt
+     (en . "Filter (content; buffers only, ≥2 chars): ")
+     (ru . "Фильтр (содержимое; только буферы, ≥2 буквы): "))
+    (:filter-too-short
+     (en . "Type at least 2 characters to start content search")
+     (ru . "Введите минимум 2 символа для поиска по содержимому"))
     (:tr-toggle-push
      (en . "Toggle push→gptel")
      (ru . "Переключить отправку→gptel")

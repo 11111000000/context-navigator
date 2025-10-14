@@ -123,6 +123,8 @@
     ;; Items actions
     (:id filter-name :cmd context-navigator-view-filter-by-name
          :keys ("s") :contexts (items) :section tools :desc-key :filter-name)
+    (:id filter-content :cmd context-navigator-view-filter-by-content
+         :keys ("f") :contexts (items) :section tools :desc-key :filter-content)
     (:id filter-clear :cmd context-navigator-view-filter-clear
          :keys ("F") :contexts (items) :section tools :desc-key :filter-clear)
     (:id toggle-dispatch :cmd context-navigator-view-toggle-dispatch

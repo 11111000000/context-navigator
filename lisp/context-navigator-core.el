@@ -1473,8 +1473,16 @@ Also reload the currently active group from disk (no clearing)."
             (let ((lib (locate-library (symbol-name m))))
               (when lib (load lib t t)))
           (error nil))))
-    ;; Restore mode
-    (when was-mode (ignore-errors (context-navigator-mode 1)))
+    ;; Restore mode (suppress initial auto-project to avoid races), then UI
+    (when was-mode
+      (let ((auto-on (and (boundp 'context-navigator--auto-project-switch)
+                          context-navigator--auto-project-switch)))
+        ;; Temporarily disable auto-project so `context-navigator--mode-enable'
+        ;; doesn't publish an early :project-switch that can race our explicit load.
+        (setq context-navigator--auto-project-switch nil)
+        (ignore-errors (context-navigator-mode 1))
+        ;; Restore the flag to its previous state.
+        (setq context-navigator--auto-project-switch auto-on)))
     ;; Restore UI visibility close to previous state
     (pcase (cond (sidebar 'sidebar)
                  (buffer  'buffer)
