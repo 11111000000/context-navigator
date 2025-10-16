@@ -124,23 +124,23 @@ the cached aggregate without re-reading group files."
                       (m (let ((km (make-sparse-keymap)))
                            ;; Handle clicks in the tab-line area
                            (define-key km [tab-line mouse-1]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            (define-key km [tab-line mouse-2]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            ;; Fallbacks for generic/down events
                            (define-key km [mouse-1]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            (define-key km [mouse-2]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            (define-key km [down-mouse-1]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            (define-key km [down-mouse-2]
-                             (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
+                                       (lambda (e) (interactive "e") (context-navigator-stats-split--select-tab key)))
                            ;; Keyboard convenience
                            (define-key km (kbd "RET")
-                             (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
+                                       (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
                            (define-key km (kbd "TAB")
-                             (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
+                                       (lambda () (interactive) (context-navigator-stats-split--select-tab key)))
                            km)))
                  (propertize (format " %s " label)
                              'face face
@@ -187,9 +187,10 @@ of enabled file items in the current context."
       (let* ((mk-icon (lambda (ext)
                         (let* ((name (if (string= ext "<none>") "file" (concat "x." ext))))
                           (cond
+                           ((not (display-graphic-p)) "*")
                            ((fboundp 'all-the-icons-icon-for-file)
                             (ignore-errors (all-the-icons-icon-for-file name)))
-                           (t "•")))))
+                           (t "*")))))
              (lines '())
              (tb (max 1 total-bytes))) ;; prevent div-by-zero
         (cl-loop with idx = 0
@@ -596,9 +597,9 @@ Tabs:
                 (setq i (1+ i))
                 (when (< i n) (insert "\n"))))
             ;; Zebra background disabled per user request.
-        ;; Fit height to content immediately after rendering, like Groups split
-        (when-let ((navw (context-navigator-stats-split--nav-window)))
-          (context-navigator-stats-split--fit-window w navw))))))))
+            ;; Fit height to content immediately after rendering, like Groups split
+            (when-let ((navw (context-navigator-stats-split--nav-window)))
+              (context-navigator-stats-split--fit-window w navw))))))))
 
 (defun context-navigator-stats-split--install-subs ()
   "Subscribe to events that should refresh the Stats split (idempotent)."

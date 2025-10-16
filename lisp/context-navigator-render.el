@@ -98,17 +98,22 @@ dynamically for one-shot focus scenarios.")
 (defun context-navigator-render--indicator (present)
   "Return indicator string (or nil) based only on PRESENT in gptel.
 
-Respects `context-navigator-render-indicator-style':
+Respects =context-navigator-render-indicator-style':
 - off   → nil
 - icons/auto → try icons, fallback to text
-- text  → force text bullet"
+- text  → force text bullet
+
+In TTY (non-graphical) display, always show ASCII checkboxes: [X] or [ ]."
   (let ((style (or context-navigator-render-indicator-style 'auto)))
     (cond
      ((eq style 'off) nil)
+     ((not (display-graphic-p))
+      (if present "[X]" "[ ]"))
      ((eq style 'text)
       (context-navigator-indicator-string present nil))
      (t
       (context-navigator-indicator-string present t)))))
+
 
 (defun context-navigator-render--left-column (state-icon icon name)
   "Build left column string from STATE-ICON, ICON and NAME."

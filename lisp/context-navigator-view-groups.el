@@ -23,14 +23,15 @@
 Uses all-the-icons when available; falls back to an emoji.
 The icon is vertically adjusted to sit ~3px lower."
   (let* ((icon
-          (cond
-           ((fboundp 'all-the-icons-material)
-            (ignore-errors
-              (all-the-icons-material "folder_open" :height 0.9 :v-adjust 0.0)))
-           ((fboundp 'all-the-icons-faicon)
-            (ignore-errors
-              (all-the-icons-faicon "folder-open" :height 0.9 :v-adjust 0.0)))
-           (t nil))))
+          (and (display-graphic-p)
+               (cond
+                ((fboundp 'all-the-icons-material)
+                 (ignore-errors
+                   (all-the-icons-material "folder_open" :height 0.9 :v-adjust 0.0)))
+                ((fboundp 'all-the-icons-faicon)
+                 (ignore-errors
+                   (all-the-icons-faicon "folder-open" :height 0.9 :v-adjust 0.0)))
+                (t nil)))))
     (when (stringp icon)
       (propertize icon
                   'face '(:foreground "MediumOrchid3")
@@ -68,13 +69,14 @@ the display name and the items count."
                  (path (or (plist-get pl :path) nil))
                  (cnt  (or (ignore-errors (context-navigator-persist-group-item-count path)) 0))
                  (sel-p (member slug selected))
-                 ;; Lamp indicator like in items (green=selected, gray=not selected)
+                 ;; Lamp indicator like in items (TTY→checkboxes)
                  (lamp (when mg
-                         (ignore-errors (context-navigator-indicator-string sel-p t))))
-                 (gico (or (ignore-errors (context-navigator-view-groups--icon))
-                           (propertize "📁"
-                                       'face '(:foreground "MediumOrchid3")
-                                       'display '(raise -0.1))))
+                         (if (display-graphic-p)
+                             (ignore-errors (context-navigator-indicator-string sel-p t))
+                           (if sel-p "[X]" "[ ]"))))
+                 (gico (if (display-graphic-p)
+                           (or (ignore-errors (context-navigator-view-groups--icon)) "")
+                         ""))
                  (cnt-str (format "%d" (max 0 (or cnt 0))))
                  (prefix (string-trim
                           (mapconcat #'identity

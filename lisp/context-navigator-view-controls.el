@@ -180,7 +180,7 @@ Rule (MG): selection non-empty AND aggregated TOTAL items > 0."
          (items (and st (ignore-errors (context-navigator-state-items st)))))
     (and (listp items)
          (cl-some (lambda (it) (and (context-navigator-item-p it)
-                               (context-navigator-item-enabled it)))
+                                    (context-navigator-item-enabled it)))
                   items))))
 
 (defun context-navigator-view-controls--push-disabled-reason ()
@@ -242,7 +242,7 @@ Remove a key to hide the control. You may also insert :gap for spacing."
        :label-fn ,(lambda (style state)
                     (pcase style
                       ((or 'icons 'auto) " [→]")
-                      (_ (format " [→gptel: %s]" (context-navigator-i18n (if (eq state 'on) :on :off)))))))
+                      (_ (format " [gptel: %s]" (context-navigator-i18n (if (eq state 'on) :on :off)))))))
       (auto-project
        :type toggle
        :icon-key auto-project
@@ -351,8 +351,10 @@ Remove a key to hide the control. You may also insert :gap for spacing."
                                     (ignore-errors (context-navigator-persist-state-load root))))
                            (mg (and (listp ps) (plist-member ps :multi) (plist-get ps :multi))))
                       (if mg 'on 'off)))
-       :label-fn ,(lambda (_style state)
-                    (if (eq state 'on) " [MG✓]" " [MG]")))
+       :label-fn ,(lambda (style state)
+                    (if (eq style 'text)
+                        (if (eq state 'on) " [MG*]" " [MG]")
+                      (if (eq state 'on) " [MG✓]" " [MG]"))))
       (push-now
        :type action
        :icon-key push-now
@@ -456,9 +458,12 @@ Returns a propertized string or nil when not visible."
                       (ignore-errors (funcall fn))))
          (visible-p (let ((fn (or (plist-get desc :visible-p) (lambda () t))))
                       (ignore-errors (funcall fn))))
-         (style (or context-navigator-view-controls-style 'auto)))
+         (style (if (display-graphic-p)
+                    (or context-navigator-view-controls-style 'auto)
+                  'text)))
     (when (and desc visible-p)
-      (let* ((gicons (and (fboundp 'context-navigator-view-controls-icons-available-p)
+      (let* ((gicons (and (display-graphic-p)
+                          (fboundp 'context-navigator-view-controls-icons-available-p)
                           (context-navigator-view-controls-icons-available-p)))
              (state (when (eq type 'toggle)
                       (let ((fn (plist-get desc :state-fn)))

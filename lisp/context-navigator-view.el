@@ -278,7 +278,8 @@ Set to 0 or nil to disable polling (event-based refresh still works)."
            (q (or context-navigator-view--filter-query ""))
            (n (or context-navigator-view--filter-last-count 0))
            (tot (or context-navigator-view--filter-last-total 0))
-           (x (propertize "[×]"
+           (x-label (if (display-graphic-p) "[×]" "[X]"))
+           (x (propertize x-label
                           'mouse-face 'mode-line-highlight
                           'help-echo (and (fboundp 'context-navigator-i18n)
                                           (context-navigator-i18n :filter-clear))

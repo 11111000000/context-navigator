@@ -74,9 +74,10 @@ PLIST fields:
 
 (defun context-navigator-stats--icons-enabled-p ()
   (pcase context-navigator-stats-icons-enable
-    ('t t)
+    ('t (display-graphic-p))
     ('nil nil)
-    (_ (and (boundp 'context-navigator-enable-icons)
+    (_ (and (display-graphic-p)
+            (boundp 'context-navigator-enable-icons)
             context-navigator-enable-icons
             (fboundp 'all-the-icons-icon-for-file)))))
 
