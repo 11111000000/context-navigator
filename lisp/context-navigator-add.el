@@ -43,10 +43,30 @@ Files larger than this threshold are skipped."
       (and attrs (file-attribute-size attrs)))))
 
 (defun context-navigator-add-collect-recursive (dir)
-  "Collect regular files under DIR (recursive)."
-  (let* ((all (ignore-errors (directory-files-recursively dir ".*" t)))
-         (files (cl-remove-if-not #'file-regular-p all)))
-    files))
+  "Collect regular files under DIR (recursive, robust across Emacs versions).
+
+This normalizes DIR to an absolute directory and then attempts two strategies:
+1. Use =directory-files-recursively' with a proper PREDICATE argument when
+   available (Emacs 28+). Note the predicate is the 5th argument, so we pass
+   two nils before it to keep argument positions correct.
+2. Fallback to a plain =directory-files-recursively' call or, if that fails,
+   return an empty list.
+
+Always return a list of regular files (absolute paths) or '() on error."
+  (let ((dir (and (stringp dir) (expand-file-name dir))))
+    (if (not (and dir (file-directory-p dir)))
+        '()
+      (let* ((rx ".*")
+             (all
+              (or
+               ;; Correct call: DIR RX INCLUDE-DIRECTORIES FOLLOW-SYMLINKS PREDICATE
+               (ignore-errors (directory-files-recursively dir rx nil nil #'file-regular-p))
+               ;; Older Emacs: fallback without PREDICATE
+               (ignore-errors (directory-files-recursively dir rx))
+               '())))
+        (if (listp all)
+            (cl-remove-if-not #'file-regular-p all)
+          '())))))
 
 (defun context-navigator-add-gather-files (paths)
   "From PATHS (files/dirs), return plist:

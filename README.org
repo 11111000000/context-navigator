@@ -1,21 +1,22 @@
-#+title: Emacs Context Navigator
-#+author: Peter Kosov <11111000000@email.com>
+#+title: Emacs Context Navigator — gentle focus
+#+author: Peter Kosov
 #+options: toc:t num:nil
 #+toc: headlines 2
 
 * Overview
 
-Emacs Context Navigator is a lightweight, project‑aware context manager and sidebar for Emacs.
+Context is attention. The lighter it is to keep, the steadier the path. Context Navigator helps you practice “context engineering”: move tasks, open files, buffer selections, and notes out of your head into clear, reusable groups per project (or globally). Switch context instantly, lower cognitive load, and stay with the work.
 
-The idea: practice “context engineering”. Instead of keeping task state, open files, buffer selections, and notes in your head, externalize them into clear, reusable context groups per project (or globally). Switch context instantly, reduce cognitive load, and keep your focus on the work.
-
-- View to browse items and groups, with a compact header-line toolbar
-- Project‑aware, optional auto‑switch on buffer/project change
-- One‑way integration with GPTel (push current items → GPTel)
-- Per‑group Undo/Redo (history) with header‑line controls
-- Async, per‑group persistence with progress and spinner
-- Stats footer (counts, size, token estimates) — togglable
-- Dired‑aware “Universal Add”, globs, and “add from text”
+- Project‑aware, event‑driven, lightweight
+- Sidebar on the left; compact title in header-line; controls in the modeline
+- One‑way GPTel integration (push on demand or automatically)
+- Per‑group history (Undo/Redo)
+- Asynchronous, per‑group persistence (format v3) with progress spinner
+- “Live” filters: by name and by content
+- Add context universally, by glob mask, or from text (path extraction)
+- Optional Groups and Stats splits under the sidebar
+- Multifile view to browse and safely edit selections across files
+- Optional icons (all-the-icons), i18n, logging
 
 Repository: https://github.com/11111000000/context-navigator
 
@@ -24,39 +25,34 @@ Repository: https://github.com/11111000000/context-navigator
 #+caption: Items view — your current context (enabled files, buffers, selections)
 [[./context-navigator-items.png]]
 
-#+caption: Items view — your current context (enabled files, buffers, selections)
+#+caption: Items view — Navigator open
 [[./context-navigator.png]]
-
 
 * Requirements
 
 - Emacs 29.1+ (recommended 30.1+)
-- transient 0.3.0+ (for the global menu)
+- transient 0.3.0+
 - Optional:
-  - gptel (for one‑way push)
-  - project.el or projectile (for project detection/auto‑switch)
-  - all-the-icons (for icons in the sidebar; remember to install fonts)
+   gptel — to push context to your LLM session
+   project.el or projectile — project detection / auto‑switch
+   all-the-icons — icons in the sidebar (run M-x all-the-icons-install-fonts)
+   which-key, consult — nicer hints and picking
 
 * Installation
 
-Not on MELPA. Use a local checkout or straight.el from GitHub.
-
-- Local checkout + use-package (recommended)
+** Local checkout + use-package
 #+begin_src emacs-lisp
-
 (use-package context-navigator
   :load-path "~/Code/context-navigator/lisp"
   :custom
-  ;; Optional, but handy: set a global key for the transient menu
   (context-navigator-global-key "C-c n")
-  ;; Recommended defaults
   (context-navigator-autoload t)
   (context-navigator-autosave t)
   :config
   (context-navigator-mode 1))
 #+end_src
 
-- straight.el (from GitHub)
+** straight.el (GitHub)
 #+begin_src emacs-lisp
 (use-package context-navigator
   :straight (context-navigator
@@ -72,409 +68,324 @@ Not on MELPA. Use a local checkout or straight.el from GitHub.
 #+end_src
 
 Notes:
-- If you don’t want a global binding, keep =context-navigator-global-key= as nil and use =M-x context-navigator-transient=.
-- If you enable icons, install fonts once: =M-x all-the-icons-install-fonts=.
+- Prefer M-x context-navigator-transient when you don’t want a global key.
+- If you enable icons, install fonts once: M-x all-the-icons-install-fonts.
 
 * Quick Start
 
-- Enable the mode: =M-x context-navigator-mode= (or add =(context-navigator-mode 1)= to your init)
-- Open the Navigator right away: =M-x context-navigator-start= (default display: buffer/magit-like; switch with M in transient)
-- Press your global key, e.g., =C-c n=, then:
-  - n — toggle Navigator; M — Display Mode (buffer/sidebar)
-  - a — Add (universal): region/file/buffer or Dired selection
-  - f — Add files by glob (from minibuffer)
-  - t — Add files from text (extracts paths from region/buffer)
-  - g — show groups
-  - G/A — toggle push→gptel / auto‑project
-  - R — Occam filter (org-mode): minimize enabled items for the task
-  - P/C — Push now / Clear gptel
-- Press ? in the sidebar for localized, column‑formatted help
+- Enable the mode: M-x context-navigator-mode
+- Open Navigator: M-x context-navigator-start
+   Title in the header-line shows “[project: group]”
+   The control toolbar lives in the Navigator modeline
+- Press your global key (e.g., C-c n), then for example:
+   n — toggle Navigator; p — switch to current buffer’s project
+   g — open Groups list; s — toggle Stats split
+   a — Add (universal)
+   f — Add by mask (glob)
+   t — Add files from text (extracts paths)
+   R — Occam filter (org): minimize enabled items for the task
+   P — Push now → GPTel; C — Clear GPTel
+- Inside the sidebar:
+   j/k or n/p to move; RET/l to visit; v to preview
+   SPC/t to enable/disable at point
+   g to refresh; d to delete; q to quit
+   s to filter by name; f to filter by content; F to clear active filter
+
+Press ? in the sidebar for localized, context-aware help.
 
 * Core workflows
 
-- Switch between task groups (project‑centric): “research”, “bug‑123”, “release”.
-- Auto‑project switching: follows your current file/gptel/Dired buffers across projects.
+- Task groups (per project): “research”, “bug‑123”, “release”, etc.
+- Auto‑project switching: follows meaningful buffers (files, GPTel, Dired) across projects.
 - LLM sessions: push enabled items to GPTel on demand or automatically; return to saved groups anytime.
 - Adding context:
-  - “Universal Add” (from Dired/region/file/buffer)
+  - Universal Add (from Dired / region / buffer)
   - Add by mask (glob)
-  - Add from text (extract file‑like tokens and resolve)
+  - Add from text (extract path‑like tokens and resolve)
 
-* Practical scenarios (with GPTel/gptel-aibo)
+* Interface
 
-- Per-task groups with GPTel:
-  - Create a group per task/issue; add files, buffers, and selections that matter.
-  - Toggle auto-push ON and keep chatting in GPTel (or gptel-aibo minor mode in org).
-  - The modeline in the Navigator shows the full path at point; indicators (●/○) reflect actual presence in GPTel.
+** Title/Modeline
 
-- Using gptel-aibo:
-  - gptel-aibo buffers are treated as “interesting” for auto-project switching; Navigator will stick to the correct project while you chat.
-  - Default-directory of gptel-aibo buffers is respected; switching windows updates Navigator’s project and groups list.
+- Header-line: compact “[project: group]” title with a small filter segment when active. Click the title to collapse/expand quickly.
+- Modeline toolbar (in Navigator buffers): compact clickable controls with icons or short labels, for example:
+   [→] push→GPTel on/off
+   [A] auto‑project on/off
+   [↶]/[↷] Undo/Redo (per group)
+   [G] open Groups split
+   [Σ] open 5‑line Stats split
+   [MF] open Multifile view
+   [O]/[K] open/close all context buffers
+   [P] Push now; [T]/[x] enable all / clear group
 
-- Trimming context and saving tokens:
-  - Use the Occam filter (R in the transient, org-mode) to keep only essential items enabled for the current task.
-  - The Stats footer (s) shows rough token estimates for enabled vs total; combine with Occam to control budget.
+Note: which-key (when installed) shows friendly labels sourced from the centralized keyspec.
 
-- Selections and edits:
-  - Add precise regions from files as “selection” items; Occam handles them safely.
-  - Quickly enable/disable per item with SPC/t; Undo/Redo per group is available via header toolbar (↶/↷).
+** Sidebar (items and groups)
 
-- Multi-project work:
-  - Navigator “sticks” to the last meaningful root and avoids flicker to global; throttle is configurable.
-  - Use p in the transient to switch explicitly to the current buffer’s project when needed.
+- Items view
+  - Indicators show GPTel membership (green/gray)
+  - Left column: indicator + icon + name; right side may show relpath
+  - Filters:
+    - s — name filter (substring AND across tokens)
+    - f — content filter (buffers/selections)
+    - F — clear filter, or click [×] in the header segment
+- Groups (bottom split)
+  - Compact list with active group highlight
+  - Create/rename/duplicate/delete; toggle selection in multi‑group mode
+  - Designed for quick, low‑friction switching
 
-* Usage — interface overview
+** Stats split
 
-- Sidebar
-  - Title inside the buffer shows “[project: group]” in Items view; Groups view shows “[project]”.
-  - Toolbar in the header-line (clickable and TAB-reachable) contains all toggles and actions (shows graphical icons when all-the-icons is available; otherwise compact labels in brackets):
-    - [→] push→gptel on/off
-    - [A] auto-project on/off
-    - [↶]/[↷] Undo/Redo history
-    - [O] Open buffers (background; dynamic count; remote-aware)
-    - [K] Close buffers (belonging to the current group)
-    - [P] Push now
-    - [T] Toggle all in gptel (“Enable all gptel” when everything is disabled; otherwise “Disable all in gptel”)
-  - Per-point status is shown in the modeline; the buffer footer is minimal. In items view the modeline shows the full path of the item at point; in groups view it shows “Display — Description” when a description is set.
-  - Indicators (green/gray) show whether an item is present in GPTel (when indicators are enabled).
+- Optional 5‑line split below the sidebar:
+  - Counts (enabled vs total), size, rough token estimates
+  - A small types summary (e.g., by extension)
+  - Toggle from the modeline or via transient/menu
 
-- Transient menu (=C-c n= by default)
-  - Quick access to panel, groups, add, GPTel toggles, and logs.
+** Multifile view
 
-- Navigation
-  - Items and groups are interactive. Use TAB/Shift‑TAB to move between toggles, actions, items, and groups.
-  - Ret/Space: visit/preview. j/k or n/p: next/prev.
+- One buffer with sections per item (indicator, icon, name, relpath)
+- Navigate (j/k or n/p), RET to visit/edit, t to toggle, d to delete, p to push
+- Selection items open in indirect buffers narrowed to region for safe editing
+- “Edit all” opens indirect buffers for every selection (with a safety threshold)
+- After saving, auto‑push can update GPTel when ON
 
-Examples:
-- Open all context buffers for a group, then Push now to ground a GPTel chat.
-- Dired: mark files and “a” (Universal Add) to collect them; if directories are included, confirm via preview.
+* Key bindings (essentials)
 
-* Key bindings (summary)
+** Global (via transient, typically C-c n)
+- n — toggle Navigator (sidebar/buffer mode)
+- p — switch to current buffer’s project
+- g — open Groups
+- s — toggle Stats split
+- a/f/t — Add (universal) / Add by mask / Add from text
+- P/C — Push now / Clear GPTel
+- R — Occam filter (org)
 
-- Global (context-navigator-mode)
-  - Your chosen key (e.g., C-c n) → =context-navigator-transient=
+** Sidebar (context-navigator-view-mode)
+- RET / l — activate (visit item / open group)
+- v — preview (other window)
+- j/k or n/p — next/previous
+- SPC / t — enable/disable item at point
+- d — delete (item or group)
+- g — refresh
+- h / u — go up (items ↔ groups)
+- G — show Groups split
+- a / r / e / c — add / rename / edit description / duplicate group (groups view)
+- x / A — toggle push→GPTel / auto‑project
+- U — unload context (switch to global)
+- P / C — push now / clear GPTel
+- O / o — open all context buffers (background)
+- K — close all context buffers
+- E — clear current group
+- s — toggle Stats split
+- TAB / S-TAB — jump across toggles/actions/items/groups
+- q — quit, ? — help/menu
 
-- Transient (selected)
-  - Panel/Project: n (toggle sidebar), p (switch to current buffer’s project)
-  - Context/Groups: g (groups list), X (unload context)
-  - Actions: a (Add universal), f (Add by mask), t (Add from text), o (Open buffers)
-  - GPTel: G (toggle push), A (toggle auto‑project), P (push now), C (clear gptel)
-  - Logs: D (toggle logs), L (open logs), K (clear logs), V (set level), F (toggle file logging)
+** Multifile view
+- j/k or n/p — move between sections
+- RET / v — visit / preview
+- t — toggle enabled; d — delete; p — push one
+- f — filter enabled‑only; z — collapse/expand all; E — Edit all
+- q — close
 
-- Sidebar (context-navigator-view-mode)
-  - RET / l: activate (visit item/open group)
-  - v: preview (other window)
-  - n/p/j/k: next/previous
-  - SPC / t: toggle enabled for item at point
-  - d: delete (item or group, depending on view)
-  - g: refresh (items or groups)
-  - h / u: go up (toggle items ↔ groups)
-  - G: show groups list
-  - a / r / e / c: add / rename / edit description / duplicate group (groups view)
-  - x / A: toggle push→gptel / auto‑project
-  - U: unload context (switch to global)
-  - P / C: push now / clear gptel
-  - O / o: open all context buffers (background)
-  - K: close all context buffers
-  - E: clear current group
-  - s: toggle Stats footer
-  - TAB / S-TAB: jump across toggles/actions/items/groups
-  - q: quit, ?: menu/help
+Tip: which-key automatically annotates Navigator keymaps with human‑readable labels.
 
-Quality‑of‑life:
-- =delete-other-windows= is remapped to close sidebar windows first (keeps layout).
-- Optional: protect window balancing while the sidebar is visible.
+* Adding context
 
-* Configuration (reference tables)
+** Universal Add
+- In Dired: adds marked files; directories expand recursively with a preview+confirm step
+- In a file buffer with a region: adds a “selection” item (precise, safe)
+- In a file buffer without a region: adds the current file
+- In a non‑file buffer: adds the buffer
+- Large files and TRAMP paths: careful prompts; size/remote filters apply
 
-Below are all public settings collected from the source, grouped by module. “Default” reflects the code defaults, not your current values.
+** Add by mask (glob)
+- Single mask per invocation; supports globstar (*) and character classes
+- Works relative to project root, current directory, or as an absolute path
+- Safety: TRAMP masks are disabled by default; enable only if you really need it
+- Respect size limits and type checks; preview on big sets
 
-** Core (context-navigator-core.el)
+** Add from text
+- Extracts path‑like tokens from region/buffer; de‑quotes and strips position suffixes like :N or :A-B
+- Resolves against project index (with a TTL cache) or existing abs/rel paths
+- Reports ambiguities and unresolved samples; previews when large
+- Applies size/remote/type filters; confirms when remote paths are present
 
-| Variable                                       | Type          | Default      | Description                                                        | Module/File                    |
-|------------------------------------------------+---------------+--------------+--------------------------------------------------------------------+--------------------------------|
-| context-navigator-auto-refresh                 | boolean       | t            | Auto refresh model/sidebar after external changes                  | core/context-navigator-core.el |
-| context-navigator-global-key                   | string or nil | nil          | Global key for transient (e.g., "C-c n"); nil = no binding         | core/context-navigator-core.el |
-| context-navigator-view-width                   | integer       | 42           | Sidebar width in columns                                           | core/context-navigator-core.el |
-| context-navigator-max-filename-length          | integer       | 64           | Max display length for file names                                  | core/context-navigator-core.el |
-| context-navigator-context-switch-interval      | number        | 0.7          | Throttle interval (s) for project auto‑switch                      | core/context-navigator-core.el |
-| context-navigator-context-load-batch-size      | integer       | 64           | Batch size for async context load                                  | core/context-navigator-core.el |
-| context-navigator-gptel-apply-batch-size       | integer       | 20           | Items per tick when pushing to GPTel in background                 | core/context-navigator-core.el |
-| context-navigator-gptel-apply-batch-interval   | number        | 0.05         | Delay (s) between GPTel apply batches                              | core/context-navigator-core.el |
-| context-navigator-gptel-require-visible-window | boolean       | nil          | Defer GPTel apply until a GPTel window is visible                  | core/context-navigator-core.el |
-| context-navigator-gptel-visible-poll-interval  | number        | 0.5          | Poll interval (s) for GPTel visibility when deferred               | core/context-navigator-core.el |
-| context-navigator-autosave                     | boolean       | t            | Autosave group file on model refresh                               | core/context-navigator-core.el |
-| context-navigator-autosave-debounce            | number        | 0.5          | Debounce (s) for autosave                                          | core/context-navigator-core.el |
-| context-navigator-autoload                     | boolean       | t            | Autoload context on project switch                                 | core/context-navigator-core.el |
-| context-navigator-default-push-to-gptel        | boolean       | nil          | Initial session state: push to GPTel                               | core/context-navigator-core.el |
-| context-navigator-default-auto-project-switch  | boolean       | t            | Initial session state: auto‑project switch                         | core/context-navigator-core.el |
-| context-navigator-dir-name                     | string        | ".context"   | Project subdir for context files                                   | core/context-navigator-core.el |
-| context-navigator-context-file-name            | string        | "context.el" | Legacy single‑file name (still used for compatibility paths)       | core/context-navigator-core.el |
-| context-navigator-global-dir                   | directory     | ~/.context   | Global context directory                                           | core/context-navigator-core.el |
-| context-navigator-create-default-group-file    | boolean       | t            | Ensure default group file exists on first use                      | core/context-navigator-core.el |
-| context-navigator-protect-sidebar-windows      | boolean       | t            | Protect sidebar from window‑balancing (skip balance while visible) | core/context-navigator-core.el |
+With auto‑push ON, newly added or re‑enabled items are batched to GPTel in the background.
 
-Constants:
-| Variable                          | Type     | Default | Description                                | Module/File                    |
-|-----------------------------------+----------+---------+--------------------------------------------+--------------------------------|
-| context-navigator-persist-version | constant |       3 | Persist format version used across modules | core/context-navigator-core.el |
+* GPTel (one‑way, careful)
 
-** Sidebar (context-navigator-view.el)
+Navigator never imports from GPTel; it only resets + adds enabled items. Apply is batched and responsive; you can optionally defer until a GPTel window is visible. Files, buffers, and selections are supported. Indicators in the sidebar show membership in GPTel.
 
-| Variable                                         | Type            | Default | Description                                                | Module/File                       |                                             |                                   |   |   |
-|--------------------------------------------------+-----------------+---------+------------------------------------------------------------+-----------------------------------+---------------------------------------------+-----------------------------------+---+---|
-| context-navigator-auto-open-groups-on-error      | boolean         | t       | Auto‑open groups list when a group fails to load           | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-highlight-active-group         | boolean         | t       | Highlight active group in groups list                      | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-view-controls-style                 | choice (auto    | icons   | text)                                                      | icons                             | Labels style for toggles/actions            | sidebar/context-navigator-view.el |   |   |
-| context-navigator-openable-count-ttl             | number          | 1.0     | Cache TTL (s) for openable counter                         | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-openable-soft-cap              | integer         | 100     | Soft cap for counting openable buffers                     | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-openable-remote-mode           | choice (lazy    | strict  | off)                                                       | lazy                              | How to treat remote files in “Open buffers” | sidebar/context-navigator-view.el |   |   |
-| context-navigator-gptel-indicator-poll-interval  | number          | 0       | Polling interval (s) for GPTel indicators (0 to disable)   | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-view-spinner-frames            | list of strings | ⠋…⠏     | Frames for the loading spinner                             | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-view-spinner-interval          | number          | 0.1     | Spinner animation interval (s)                             | sidebar/context-navigator-view.el |                                             |                                   |   |   |
-| context-navigator-view-spinner-degrade-threshold | number          | 0.25    | Degrade to static indicator if timer slips beyond this (s) | sidebar/context-navigator-view.el |                                             |                                   |   |   |
+Highlights:
+- Small background batches keep the UI responsive
+- Optional deferral until GPTel is visible in the current frame
+- Selections are handled safely; buffer items skip dead buffers
+- Indicators show present/absent state (when enabled)
 
-** Render (context-navigator-render.el)
+* Multi‑group (MG)
 
-| Variable                                 | Type         | Default | Description                       | Module/File                        |      |                                 |                                    |
-|------------------------------------------+--------------+---------+-----------------------------------+------------------------------------+------+---------------------------------+------------------------------------|
-| context-navigator-render-show-path       | boolean      | nil     | Show item path in right column    | render/context-navigator-render.el |      |                                 |                                    |
-| context-navigator-render-truncate-name   | integer      | 64      | Max display length for item names | render/context-navigator-render.el |      |                                 |                                    |
-| context-navigator-render-indicator-style | choice (auto | icons   | text                              | off)                               | text | GPTel presence indicators style | render/context-navigator-render.el |
+- Toggle multi‑group mode from the modeline or transient/menu
+- Select multiple groups in the bottom Groups split; push applies the aggregate
+- Group-local enable flags aren’t changed; MG only aggregates for GPTel
+- Auto‑push gate: if selected groups exceed a safe threshold of enabled items, auto‑push is turned OFF with a one‑time notice (manual push still works)
 
-** Icons (context-navigator-icons.el)
+* Occam filter (org)
 
-| Variable                                   | Type    | Default | Description                                   | Module/File                     |
-|--------------------------------------------+---------+---------+-----------------------------------------------+----------------------------------|
-| context-navigator-enable-icons             | boolean | t       | Enable icons in the sidebar                   | icons/context-navigator-icons.el |
-| context-navigator-icons-disable-on-remote  | boolean | t       | Disable icons on remote/TRAMP                 | icons/context-navigator-icons.el |
-
-** Project detection (context-navigator-project.el)
-
-| Variable                                     | Type          | Default                                 | Description                                                      | Module/File                          |
-|----------------------------------------------+---------------+-----------------------------------------+------------------------------------------------------------------+--------------------------------------|
-| context-navigator-project-nonfile-modes      | list of modes | (gptel-mode comint-mode … dired-mode …) | Non‑file modes that can represent real project context           | project/context-navigator-project.el |
-| context-navigator-project-stick-to-last-root | boolean       | t                                       | Stick to last known root instead of transient switches to global | project/context-navigator-project.el |
-
-** Path add / masks (context-navigator-add-paths.el)
-
-| Variable                                     | Type            | Default                          | Description                                     | Module/File                            |                                               |                                        |
-|----------------------------------------------+-----------------+----------------------------------+-------------------------------------------------+----------------------------------------+-----------------------------------------------+----------------------------------------|
-| context-navigator-add-paths-limit             | integer         | 50                               | Max files to add in a single operation          | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-add-paths-index-cache-ttl   | number          | 30.0                             | TTL (s) for project file index cache            | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-add-paths-case-sensitive    | choice (auto    | on                               | off)                                            | on                                     | Case sensitivity policy for basename matching | add-paths/context-navigator-add-paths.el |
-| context-navigator-add-paths-ignore-gitignored | boolean         | t                                | Prefer sources that respect .gitignore          | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-add-paths-exclude-dotdirs   | boolean         | t                                | Exclude dot-directories in fallback recursion   | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-add-paths-fallback-exclude  | list of strings | (node_modules dist build target) | Directory names excluded in fallback recursion  | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-mask-include-dotfiles      | boolean         | nil                              | Include dotfiles without explicit dot component | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-mask-enable-remote         | boolean         | nil                              | Allow TRAMP mask expansion                      | add-paths/context-navigator-add-paths.el |                                               |                                        |
-| context-navigator-mask-globstar              | boolean         | t                                | Enable ** (globstar)                            | add-paths/context-navigator-add-paths.el |                                               |                                        |
-
-** Transient add (max file size) (context-navigator-transient.el)
-
-| Variable                          | Type    | Default          | Description                                      | Module/File                             |
-|-----------------------------------+---------+------------------+--------------------------------------------------+------------------------------------------|
-| context-navigator-max-file-size   | integer | (* 1 1024 1024)  | Max file size (bytes) for recursive adds/filters | transient/context-navigator-transient.el |
-
-** Logging (context-navigator-log.el)
-
-| Variable                                 | Type                                      | Default                 | Description                                    | Module/File                  |
-|------------------------------------------+-------------------------------------------+-------------------------+------------------------------------------------+------------------------------|
-| context-navigator-log-enabled            | boolean                                   | nil                     | Enable logging                                 | log/context-navigator-log.el |
-| context-navigator-log-level              | choice (:error :warn :info :debug :trace) | :info                   | Minimal level to log when enabled              | log/context-navigator-log.el |
-| context-navigator-log-auto-open-on-error | boolean                                   | t                       | Open log buffer automatically on errors        | log/context-navigator-log.el |
-| context-navigator-log-buffer-name        | string                                    | "*Context Navigator Log*" | Log buffer name                                | log/context-navigator-log.el |
-| context-navigator-log-max-lines          | integer                                   | 5000                    | Trim log to at most N lines                    | log/context-navigator-log.el |
-| context-navigator-log-truncate-length    | integer                                   | 800                     | Truncate long messages (0/nil = no truncation) | log/context-navigator-log.el |
-| context-navigator-log-file-enable        | boolean                                   | nil                     | Also append each line to a persistent file     | log/context-navigator-log.el |
-| context-navigator-log-file               | file or nil                               | nil                     | Path to persistent log file                    | log/context-navigator-log.el |
-
-** I18n (context-navigator-i18n.el)
-
-| Variable                   | Type                         | Default | Description                           | Module/File                    |
-|----------------------------+------------------------------+---------+---------------------------------------+--------------------------------|
-| context-navigator-language | choice (auto en ru fr de es) | auto    | UI language; auto detects from locale | i18n/context-navigator-i18n.el |
-
-** Header-line controls (context-navigator-headerline.el)
-
-| Variable                                 | Type    | Default | Description                                       | Module/File                              |
-|------------------------------------------+---------+---------+---------------------------------------------------+------------------------------------------|
-| context-navigator-view-headerline-enable | boolean | t       | Show Navigator controls in the buffer header-line | headerline/context-navigator-headerline.el |
-
-** Modeline (context-navigator-view-modeline.el)
-
-| Variable                               | Type    | Default | Description                                   | Module/File                            |
-|----------------------------------------+---------+---------+-----------------------------------------------+----------------------------------------|
-| context-navigator-view-modeline-enable | boolean | t       | Show minimal per-point status in the modeline | modeline/context-navigator-view-modeline.el |
-| context-navigator-view-modeline-face   | face    | shadow  | Face used for the modeline status text        | modeline/context-navigator-view-modeline.el |
-
-* Configuration examples
-
-- Minimal setup
-#+begin_src emacs-lisp
-(use-package context-navigator
-  :custom
-  (context-navigator-global-key "C-c n")   ;; or nil if you prefer M-x
-  (context-navigator-autoload t)
-  (context-navigator-autosave t)
-  :config
-  (context-navigator-mode 1))
-#+end_src
-
-#+RESULTS:
-: t
-
-- Advanced setup (icons, indicators, widths, counters, auto‑project, language)
-#+begin_src emacs-lisp
-(use-package context-navigator
-  ;; :straight (context-navigator :type git :host github :repo "11111000000/context-navigator")
-  :custom
-  ;; Basics
-  (context-navigator-global-key "C-c n")
-  (context-navigator-autoload t)
-  (context-navigator-autosave t)
-  (context-navigator-view-width 36)
-
-  ;; Sidebar & render
-  (context-navigator-view-controls-style 'icons)
-  (context-navigator-highlight-active-group t)
-  (context-navigator-openable-count-ttl 0.3)
-  (context-navigator-openable-soft-cap 120)
-  (context-navigator-openable-remote-mode 'lazy)
-  (context-navigator-render-indicator-style 'icons)
-  (context-navigator-render-show-path t)
-
-  ;; Icons
-  (context-navigator-enable-icons t)
-  (context-navigator-icons-disable-on-remote t)
-
-  ;; Project switching & persistence
-  (context-navigator-context-switch-interval 0.7)
-  (context-navigator-create-default-group-file t)
-
-  ;; GPTel apply (optional deferred mode)
-  ;; (context-navigator-gptel-require-visible-window t)
-
-  ;; Language
-  (context-navigator-language 'auto)
-
-  ;; Stability with sidebar
-  (context-navigator-protect-sidebar-windows t)
-
-  :config
-  (context-navigator-mode 1))
-#+end_src
-
-#+RESULTS:
-: t
-: t
-
-* GPTel integration (one‑way)
-
-- Navigator never imports from GPTel. It only pushes when you ask (Push now) or when auto‑push is ON.
-- On push, Navigator resets GPTel context and adds all enabled items (files, buffers, selections).
-- Indicators (green/gray) show binary membership in GPTel next to items (when enabled).
-- Selections may require a reset under certain GPTel APIs; Navigator handles this automatically.
-- Background apply is batched, and can be deferred until a GPTel buffer is visible (see =context-navigator-gptel-require-visible-window=).
-- Remote files: adds warn/confirm where appropriate; GPTel add functions require readable files/buffers.
-
-How to use:
-- Toggle auto‑push in the header ([→]) or via transient (G).
-- Press [⇪] Push now in the footer, or P in transient, for a manual reset + add.
-- Clear GPTel via footer [⌦] or transient (C).
-
-* Occam filter (AI)
-
-Minimize enabled context for the current task described in your org buffer:
-- Where: org-mode only (appears as R “Occam filter (org)” in the transient).
-- Source: active region if any; otherwise the whole org buffer.
-- Payload: content of currently enabled items (files/buffers/selections) is included for the model to reason about.
+- Where: org-mode only (R in the transient/menu)
+- Source: active region if any; otherwise the whole org buffer
+- Payload: the content of currently enabled items (files/buffers/selections)
+- Modes:
+  - flex (default): try strict JSON first; otherwise accept simple identifiers (names/paths/keys)
+  - json-only: require strict JSON; offers an automatic retry
 - Safety:
-  - Warns and confirms when remote (TRAMP) content is present (configurable).
-  - Warns on large payloads before sending (rough token budget is shown in Stats).
-- Parsing modes:
-  - flex (default): tries strict JSON first; if absent, accepts plain identifiers (keys/paths/names). Optional cautious fuzzy matching.
-  - json-only: require strict JSON; offers an automatic retry with stricter instruction on parse error.
+  - Clear remote warnings; large payload warnings with rough budget estimate
 - Apply flow:
-  - Preview counts before applying (enabled vs total); confirm or cancel.
-  - Applies by enabling only the returned items; auto-push to GPTel is respected when ON.
-  - Per-group Undo/Redo available via the header toolbar (↶/↷) if the result doesn’t look right.
-
-Key options (defaults):
-- context-navigator-razor-model: "deepseek-chat"
-- context-navigator-razor-parse-mode: flex
-- context-navigator-razor-flex-allow-fuzzy: nil
-- context-navigator-razor-max-output-tokens: 256
-- context-navigator-razor-timeout: 45
-- context-navigator-razor-remote-include: t
-- context-navigator-razor-large-bytes-threshold: 600000
-- context-navigator-razor-budget-tokens-limit: 100000
-- context-navigator-razor-preview: t
-- context-navigator-undo-depth: 10
+  - Preview counts (enabled vs total); confirm or cancel
+  - Applies by enabling only the returned items; Undo/Redo per group are available
 
 * Persistence
 
 - Format v3, one file per group:
-  - Project: =<project>/.context/<group>.el=
-  - Global: =~/.context/<group>.el=
-- =state.el= tracks the current group and display names.
-- Async load with batching, spinner, and progress events.
-- On unreadable/broken group file, the sidebar can auto‑open the groups list (configurable via =context-navigator-auto-open-groups-on-error=).
-
-Tips:
-- The first time you open a project/global context, a default group file can be auto‑created (see =context-navigator-create-default-group-file=).
-- Switching groups saves the previous group automatically and loads the new one asynchronously.
+    Project: <project>/.context/<group>.el
+    Global: ~/.context/<group>.el
+- state.el tracks the current group, display names, descriptions, and MG selection
+- Async load with progress and spinner; safe fallback to the groups list on errors
+- Can auto‑create a default group file on first use
 
 * Project detection
 
-- Roots from =project.el= or projectile (if available).
+- Roots from project.el or projectile (if available)
 - “Interesting” buffers:
-  - File‑backed buffers
-  - gptel/gptel-aibo buffers (derived modes and gptel-aibo minor mode)
-  - Dired (and wdired) buffers
-- Auto‑switch is throttled (see =context-navigator-context-switch-interval=) and sticky (keep last root instead of flickering to global).
-- Child frames (posframe/popups) and certain internal buffers (e.g., corfu) are ignored.
-
-Manual project switch at any time: =M-x context-navigator-switch-to-current-buffer-project= (also bound to transient “p”).
+   File‑backed buffers
+   gptel/gptel‑aibo buffers
+   Dired (and wdired)
+- Auto‑switch is throttled and sticky; child frames and internal buffers are ignored
+- Manual project switch anytime: M-x context-navigator-switch-to-current-buffer-project (or “p” via transient)
 
 * Performance and remote paths
 
-- “Open buffers” counter is remote‑aware:
-  - off  — ignore remote files
-  - lazy — do not stat TRAMP paths; consider openable if no live buffer exists
-  - strict — verify existence with =file-exists-p= even over TRAMP (may be slow)
-- Soft cap and TTL keep the counter responsive (see =context-navigator-openable-soft-cap= and =context-navigator-openable-count-ttl=).
-- Mask/glob expansion skips TRAMP by default (enable via =context-navigator-mask-enable-remote= only if you need it).
+- Counters and stats are cached (TTL) for responsiveness
+- TRAMP mask expansion is disabled by default; enable only when needed
+- GPTel apply runs in small batches; heavy operations are deferred and non‑blocking
 
-* Troubleshooting and FAQ
+* Important options (quick reference)
 
-- The menu/keys don’t work?
-  - Ensure =context-navigator-mode= is enabled and set =context-navigator-global-key= (or call =M-x context-navigator-transient=).
+Defaults reflect code defaults.
+
+| Variable                                       | Default                | Description                                                                                  |
+|------------------------------------------------+------------------------+----------------------------------------------------------------------------------------------|
+| context-navigator-global-key                   | "C-c n"                | Global key to open the transient/menu (nil to disable)                                       |
+| context-navigator-view-width                   | 45                     | Sidebar width (columns)                                                                      |
+| context-navigator-autoload                     | t                      | Auto‑load context when switching projects                                                     |
+| context-navigator-autosave                     | t                      | Auto‑save context file on model refresh                                                      |
+| context-navigator-context-switch-interval      | 0.7                    | Throttle interval (s) for auto project switch                                                |
+| context-navigator-context-load-batch-size      | 64                     | Async context load batch size                                                                |
+| context-navigator-default-push-to-gptel        | t                      | Start with push→GPTel ON                                                                      |
+| context-navigator-default-auto-project-switch  | t                      | Start with auto‑project switch ON                                                            |
+| context-navigator-dir-name                     | ".context"             | Project subdir for context files                                                             |
+| context-navigator-context-file-name            | "context.el"           | Legacy per‑project single file name (used for compatibility paths)                           |
+| context-navigator-global-dir                   | ~/.context             | Global context directory                                                                     |
+| context-navigator-create-default-group-file    | t                      | Ensure default group file exists on first use                                                |
+| context-navigator-display-mode                 | sidebar                | Display ‘sidebar’ or ‘buffer’                                                                |
+| context-navigator-remember-display-mode        | t                      | Remember last display mode between sessions                                                  |
+| context-navigator-buffer-placement             | reuse-other-window     | Buffer-mode placement policy                                                                 |
+| context-navigator-buffer-split-size            | 0.5                    | Buffer-mode split size (fraction or absolute)                                                |
+| context-navigator-undo-depth                   | 10                     | History depth per group for Undo/Redo                                                        |
+| context-navigator-gptel-apply-batch-size       | 20                     | Items per background tick when pushing to GPTel                                              |
+| context-navigator-gptel-apply-batch-interval   | 0.05                   | Delay (s) between GPTel apply ticks                                                          |
+| context-navigator-gptel-require-visible-window | nil                    | Defer apply until a GPTel window is visible                                                  |
+| context-navigator-gptel-visible-poll-interval  | 0.5                    | Poll interval (s) for GPTel visibility when deferred                                         |
+| context-navigator-auto-open-groups-on-error    | t                      | Auto‑open groups list when a group fails to load                                             |
+| context-navigator-highlight-active-group       | t                      | Highlight active group in groups list                                                        |
+| context-navigator-view-controls-style          | icons                  | Controls style: auto | icons | text                                                        |
+| context-navigator-gptel-indicator-poll-interval| 0                      | Polling interval (s) for GPTel indicators (0 disables; events still update)                  |
+| context-navigator-view-spinner-frames          | ⠋…⠏                   | Frames for the loading spinner (list of strings)                                             |
+| context-navigator-view-spinner-interval        | 0.1                    | Spinner animation interval (s)                                                               |
+| context-navigator-view-spinner-degrade-threshold | 0.25                 | Degrade to static indicator if timer slips more than this (s)                                |
+| context-navigator-view-modeline-enable         | t                      | Use Navigator-specific modeline controls                                                     |
+| context-navigator-view-modeline-face           | shadow                 | Face used to render modeline status text                                                     |
+| context-navigator-title-left-padding           | 2                      | Left padding (spaces) for the title string                                                   |
+| context-navigator-max-file-size                | 1048576                | Max file size (bytes) to include when adding recursively                                     |
+| context-navigator-path-add-limit               | 70                     | Max files to add in a single operation (names/text/mask)                                     |
+| context-navigator-path-add-index-cache-ttl     | 30.0                   | TTL (s) for project file index cache                                                         |
+| context-navigator-path-add-case-sensitive      | on                     | Basename match policy: auto | on | off                                                       |
+| context-navigator-path-add-ignore-gitignored   | t                      | Prefer sources that respect .gitignore                                                       |
+| context-navigator-path-add-exclude-dotdirs     | t                      | Exclude dot-directories in fallback recursion                                                |
+| context-navigator-path-add-fallback-exclude    | node_modules…          | Directory names excluded in fallback recursion                                               |
+| context-navigator-mask-include-dotfiles        | nil                    | Include dotfiles without explicit dot in pattern component                                   |
+| context-navigator-mask-enable-remote           | nil                    | Allow TRAMP mask expansion                                                                   |
+| context-navigator-mask-globstar                | t                      | Enable * (globstar)                                                                          |
+| context-navigator-log-enabled                  | nil                    | Enable logging                                                                               |
+| context-navigator-log-level                    | :info                  | Minimal level: :error :warn :info :debug :trace                                              |
+| context-navigator-log-auto-open-on-error       | t                      | Open log buffer automatically on errors                                                      |
+| context-navigator-log-buffer-name              | /Context Navigator Log/| Log buffer name                                                                              |
+| context-navigator-log-max-lines                | 5000                   | Trim log to at most N lines                                                                  |
+| context-navigator-log-truncate-length          | 800                    | Truncate long messages (0/nil = no truncation)                                               |
+| context-navigator-log-file-enable              | nil                    | Also append each line to a persistent file                                                   |
+| context-navigator-log-file                     | nil                    | Path to persistent log file                                                                  |
+| context-navigator-language                     | auto                   | UI language; ‘auto’ detects from locale                                                      |
+| context-navigator-multigroup-autopush-threshold| 100                    | Max enabled items across selected groups before auto‑push is gated OFF                       |
+
+* Configuration examples
+
+** Minimal
+#+begin_src emacs-lisp
+(use-package context-navigator
+  :custom
+  (context-navigator-global-key "C-c n")
+  (context-navigator-autoload t)
+  (context-navigator-autosave t)
+  :config
+  (context-navigator-mode 1))
+#+end_src
+
+** Advanced (icons, widths, indicators)
+#+begin_src emacs-lisp
+(use-package context-navigator
+  ;; :straight (context-navigator :type git :host github :repo "11111000000/context-navigator")
+  :custom
+  (context-navigator-global-key "C-c n")
+  (context-navigator-autoload t)
+  (context-navigator-autosave t)
+  (context-navigator-view-width 36)
+  (context-navigator-view-controls-style 'icons)
+  (context-navigator-gptel-indicator-poll-interval 0)
+  ;; (context-navigator-gptel-require-visible-window t)
+  :config
+  (context-navigator-mode 1))
+#+end_src
+
+* Logging
+
+- Enable via the transient menu or by setting context-navigator-log-enabled
+- Levels: :error :warn :info :debug :trace
+- Log buffer: "*Context Navigator Log/"
+- Optional per‑line file logging
+
+* Troubleshooting (FAQ)
+
+- Keys/menu don’t work?
+   Ensure context-navigator-mode is enabled and a global key is set, or use M-x context-navigator-transient
 - Navigator doesn’t open?
-  - Try =M-x context-navigator-start= or =M-x context-navigator-open=.
-- Icons are missing?
-  - Install =all-the-icons= and run =M-x all-the-icons-install-fonts=, then restart Emacs.
-- GPTel is not installed?
-  - Navigator works fine without it. Push operations will no‑op with an informative message.
+   Try M-x context-navigator-start or M-x context-navigator-open
+- Icons missing?
+   Install all-the-icons and run M-x all-the-icons-install-fonts, then restart Emacs
+- GPTel not installed?
+   Navigator still works; push operations no‑op with a friendly message
 - Group load failed?
-  - The sidebar can auto‑open the groups list; from there you can delete or fix the group file.
-- How do I save/load/unload?
-  - Save: =M-x context-navigator-context-save=. Load: =M-x context-navigator-context-load=. Unload (switch to global): =M-x context-navigator-context-unload= (also transient “X”).
-- How to manage groups?
-  - From the sidebar groups view: a (add), r (rename), c (duplicate), d (delete).
-- How to clear GPTel or the group?
-  - Press C in the sidebar (or use transient “C”) to clear GPTel. Use “E” to clear the current group.
-- Open/close all context buffers?
-  - Header [O]/[K], sidebar keys O/o and K.
+   The groups list will open automatically; delete or fix the group file
+- Where are the controls?
+   Title lives in the header-line; the control toolbar lives in the Navigator modeline
 
 * Contributing
 
 Issues and pull requests are welcome. Please:
-- Include clear reproduction steps and Emacs/version info in bug reports.
-- Keep patches small and focused; prefer functional, side‑effect‑local changes.
-- Update docstrings and this README when behavior or user‑facing options change.
+- Provide clear repro steps and Emacs/version info
+- Keep patches focused and side‑effect‑local
+- Update docstrings and this README when behavior or user‑facing options change
 
 * License
 
-MIT — see [[./LICENSE][LICENSE]].
+MIT — see LICENSE.
 
+Let attention rest where it works best: in a clear, gentle context.

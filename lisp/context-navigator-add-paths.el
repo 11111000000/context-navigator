@@ -94,15 +94,20 @@ Default behavior (nil) hides dotfiles unless the component explicitly begins wit
   (string-match-p "^[[:alnum:]+.-]+://." s))
 
 (defun context-navigator-path-add--strip-position-suffix (s)
-  "Strip trailing :N or :A-B from S when appropriate (not for drive letter)."
-  (let ((m (string-match "\\(:[0-9]+\\(-[0-9]+\\)?\\)\\'" s)))
-    (if (not m)
-        s
-      (let ((prefix (substring s 0 m)))
-        ;; Guard: do not treat 'C:' (drive) as position
-        (if (string-match-p "\\`[A-Za-z]:\\'" prefix)
-            s
-          prefix)))))
+  "Strip trailing :N or :A-B chains (e.g., :492:64) from S when appropriate.
+Does not strip Windows drive letters like C:."
+  (let ((q s)
+        (continue t))
+    ;; Repeatedly strip a trailing :N or :A-B (optionally followed by a colon),
+    ;; but stop if doing so would leave just a drive like \"C:\".
+    (while (and continue
+                (string-match "\\(:[0-9]+\\(?:-[0-9]+\\)?\\)\\(?::?\\)\\'" q))
+      (let ((prefix (substring q 0 (match-beginning 0))))
+        (if (string-match-p "\\=[A-Za-z]:\\'" prefix)
+            (setq continue nil) ;; keep as-is (drive letter), stop stripping
+          (setq q prefix))))
+    q))
+
 
 (defun context-navigator-path-add--normalize-token (raw)
   "Normalize RAW path-like token or return nil when not acceptable.
