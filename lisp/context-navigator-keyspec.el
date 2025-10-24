@@ -57,7 +57,7 @@
 
     ;; Control / session
     (:id gs-mg-toggle :cmd context-navigator-view-toggle-multi-group
-         :keys ("M") :contexts (global items groups-split) :section navigate :desc-key :toggle-multi-group)
+         :keys ("B") :contexts (global items groups-split) :section navigate :desc-key :toggle-multi-group)
     (:id push-toggle :cmd context-navigator-view-toggle-push
          :keys ("V") :contexts (global items groups-split) :section session :desc-key :help-toggle-push)
     (:id auto-toggle :cmd context-navigator-view-toggle-auto-project
@@ -133,8 +133,9 @@
     (:id toggle-all :cmd context-navigator-view-toggle-all-gptel
          :keys ("T") :contexts (items global) :section act :desc-key :toggle-all-gptel)
 
-    ;; (:id enable-all :cmd context-navigator-view-enable-all-gptel
-    ;;      :keys ("A") :contexts (items) :section act :desc-key :enable-all-gptel)
+    (:id enable-all :cmd context-navigator-view-enable-all-gptel
+         :keys ("M") :contexts (items) :section act :desc-key :enable-all-gptel)
+
     (:id delete :cmd context-navigator-view-delete-dispatch
          :keys ("d") :contexts (items) :section act :desc-key :help-delete)
     (:id refresh :cmd context-navigator-view-refresh-dispatch
